@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 
 pub type CandleId = String;
 
@@ -20,6 +20,17 @@ pub struct CandleBaseProperties {
     pub volatility: CandleVolatility,
 }
 
+impl Default for CandleBaseProperties {
+    fn default() -> Self {
+        Self {
+            time: Utc::now().naive_utc(),
+            r#type: CandleType::Green,
+            size: 0.00100,
+            volatility: 150.0,
+        }
+    }
+}
+
 pub type CandleEdgePrice = f32;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -30,3 +41,13 @@ pub struct CandleEdgePrices {
     pub close: CandleEdgePrice,
 }
 
+impl Default for CandleEdgePrices {
+    fn default() -> Self {
+        Self {
+            open: 1.30945,
+            high: 1.31078,
+            low: 1.30939,
+            close: 1.31058,
+        }
+    }
+}

@@ -27,6 +27,12 @@ pub enum MovementType {
     Down = -1,
 }
 
+impl Default for MovementType {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Edge {
     High = 1,

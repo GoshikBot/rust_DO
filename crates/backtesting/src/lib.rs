@@ -51,6 +51,18 @@ pub struct BacktestingLowLevelData {
     pub trades: Trades,
 }
 
+impl Default for BacktestingLowLevelData {
+    fn default() -> Self {
+        Self {
+            initial_balance: 10_000.0,
+            processing_balance: 10_000.0,
+            real_balance: 10_000.0,
+            units: 0,
+            trades: 0,
+        }
+    }
+}
+
 pub type Leverage = f32;
 pub type Spread = f32;
 
@@ -58,6 +70,16 @@ pub struct BacktestingConfig {
     pub leverage: Leverage,
     pub use_spread: bool,
     pub spread: Spread,
+}
+
+impl Default for BacktestingConfig {
+    fn default() -> Self {
+        Self {
+            leverage: 0.01,
+            use_spread: true,
+            spread: 0.00010,
+        }
+    }
 }
 
 pub struct DataFrames {

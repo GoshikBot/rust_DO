@@ -10,6 +10,5 @@ base = {path = "../base"}
 backtesting = {path = "../backtesting"}
 realtime = {path = "../realtime"}
 chrono = "0.4.19"
-polars-lazy = "0.20.0"
 xid = "1.0.0"
 simple-error = "0.2.3"

@@ -1,7 +1,7 @@
-use base::entities::{OrderType, order::OrderId, candle::CandleId};
+use base::entities::{candle::CandleId, order::OrderId, OrderType};
 use chrono::NaiveDateTime;
 
-pub type WLId = u32;
+pub type WLId = String;
 pub type WLPrice = f32;
 
 pub struct WorkingLevelBaseProperties {
@@ -12,24 +12,31 @@ pub struct WorkingLevelBaseProperties {
 
 pub type WLMaxCrossingValue = f32;
 
-pub struct WorkingLevelMaxCrossingValuesRow {
+pub struct WorkingLevelMaxCrossingValue {
     pub working_level_id: WLId,
     pub value: WLMaxCrossingValue,
 }
 
 pub type WLIndex = u32;
 
-pub struct WorkingLevelIndexesRow {
+pub struct WorkingLevelIndex {
     pub working_level_id: WLId,
     pub index: WLIndex,
 }
 
-pub struct WorkingLevelCorridorsRow {
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum CorridorType {
+    Small,
+    Big,
+}
+
+#[derive(Eq, PartialEq)]
+pub struct WorkingLevelCorridorCandle {
     pub candle_id: CandleId,
     pub working_level_id: WLId,
 }
 
-pub struct WorkingLevelChainOfOrdersRow {
+pub struct WorkingLevelOrder {
     pub order_id: OrderId,
     pub working_level_id: WLId,
 }
