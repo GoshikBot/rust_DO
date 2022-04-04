@@ -1,5 +1,4 @@
 pub mod angles;
-pub mod settings;
 pub mod strategies;
 pub mod working_levels;
 

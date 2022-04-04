@@ -12,31 +12,10 @@ pub struct WorkingLevelBaseProperties {
 
 pub type WLMaxCrossingValue = f32;
 
-pub struct WorkingLevelMaxCrossingValue {
-    pub working_level_id: WLId,
-    pub value: WLMaxCrossingValue,
-}
-
 pub type WLIndex = u32;
-
-pub struct WorkingLevelIndex {
-    pub working_level_id: WLId,
-    pub index: WLIndex,
-}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum CorridorType {
     Small,
     Big,
-}
-
-#[derive(Eq, PartialEq)]
-pub struct WorkingLevelCorridorCandle {
-    pub candle_id: CandleId,
-    pub working_level_id: WLId,
-}
-
-pub struct WorkingLevelOrder {
-    pub order_id: OrderId,
-    pub working_level_id: WLId,
 }

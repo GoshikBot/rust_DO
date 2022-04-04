@@ -13,18 +13,14 @@ use base::entities::{
 };
 use simple_error::{SimpleError, SimpleResult};
 
-use crate::step::utils::entities::working_levels::CorridorType;
+use crate::step::utils::entities::working_levels::{CorridorType, WLMaxCrossingValue};
 use crate::step::utils::entities::{
     angles::{Angle, AngleId},
-    settings::{PointSettingValue, RatioSettingValue, SettingProgramName, SettingTableName},
     strategies::{
         BacktestingIndex, BacktestingIndexes, BacktestingStatisticNumber, BacktestingStatistics,
         StrategyAngles, StrategyBaseConfig, StrategyDiffs, StrategyTicksCandles, Symbol,
     },
-    working_levels::{
-        WLId, WorkingLevelBaseProperties, WorkingLevelCorridorCandle, WorkingLevelMaxCrossingValue,
-        WorkingLevelOrder,
-    },
+    working_levels::{WLId, WorkingLevelBaseProperties},
     Diff,
 };
 
@@ -40,20 +36,16 @@ pub struct InMemoryStepBacktestingStore {
     angles: HashMap<AngleId, Angle>,
 
     working_level_base_properties: HashMap<WLId, WorkingLevelBaseProperties>,
-    working_level_max_crossing_values: HashMap<WLId, WorkingLevelMaxCrossingValue>,
-    working_level_small_corridors: Vec<WorkingLevelCorridorCandle>,
-    working_level_big_corridors: Vec<WorkingLevelCorridorCandle>,
+    working_level_max_crossing_values: HashMap<WLId, WLMaxCrossingValue>,
 
-    working_level_chain_of_orders: Vec<WorkingLevelOrder>,
+    working_level_small_corridors: HashMap<WLId, HashSet<CandleId>>,
+    working_level_big_corridors: HashMap<WLId, HashSet<CandleId>>,
+    corridor_candles: HashSet<CandleId>,
+
+    working_level_chain_of_orders: HashMap<WLId, HashSet<OrderId>>,
 
     order_base_prices: HashMap<OrderId, OrderBaseProperties>,
     order_base_properties: HashMap<OrderId, OrderBaseProperties>,
-
-    backtesting_limit_orders: Vec<OrderId>,
-
-    setting_names: HashMap<SettingProgramName, SettingTableName>,
-    ratio_settings: HashMap<SettingProgramName, RatioSettingValue>,
-    point_settings: HashMap<SettingProgramName, PointSettingValue>,
 
     strategy_base_config: StrategyBaseConfig,
     strategy_angles: StrategyAngles,
@@ -93,15 +85,7 @@ impl InMemoryStepBacktestingStore {
         let mut candles_to_remove = HashSet::new();
 
         let candle_in_angles = |candle_id: &CandleId| self.angles.contains_key(candle_id);
-        let candle_in_corridors = |candle_id: &CandleId| {
-            self.working_level_small_corridors
-                .iter()
-                .any(|level_candle| &level_candle.candle_id == candle_id)
-                || self
-                    .working_level_big_corridors
-                    .iter()
-                    .any(|level_candle| &level_candle.candle_id == candle_id)
-        };
+        let candle_in_corridors = |candle_id: &CandleId| self.corridor_candles.contains(candle_id);
         let is_current_candle = |candle_id: &CandleId| {
             self.strategy_ticks_candles.current_candle.as_ref() == Some(candle_id)
         };
@@ -652,7 +636,7 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
     }
 
     fn get_current_candle(&self) -> SimpleResult<Option<CandleId>> {
-        todo!()
+        Ok(self.strategy_ticks_candles.current_candle.clone())
     }
     fn update_current_candle(&mut self, candle_id: CandleId) -> SimpleResult<()> {
         self.strategy_ticks_candles.current_candle = Some(candle_id);
@@ -660,7 +644,7 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
     }
 
     fn get_previous_candle(&self) -> SimpleResult<Option<CandleId>> {
-        todo!()
+        Ok(self.strategy_ticks_candles.previous_candle.clone())
     }
     fn update_previous_candle(&mut self, candle_id: CandleId) -> SimpleResult<()> {
         self.strategy_ticks_candles.previous_candle = Some(candle_id);
@@ -674,36 +658,6 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         self.remove_unused_ticks();
 
         Ok(())
-    }
-
-    fn add_ratio_setting(
-        &mut self,
-        name: SettingProgramName,
-        value: RatioSettingValue,
-    ) -> SimpleResult<()> {
-        todo!()
-    }
-
-    fn add_point_setting(
-        &mut self,
-        name: SettingProgramName,
-        value: PointSettingValue,
-    ) -> SimpleResult<()> {
-        todo!()
-    }
-
-    fn get_ratio_setting(
-        &self,
-        name: &SettingProgramName,
-    ) -> SimpleResult<Option<RatioSettingValue>> {
-        todo!()
-    }
-
-    fn get_point_setting(
-        &self,
-        name: &SettingProgramName,
-    ) -> SimpleResult<Option<PointSettingValue>> {
-        todo!()
     }
 
     fn create_working_level(
@@ -761,23 +715,26 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         candle_id: CandleId,
         corridor_type: CorridorType,
     ) -> SimpleResult<()> {
-        let already_exists_error = format!("a candle with an id {} already exists in a small corridor of a working level with id {}", candle_id, working_level_id);
-
-        let new_working_level_corridor_candle = WorkingLevelCorridorCandle {
-            working_level_id,
-            candle_id,
-        };
-
         let working_level_corridors = match corridor_type {
             CorridorType::Small => &mut self.working_level_small_corridors,
             CorridorType::Big => &mut self.working_level_big_corridors,
         };
 
-        if working_level_corridors.contains(&new_working_level_corridor_candle) {
-            return Err(SimpleError::new(already_exists_error));
-        }
+        match working_level_corridors.get_mut(&working_level_id) {
+            None => {
+                return Err(SimpleError::new(format!(
+                    "There is no working level with an id {}",
+                    working_level_id
+                )));
+            }
+            Some(candles) => {
+                if candles.contains(&candle_id) {
+                    return Err(SimpleError::new(format!("a candle with an id {} already exists in a {:?} corridor of a working level with id {}", candle_id, corridor_type, working_level_id)));
+                }
 
-        working_level_corridors.push(new_working_level_corridor_candle);
+                candles.insert(candle_id);
+            }
+        }
 
         Ok(())
     }

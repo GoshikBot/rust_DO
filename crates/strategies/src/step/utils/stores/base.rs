@@ -15,7 +15,6 @@ use std::collections::HashSet;
 use crate::step::utils::entities::working_levels::CorridorType;
 use crate::step::utils::entities::{
     angles::{Angle, AngleId},
-    settings::{PointSettingValue, RatioSettingValue, SettingProgramName},
     strategies::{BacktestingStatisticNumber, Symbol},
     working_levels::{WLId, WLIndex, WLMaxCrossingValue, WorkingLevelBaseProperties},
     Diff,
@@ -132,28 +131,6 @@ pub trait StepBaseStore {
     fn update_previous_candle(&mut self, candle_id: CandleId) -> SimpleResult<()>;
 
     fn remove_unused_items(&mut self) -> SimpleResult<()>;
-
-    fn add_ratio_setting(
-        &mut self,
-        name: SettingProgramName,
-        value: RatioSettingValue,
-    ) -> SimpleResult<()>;
-
-    fn add_point_setting(
-        &mut self,
-        name: SettingProgramName,
-        value: PointSettingValue,
-    ) -> SimpleResult<()>;
-
-    fn get_ratio_setting(
-        &self,
-        name: &SettingProgramName,
-    ) -> SimpleResult<Option<RatioSettingValue>>;
-
-    fn get_point_setting(
-        &self,
-        name: &SettingProgramName,
-    ) -> SimpleResult<Option<PointSettingValue>>;
 
     fn create_working_level(
         &mut self,

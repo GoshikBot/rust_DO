@@ -8,12 +8,6 @@ pub use tick::TickBaseProperties;
 
 const LOT: i32 = 100_000;
 
-#[derive(Debug)]
-pub enum Param {
-    Ratio(String),
-    Point(f32),
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Level {
     Min = -1,

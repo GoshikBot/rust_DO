@@ -1,4 +1,4 @@
-use base::entities::{Level, candle::CandleId};
+use base::entities::{candle::CandleId, Level};
 
 pub type AngleId = String;
 
