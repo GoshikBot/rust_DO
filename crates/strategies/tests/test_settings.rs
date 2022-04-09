@@ -1,7 +1,7 @@
 use strategies::step::utils::settings::{ExcelFileSettings, Settings};
 
 #[test]
-fn test_getting_point_setting_value() {
+fn should_successfully_return_a_point_setting_value_for_an_existing_setting() {
     let settings =
         ExcelFileSettings::new(r"D:\work_and_projects\Goshik_bot\rust_bot_DO\step_settings.csv")
             .unwrap();
@@ -15,7 +15,7 @@ fn test_getting_point_setting_value() {
 }
 
 #[test]
-fn test_getting_ratio_setting_value() {
+fn should_successfully_return_a_ratio_setting_value_for_an_existing_setting() {
     let settings =
         ExcelFileSettings::new(r"D:\work_and_projects\Goshik_bot\rust_bot_DO\step_settings.csv")
             .unwrap();

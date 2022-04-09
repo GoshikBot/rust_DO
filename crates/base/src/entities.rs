@@ -8,7 +8,7 @@ pub use tick::TickBaseProperties;
 
 const LOT: i32 = 100_000;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Level {
     Min = -1,
     Max = 1,

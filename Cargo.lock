@@ -57,6 +57,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 name = "backtesting"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base",
  "polars-lazy",
  "simple-error",
@@ -867,13 +868,13 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "strategies"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "backtesting",
  "base",
  "chrono",
  "csv",
  "realtime",
  "serde",
- "simple-error",
  "xid",
 ]
 
@@ -951,10 +952,6 @@ dependencies = [
 [[package]]
 name = "trading_bot"
 version = "0.1.0"
-dependencies = [
- "csv",
- "serde",
-]
 
 [[package]]
 name = "unicode-xid"

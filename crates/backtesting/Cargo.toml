@@ -9,3 +9,4 @@ edition = "2021"
 base = {path = "../base"}
 polars-lazy = "0.20.0"
 simple-error = "0.2.3"
+anyhow = "1.0.56"
