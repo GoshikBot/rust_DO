@@ -2,9 +2,9 @@ use base::entities::candle::CandleId;
 use base::entities::tick::TickId;
 use base::entities::{CandleBaseProperties, Level, OrderType, TickBaseProperties};
 use std::collections::HashSet;
-use strategies::step::utils::entities::angles::{Angle, AngleId};
+use strategies::step::utils::entities::angles::{AngleBaseProperties, AngleId};
 use strategies::step::utils::entities::working_levels::{CorridorType, WorkingLevelBaseProperties};
-use strategies::step::utils::stores::base::StepBaseStore;
+use strategies::step::utils::stores::base::{StepBacktestingStore, StepBaseStore};
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 
 #[test]
@@ -43,7 +43,7 @@ fn should_remove_only_unused_items() {
         assert!(store
             .create_angle(
                 i.to_string(),
-                Angle {
+                AngleBaseProperties {
                     candle_id: i.to_string(),
                     r#type: Level::Min,
                 },
@@ -367,7 +367,9 @@ fn should_return_error_when_inserting_nonexistent_entity() {
     assert!(store
         .update_working_level_base_properties("1", Default::default())
         .is_err());
-    assert!(store.update_angle("1", Default::default()).is_err());
+    assert!(store
+        .update_angle_base_properties("1", Default::default())
+        .is_err());
 
     assert!(store
         .update_angle_of_second_level_after_bargaining_tendency_change(String::from("1"))

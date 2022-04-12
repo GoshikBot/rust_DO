@@ -6,7 +6,7 @@ pub use candle::{CandleBaseProperties, CandleEdgePrices, CandleType};
 pub use order::{OrderBasePrices, OrderBaseProperties, OrderType};
 pub use tick::TickBaseProperties;
 
-const LOT: i32 = 100_000;
+pub const LOT: i32 = 100_000;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Level {

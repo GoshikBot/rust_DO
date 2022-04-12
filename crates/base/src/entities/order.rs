@@ -56,3 +56,8 @@ impl Default for OrderBaseProperties {
         }
     }
 }
+
+pub struct BasicOrder {
+    pub base_properties: OrderBaseProperties,
+    pub base_prices: OrderBasePrices,
+}

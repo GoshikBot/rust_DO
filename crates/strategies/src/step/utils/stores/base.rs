@@ -1,54 +1,28 @@
-use backtesting::{
-    backtesting_base_store::BacktestingBaseStore, Balance, Leverage, Spread, Trades, Units,
-};
-use base::entities::{
-    candle::{CandleId, CandleSize, CandleVolatility},
-    order::OrderId,
-    tick::{TickId, TickPrice},
-    CandleBaseProperties, CandleEdgePrices, CandleType, Level, MovementType, OrderBasePrices,
-    OrderBaseProperties, TickBaseProperties,
-};
-use chrono::NaiveDateTime;
 use std::collections::HashSet;
-
-use crate::step::utils::entities::working_levels::CorridorType;
-use crate::step::utils::entities::{
-    angles::{Angle, AngleId},
-    strategies::{BacktestingStatisticNumber, Symbol},
-    working_levels::{WLId, WLIndex, WLMaxCrossingValue, WorkingLevelBaseProperties},
-    Diff,
-};
 
 use anyhow::Result;
 
+use base::entities::candle::BasicCandle;
+use base::entities::order::BasicOrder;
+use base::entities::{
+    candle::CandleId, order::OrderId, tick::TickId, CandleBaseProperties, CandleEdgePrices,
+    OrderBasePrices, OrderBaseProperties, TickBaseProperties,
+};
+
+use crate::step::utils::entities::working_levels::CorridorType;
+use crate::step::utils::entities::{
+    angles::{AngleBaseProperties, AngleId},
+    working_levels::{WLId, WLMaxCrossingValue, WorkingLevelBaseProperties},
+    Diff,
+};
+
 pub trait StepBaseStore {
-    fn get_symbol(&self) -> Result<Symbol>;
-
-    fn get_tendency(&self) -> Result<MovementType>;
-    fn update_tendency(&mut self, value: MovementType) -> Result<()>;
-
-    fn get_tendency_changed_on_crossing_bargaining_corridor(&self) -> Result<bool>;
-
-    fn update_tendency_changed_on_crossing_bargaining_corridor(
+    fn get_angle_base_properties_by_id(&self, id: &str) -> Result<Option<AngleBaseProperties>>;
+    fn update_angle_base_properties(
         &mut self,
-        value: bool,
+        id: &str,
+        new_angle: AngleBaseProperties,
     ) -> Result<()>;
-
-    fn get_second_level_after_bargaining_tendency_change_is_created(&self) -> Result<bool>;
-    fn update_second_level_after_bargaining_tendency_change_is_created(
-        &mut self,
-        value: bool,
-    ) -> Result<()>;
-
-    fn get_skip_creating_new_working_level(&self) -> Result<bool>;
-    fn update_skip_creating_new_working_level(&mut self, value: bool) -> Result<()>;
-
-    fn get_no_trading_mode(&self) -> Result<bool>;
-    fn update_no_trading_mode(&mut self, value: bool) -> Result<()>;
-
-    fn create_angle(&mut self, id: AngleId, new_angle: Angle) -> Result<()>;
-    fn get_angle_by_id(&self, id: &str) -> Result<Option<Angle>>;
-    fn update_angle(&mut self, id: &str, new_angle: Angle) -> Result<()>;
     fn get_all_angles(&self) -> Result<HashSet<AngleId>>;
 
     fn get_angle_of_second_level_after_bargaining_tendency_change(&self)
@@ -85,16 +59,9 @@ pub trait StepBaseStore {
     fn get_previous_diff(&self) -> Result<Option<Diff>>;
     fn update_previous_diff(&mut self, new_diff: Diff) -> Result<()>;
 
-    fn create_tick(&mut self, id: TickId, base_properties: TickBaseProperties) -> Result<()>;
     fn get_tick_base_properties_by_id(&self, tick_id: &str) -> Result<Option<TickBaseProperties>>;
     fn get_all_ticks(&self) -> Result<HashSet<TickId>>;
 
-    fn create_candle(
-        &mut self,
-        id: CandleId,
-        base_properties: CandleBaseProperties,
-        edge_prices: CandleEdgePrices,
-    ) -> Result<()>;
     fn update_candle_base_properties(
         &mut self,
         id: &str,
@@ -104,10 +71,8 @@ pub trait StepBaseStore {
         &self,
         candle_id: &str,
     ) -> Result<Option<CandleBaseProperties>>;
-    fn get_candle_edge_prices_by_id(
-        &self,
-        candle_id: &CandleId,
-    ) -> Result<Option<CandleEdgePrices>>;
+
+    fn get_candle_edge_prices_by_id(&self, id: &str) -> Result<Option<CandleEdgePrices>>;
     fn get_all_candles(&self) -> Result<HashSet<CandleId>>;
 
     fn get_current_tick(&self) -> Result<Option<TickId>>;
@@ -124,11 +89,6 @@ pub trait StepBaseStore {
 
     fn remove_unused_items(&mut self) -> Result<()>;
 
-    fn create_working_level(
-        &mut self,
-        id: WLId,
-        base_properties: WorkingLevelBaseProperties,
-    ) -> Result<()>;
     fn get_working_level_base_properties_by_id(
         &self,
         id: &str,
@@ -173,15 +133,8 @@ pub trait StepBaseStore {
     fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()>;
     fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool>;
 
-    fn create_order(
-        &mut self,
-        id: OrderId,
-        base_prices: OrderBasePrices,
-        base_properties: OrderBaseProperties,
-    ) -> Result<()>;
     fn get_order_base_prices_by_id(&self, id: &str) -> Result<Option<OrderBasePrices>>;
     fn get_order_base_properties_by_id(&self, id: &str) -> Result<Option<OrderBaseProperties>>;
-    fn remove_order(&mut self, id: &str) -> Result<()>;
 
     fn add_order_to_working_level_chain_of_orders(
         &mut self,
@@ -194,70 +147,42 @@ pub trait StepBaseStore {
     ) -> Result<Option<HashSet<OrderId>>>;
 }
 
-pub trait StepBacktestingStore: BacktestingBaseStore + StepBaseStore {
-    fn get_number_of_working_levels(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_number_of_working_levels(
+pub trait StepBacktestingStore {
+    fn create_angle(
         &mut self,
-        new_number: BacktestingStatisticNumber,
+        id: AngleId,
+        angle_base_properties: AngleBaseProperties,
     ) -> Result<()>;
 
-    fn get_number_of_tendency_changes(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_number_of_tendency_changes(
+    fn get_angle_by_id(&self, id: &str) -> Result<Option<AngleBaseProperties>>;
+
+    fn create_tick(&mut self, id: TickId, tick_base_properties: TickBaseProperties) -> Result<()>;
+
+    fn get_tick_by_id(&self, id: &str) -> Result<Option<TickBaseProperties>>;
+
+    fn create_candle(
         &mut self,
-        new_number: BacktestingStatisticNumber,
+        id: CandleId,
+        base_properties: CandleBaseProperties,
+        edge_prices: CandleEdgePrices,
     ) -> Result<()>;
 
-    fn get_deleted_by_being_close_to_another_one(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_being_close_to_another_one(
+    fn get_candle_by_id(&self, id: &str) -> Result<Option<BasicCandle>>;
+
+    fn create_working_level(
         &mut self,
-        new_number: BacktestingStatisticNumber,
+        id: WLId,
+        base_properties: WorkingLevelBaseProperties,
     ) -> Result<()>;
 
-    fn get_deleted_by_another_active_chain_of_orders(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_another_active_chain_of_orders(
+    fn get_working_level_by_id(&self, id: &str) -> Result<Option<WorkingLevelBaseProperties>>;
+
+    fn create_order(
         &mut self,
-        new_number: BacktestingStatisticNumber,
+        id: OrderId,
+        base_prices: OrderBasePrices,
+        base_properties: OrderBaseProperties,
     ) -> Result<()>;
 
-    fn get_deleted_by_expiration_by_distance(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_expiration_by_distance(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
-
-    fn get_deleted_by_expiration_by_time(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_expiration_by_time(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
-
-    fn get_deleted_by_price_being_beyond_stop_loss(&self) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_price_being_beyond_stop_loss(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
-
-    fn get_deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing(
-        &self,
-    ) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
-
-    fn get_deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing(
-        &self,
-    ) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
-
-    fn get_deleted_by_exceeding_activation_crossing_distance(
-        &self,
-    ) -> Result<BacktestingStatisticNumber>;
-    fn update_deleted_by_exceeding_activation_crossing_distance(
-        &mut self,
-        new_number: BacktestingStatisticNumber,
-    ) -> Result<()>;
+    fn get_order_by_id(&self, id: &str) -> Result<Option<BasicOrder>>;
 }

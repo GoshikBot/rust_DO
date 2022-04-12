@@ -23,7 +23,7 @@ pub struct StrategyAngles {
     pub min_angle: Option<AngleId>,
     pub virtual_min_angle: Option<AngleId>,
     pub max_angle: Option<AngleId>,
-    pub virutal_max_angle: Option<AngleId>,
+    pub virtual_max_angle: Option<AngleId>,
     pub min_angle_before_bargaining_corridor: Option<AngleId>,
     pub max_angle_before_bargaining_corridor: Option<AngleId>,
 }
