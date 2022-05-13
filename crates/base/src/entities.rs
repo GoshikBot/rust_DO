@@ -1,9 +1,7 @@
 pub mod candle;
-pub mod order;
 pub mod tick;
 
 pub use candle::{CandleBaseProperties, CandleEdgePrices, CandleType};
-pub use order::{OrderBasePrices, OrderBaseProperties, OrderType};
 pub use tick::TickBaseProperties;
 
 pub const LOT: i32 = 100_000;

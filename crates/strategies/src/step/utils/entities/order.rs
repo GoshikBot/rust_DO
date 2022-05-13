@@ -1,3 +1,5 @@
+use crate::step::utils::entities::working_levels::WLId;
+
 pub type OrderId = String;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -9,16 +11,16 @@ pub enum OrderType {
 pub type OrderBasePrice = f32;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct OrderBasePrices {
-    pub open_price: OrderBasePrice,
+pub struct OrderPrices {
+    pub open: OrderBasePrice,
     pub stop_loss: OrderBasePrice,
     pub take_profit: OrderBasePrice,
 }
 
-impl Default for OrderBasePrices {
+impl Default for OrderPrices {
     fn default() -> Self {
         Self {
-            open_price: 1.38,
+            open: 1.38,
             stop_loss: 1.37,
             take_profit: 1.39,
         }
@@ -40,24 +42,28 @@ impl Default for OrderStatus {
 
 pub type OrderVolume = f32;
 
+#[derive(Debug, Clone)]
+pub struct Order {
+    pub id: OrderId,
+    pub properties: OrderProperties,
+    pub prices: OrderPrices,
+}
+
 #[derive(Debug, PartialEq, Clone)]
-pub struct OrderBaseProperties {
+pub struct OrderProperties {
     pub r#type: OrderType,
     pub volume: OrderVolume,
     pub status: OrderStatus,
+    pub working_level_id: WLId,
 }
 
-impl Default for OrderBaseProperties {
+impl Default for OrderProperties {
     fn default() -> Self {
         Self {
             r#type: OrderType::Buy,
             volume: 0.0,
             status: Default::default(),
+            working_level_id: String::from("1"),
         }
     }
-}
-
-pub struct BasicOrder {
-    pub base_properties: OrderBaseProperties,
-    pub base_prices: OrderBasePrices,
 }

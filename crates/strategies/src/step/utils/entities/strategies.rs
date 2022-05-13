@@ -1,20 +1,9 @@
 use base::entities::{candle::CandleId, tick::TickId, Level, MovementType};
 
-use super::{angles::AngleId, Diff};
+use super::{angle::AngleId, Diff};
 
 pub type SettingFile = &'static str;
 pub type Symbol = &'static str;
-
-#[derive(Copy, Clone, Default)]
-pub struct StrategyBaseConfig {
-    pub symbol: Symbol,
-    pub tendency: MovementType,
-    pub tendency_changed_on_crossing_bargaining_corridor: bool,
-    pub second_level_after_bargaining_tendency_change_is_created: bool,
-    pub skip_creating_new_working_level: bool,
-    pub no_trading_mode: bool,
-    pub setting_file: SettingFile,
-}
 
 #[derive(Default)]
 pub struct StrategyAngles {

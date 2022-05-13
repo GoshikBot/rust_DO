@@ -1,35 +1,32 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use base::entities::candle::BasicCandle;
-use base::entities::order::BasicOrder;
 use base::entities::{
-    candle::CandleId, order::OrderId, tick::TickId, CandleBaseProperties, CandleEdgePrices,
-    OrderBasePrices, OrderBaseProperties, TickBaseProperties,
+    candle::CandleId, tick::TickId, CandleBaseProperties, CandleEdgePrices, Level,
+    TickBaseProperties,
 };
 
+use crate::step::utils::entities::candle::Candle;
+use crate::step::utils::entities::order::{Order, OrderId, OrderPrices, OrderProperties};
+use crate::step::utils::entities::tick::Tick;
 use crate::step::utils::entities::working_levels::{CorridorType, WLMaxCrossingValue};
 use crate::step::utils::entities::{
-    angles::{AngleBaseProperties, AngleId},
+    angle::{Angle, AngleId},
     strategies::{StrategyAngles, StrategyDiffs, StrategyTicksCandles},
-    working_levels::{WLId, WorkingLevelBaseProperties},
+    working_levels::{WLId, WorkingLevel},
     Diff,
 };
-use crate::step::utils::stores::base::StepBacktestingStore;
-
-use super::base::StepBaseStore;
+use crate::step::utils::stores::step_backtesting_store::StepBacktestingStore;
 
 #[derive(Default)]
 pub struct InMemoryStepBacktestingStore {
-    candle_base_properties: HashMap<CandleId, CandleBaseProperties>,
-    candle_edge_prices: HashMap<CandleId, CandleEdgePrices>,
+    candles: HashMap<CandleId, Candle>,
+    ticks: HashMap<TickId, Tick>,
+    angles: HashMap<AngleId, Angle>,
 
-    tick_base_properties: HashMap<TickId, TickBaseProperties>,
-
-    angle_base_properties: HashMap<AngleId, AngleBaseProperties>,
-
-    working_level_base_properties: HashMap<WLId, WorkingLevelBaseProperties>,
+    working_levels: HashMap<WLId, WorkingLevel>,
 
     working_level_max_crossing_values: HashMap<WLId, WLMaxCrossingValue>,
     working_levels_with_moved_take_profits: HashSet<WLId>,
@@ -43,22 +40,17 @@ pub struct InMemoryStepBacktestingStore {
     corridor_candles: HashSet<CandleId>,
 
     working_level_chain_of_orders: HashMap<WLId, HashSet<OrderId>>,
-
-    order_base_prices: HashMap<OrderId, OrderBasePrices>,
-    order_base_properties: HashMap<OrderId, OrderBaseProperties>,
+    orders: HashMap<OrderId, Order>,
 
     strategy_angles: StrategyAngles,
-    strategy_diffs: StrategyDiffs,
     strategy_ticks_candles: StrategyTicksCandles,
 }
 
 impl InMemoryStepBacktestingStore {
     fn remove_order(&mut self, id: &str) -> Result<()> {
-        if self.order_base_properties.remove(id).is_none() {
+        if self.orders.remove(id).is_none() {
             bail!("can't remove a non-existent order with an id {}", id);
         }
-
-        self.order_base_prices.remove(id);
 
         Ok(())
     }
@@ -74,17 +66,13 @@ impl InMemoryStepBacktestingStore {
             .contains(&Some(tick_id))
         };
 
-        self.tick_base_properties
-            .retain(|tick_id, _| tick_is_in_use(tick_id));
+        self.ticks.retain(|tick_id, _| tick_is_in_use(tick_id));
     }
 
     /// For each candle checks whether it is in use. If a candle is not in use,
     /// removes it. We don't want candle list to grow endlessly.
     fn remove_unused_candles(&mut self) {
-        let mut candles_to_remove = HashSet::new();
-
-        let candle_in_angles =
-            |candle_id: &CandleId| self.angle_base_properties.contains_key(candle_id);
+        let candle_in_angles = |candle_id: &CandleId| self.angles.contains_key(candle_id);
         let candle_in_corridors = |candle_id: &CandleId| self.corridor_candles.contains(candle_id);
         let is_current_candle = |candle_id: &CandleId| {
             self.strategy_ticks_candles.current_candle.as_ref() == Some(candle_id)
@@ -93,7 +81,7 @@ impl InMemoryStepBacktestingStore {
             self.strategy_ticks_candles.previous_candle.as_ref() == Some(candle_id)
         };
 
-        self.candle_base_properties.retain(|candle_id, _| {
+        self.candles.retain(|candle_id, _| {
             if candle_in_angles(candle_id)
                 || candle_in_corridors(candle_id)
                 || is_current_candle(candle_id)
@@ -102,18 +90,14 @@ impl InMemoryStepBacktestingStore {
                 return true;
             }
 
-            candles_to_remove.insert(candle_id.clone());
             false
         });
-
-        self.candle_edge_prices
-            .retain(|candle_id, _| candles_to_remove.contains(candle_id));
     }
 
     /// For each angle checks whether it is in use. If an angle is not in use,
     /// removes it. We don't want angle list to grow endlessly.
     fn remove_unused_angles(&mut self) {
-        self.angle_base_properties.retain(|angle_id, _| {
+        self.angles.retain(|angle_id, _| {
             [
                 self.strategy_angles.max_angle.as_ref(),
                 self.strategy_angles.min_angle.as_ref(),
@@ -136,169 +120,49 @@ impl InMemoryStepBacktestingStore {
 }
 
 impl StepBacktestingStore for InMemoryStepBacktestingStore {
-    fn create_angle(
-        &mut self,
-        id: AngleId,
-        angle_base_properties: AngleBaseProperties,
-    ) -> Result<()> {
-        if let Some(angle) = self.angle_base_properties.get(&id) {
+    fn create_angle(&mut self, id: AngleId, candle_id: CandleId, r#type: Level) -> Result<()> {
+        if let Some(angle) = self.angles.get(&id) {
             bail!("an angle with an id {} already exists: {:?}", id, angle);
         }
 
-        self.angle_base_properties.insert(id, angle_base_properties);
-
-        Ok(())
-    }
-
-    fn get_angle_by_id(&self, id: &str) -> Result<Option<AngleBaseProperties>> {
-        self.get_angle_base_properties_by_id(id)
-    }
-
-    fn create_tick(&mut self, id: TickId, tick_base_properties: TickBaseProperties) -> Result<()> {
-        if let Some(tick) = self.tick_base_properties.get(&id) {
-            bail!("a tick with an id {} already exists: {:?}", id, tick);
-        }
-
-        self.tick_base_properties.insert(id, tick_base_properties);
-
-        Ok(())
-    }
-
-    fn get_tick_by_id(&self, id: &str) -> Result<Option<TickBaseProperties>> {
-        self.get_tick_base_properties_by_id(id)
-    }
-
-    fn create_candle(
-        &mut self,
-        id: CandleId,
-        base_properties: CandleBaseProperties,
-        edge_prices: CandleEdgePrices,
-    ) -> Result<()> {
-        if let Some(candle) = self.candle_base_properties.get(&id) {
-            bail!("a candle with an id {} already exists: {:?}", id, candle);
-        }
-
-        self.candle_base_properties
-            .insert(id.clone(), base_properties);
-        self.candle_edge_prices.insert(id, edge_prices);
-
-        Ok(())
-    }
-
-    fn get_candle_by_id(&self, id: &str) -> Result<Option<BasicCandle>> {
-        let base_properties = match self.get_candle_base_properties_by_id(id)? {
-            None => return Ok(None),
-            Some(candle_base_properties) => candle_base_properties,
+        let new_angle = Angle {
+            id: id.clone(),
+            candle_id,
+            r#type,
         };
 
-        let edge_prices = match self.get_candle_edge_prices_by_id(id)? {
-            None => return Ok(None),
-            Some(candle_edge_prices) => candle_edge_prices,
-        };
-
-        Ok(Some(BasicCandle {
-            base_properties,
-            edge_prices,
-        }))
-    }
-
-    fn create_working_level(
-        &mut self,
-        id: WLId,
-        base_properties: WorkingLevelBaseProperties,
-    ) -> Result<()> {
-        if let Some(level) = self.working_level_base_properties.get(&id) {
-            bail!(
-                "a working level with an id {} already exists: {:?}",
-                id,
-                level
-            );
-        }
-
-        self.working_level_base_properties
-            .insert(id.clone(), base_properties);
-
-        self.created_working_levels.insert(id);
+        self.angles.insert(id, new_angle);
 
         Ok(())
     }
 
-    fn get_working_level_by_id(&self, id: &str) -> Result<Option<WorkingLevelBaseProperties>> {
-        self.get_working_level_base_properties_by_id(id)
-    }
-
-    fn create_order(
-        &mut self,
-        id: OrderId,
-        base_prices: OrderBasePrices,
-        base_properties: OrderBaseProperties,
-    ) -> Result<()> {
-        if self.order_base_prices.contains_key(&id) {
-            bail!("an order with an id {} already exists", id);
-        }
-
-        self.order_base_properties
-            .insert(id.clone(), base_properties);
-        self.order_base_prices.insert(id, base_prices);
-
-        Ok(())
-    }
-
-    fn get_order_by_id(&self, id: &str) -> Result<Option<BasicOrder>> {
-        let base_properties = match self.get_order_base_properties_by_id(id)? {
-            None => return Ok(None),
-            Some(base_properties) => base_properties,
-        };
-
-        let base_prices = match self.get_order_base_prices_by_id(id)? {
-            None => return Ok(None),
-            Some(base_prices) => base_prices,
-        };
-
-        Ok(Some(BasicOrder {
-            base_properties,
-            base_prices,
-        }))
-    }
-}
-
-impl StepBaseStore for InMemoryStepBacktestingStore {
-    fn get_angle_base_properties_by_id(&self, id: &str) -> Result<Option<AngleBaseProperties>> {
-        Ok(self.angle_base_properties.get(id).cloned())
-    }
-
-    fn update_angle_base_properties(
-        &mut self,
-        id: &str,
-        new_angle: AngleBaseProperties,
-    ) -> Result<()> {
-        if self.angle_base_properties.get(id).is_none() {
-            bail!("there is no angle with an id {}", id);
-        }
-
-        self.angle_base_properties.insert(id.to_string(), new_angle);
-
-        Ok(())
+    fn get_angle_by_id(&self, id: &str) -> Result<Option<Angle>> {
+        Ok(self.angles.get(id).cloned())
     }
 
     fn get_all_angles(&self) -> Result<HashSet<AngleId>> {
-        Ok(self.angle_base_properties.keys().cloned().collect())
+        Ok(self.angles.keys().cloned().collect())
     }
 
-    fn get_angle_of_second_level_after_bargaining_tendency_change(
-        &self,
-    ) -> Result<Option<AngleId>> {
-        Ok(self
+    fn get_angle_of_second_level_after_bargaining_tendency_change(&self) -> Result<Option<Angle>> {
+        let angle_id = self
             .strategy_angles
             .angle_of_second_level_after_bargaining_tendency_change
-            .clone())
+            .as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_angle_of_second_level_after_bargaining_tendency_change(
         &mut self,
         new_angle: AngleId,
     ) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -307,12 +171,19 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_tendency_change_angle(&self) -> Result<Option<AngleId>> {
-        Ok(self.strategy_angles.tendency_change_angle.clone())
+    fn get_tendency_change_angle(&self) -> Result<Option<Angle>> {
+        let angle_id = self.strategy_angles.tendency_change_angle.as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_tendency_change_angle(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -320,12 +191,19 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_min_angle(&self) -> Result<Option<AngleId>> {
-        Ok(self.strategy_angles.min_angle.clone())
+    fn get_min_angle(&self) -> Result<Option<Angle>> {
+        let angle_id = self.strategy_angles.min_angle.as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -333,12 +211,19 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_virtual_min_angle(&self) -> Result<Option<AngleId>> {
-        Ok(self.strategy_angles.virtual_min_angle.clone())
+    fn get_virtual_min_angle(&self) -> Result<Option<Angle>> {
+        let angle_id = self.strategy_angles.virtual_min_angle.as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_virtual_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -346,12 +231,19 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_max_angle(&self) -> Result<Option<AngleId>> {
-        Ok(self.strategy_angles.max_angle.clone())
+    fn get_max_angle(&self) -> Result<Option<Angle>> {
+        let angle_id = self.strategy_angles.max_angle.as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -359,12 +251,19 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_virtual_max_angle(&self) -> Result<Option<AngleId>> {
-        Ok(self.strategy_angles.virtual_max_angle.clone())
+    fn get_virtual_max_angle(&self) -> Result<Option<Angle>> {
+        let angle_id = self.strategy_angles.virtual_max_angle.as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_virtual_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -372,15 +271,22 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_min_angle_before_bargaining_corridor(&self) -> Result<Option<AngleId>> {
-        Ok(self
+    fn get_min_angle_before_bargaining_corridor(&self) -> Result<Option<Angle>> {
+        let angle_id = self
             .strategy_angles
             .min_angle_before_bargaining_corridor
-            .clone())
+            .as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_min_angle_before_bargaining_corridor(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -388,15 +294,22 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_max_angle_before_bargaining_corridor(&self) -> Result<Option<AngleId>> {
-        Ok(self
+    fn get_max_angle_before_bargaining_corridor(&self) -> Result<Option<Angle>> {
+        let angle_id = self
             .strategy_angles
             .max_angle_before_bargaining_corridor
-            .clone())
+            .as_ref();
+
+        let angle_id = match angle_id {
+            None => return Ok(None),
+            Some(angle_id) => angle_id,
+        };
+
+        self.get_angle_by_id(angle_id)
     }
 
     fn update_max_angle_before_bargaining_corridor(&mut self, new_angle: AngleId) -> Result<()> {
-        if !self.angle_base_properties.contains_key(&new_angle) {
+        if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
 
@@ -404,68 +317,73 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_current_diff(&self) -> Result<Option<Diff>> {
-        Ok(self.strategy_diffs.current_diff)
-    }
+    fn create_tick(&mut self, id: TickId, tick_base_properties: TickBaseProperties) -> Result<()> {
+        if let Some(tick) = self.ticks.get(&id) {
+            bail!("a tick with an id {} already exists: {:?}", id, tick);
+        }
 
-    fn update_current_diff(&mut self, new_diff: Diff) -> Result<()> {
-        self.strategy_diffs.current_diff = Some(new_diff);
+        let new_tick = Tick {
+            id: id.clone(),
+            ask: tick_base_properties.ask,
+            bid: tick_base_properties.bid,
+            time: tick_base_properties.time,
+        };
+
+        self.ticks.insert(id, new_tick);
+
         Ok(())
     }
 
-    fn get_previous_diff(&self) -> Result<Option<Diff>> {
-        Ok(self.strategy_diffs.previous_diff)
-    }
-
-    fn update_previous_diff(&mut self, new_diff: Diff) -> Result<()> {
-        self.strategy_diffs.previous_diff = Some(new_diff);
-        Ok(())
-    }
-
-    fn get_tick_base_properties_by_id(&self, tick_id: &str) -> Result<Option<TickBaseProperties>> {
-        Ok(self.tick_base_properties.get(tick_id).cloned())
+    fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Tick>> {
+        Ok(self.ticks.get(tick_id).cloned())
     }
 
     fn get_all_ticks(&self) -> Result<HashSet<TickId>> {
-        Ok(self.tick_base_properties.keys().cloned().collect())
+        Ok(self.ticks.keys().cloned().collect())
     }
 
-    fn update_candle_base_properties(
+    fn create_candle(
         &mut self,
-        id: &str,
-        new_base_properties: CandleBaseProperties,
+        id: CandleId,
+        base_properties: CandleBaseProperties,
+        edge_prices: CandleEdgePrices,
     ) -> Result<()> {
-        if self.candle_base_properties.get(id).is_none() {
-            bail!("there is no candle with an id {} to update", id);
+        if let Some(candle) = self.candles.get(&id) {
+            bail!("a candle with an id {} already exists: {:?}", id, candle);
         }
 
-        self.candle_base_properties
-            .insert(id.to_string(), new_base_properties);
+        let new_candle = Candle {
+            id: id.clone(),
+            base_properties,
+            edge_prices,
+        };
+
+        self.candles.insert(id, new_candle);
 
         Ok(())
     }
 
-    fn get_candle_base_properties_by_id(
-        &self,
-        candle_id: &str,
-    ) -> Result<Option<CandleBaseProperties>> {
-        Ok(self.candle_base_properties.get(candle_id).cloned())
-    }
-
-    fn get_candle_edge_prices_by_id(&self, candle_id: &str) -> Result<Option<CandleEdgePrices>> {
-        Ok(self.candle_edge_prices.get(candle_id).cloned())
+    fn get_candle_by_id(&self, candle_id: &str) -> Result<Option<Candle>> {
+        Ok(self.candles.get(candle_id).cloned())
     }
 
     fn get_all_candles(&self) -> Result<HashSet<CandleId>> {
-        Ok(self.candle_base_properties.keys().cloned().collect())
+        Ok(self.candles.keys().cloned().collect())
     }
 
-    fn get_current_tick(&self) -> Result<Option<TickId>> {
-        Ok(self.strategy_ticks_candles.current_tick.clone())
+    fn get_current_tick(&self) -> Result<Option<Tick>> {
+        let tick_id = self.strategy_ticks_candles.current_tick.as_ref();
+
+        let tick_id = match tick_id {
+            None => return Ok(None),
+            Some(tick_id) => tick_id,
+        };
+
+        self.get_tick_by_id(tick_id)
     }
 
     fn update_current_tick(&mut self, tick_id: TickId) -> Result<()> {
-        if !self.tick_base_properties.contains_key(&tick_id) {
+        if !self.ticks.contains_key(&tick_id) {
             bail!("a tick with an id {} doesn't exist", tick_id);
         }
 
@@ -473,11 +391,18 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_previous_tick(&self) -> Result<Option<TickId>> {
-        Ok(self.strategy_ticks_candles.previous_tick.clone())
+    fn get_previous_tick(&self) -> Result<Option<Tick>> {
+        let tick_id = self.strategy_ticks_candles.previous_tick.as_ref();
+
+        let tick_id = match tick_id {
+            None => return Ok(None),
+            Some(tick_id) => tick_id,
+        };
+
+        self.get_tick_by_id(tick_id)
     }
     fn update_previous_tick(&mut self, tick_id: TickId) -> Result<()> {
-        if !self.tick_base_properties.contains_key(&tick_id) {
+        if !self.ticks.contains_key(&tick_id) {
             bail!("a tick with an id {} doesn't exist", tick_id);
         }
 
@@ -485,11 +410,18 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_current_candle(&self) -> Result<Option<CandleId>> {
-        Ok(self.strategy_ticks_candles.current_candle.clone())
+    fn get_current_candle(&self) -> Result<Option<Candle>> {
+        let candle_id = self.strategy_ticks_candles.current_candle.as_ref();
+
+        let candle_id = match candle_id {
+            None => return Ok(None),
+            Some(candle_id) => candle_id,
+        };
+
+        self.get_candle_by_id(candle_id)
     }
     fn update_current_candle(&mut self, candle_id: CandleId) -> Result<()> {
-        if !self.candle_base_properties.contains_key(&candle_id) {
+        if !self.candles.contains_key(&candle_id) {
             bail!("a candle with an id {} doesn't exist", candle_id);
         }
 
@@ -497,11 +429,18 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_previous_candle(&self) -> Result<Option<CandleId>> {
-        Ok(self.strategy_ticks_candles.previous_candle.clone())
+    fn get_previous_candle(&self) -> Result<Option<Candle>> {
+        let candle_id = self.strategy_ticks_candles.previous_candle.as_ref();
+
+        let candle_id = match candle_id {
+            None => return Ok(None),
+            Some(candle_id) => candle_id,
+        };
+
+        self.get_candle_by_id(candle_id)
     }
     fn update_previous_candle(&mut self, candle_id: CandleId) -> Result<()> {
-        if !self.candle_base_properties.contains_key(&candle_id) {
+        if !self.candles.contains_key(&candle_id) {
             bail!("a candle with an id {} doesn't exist", candle_id);
         }
 
@@ -518,26 +457,24 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_working_level_base_properties_by_id(
-        &self,
-        id: &str,
-    ) -> Result<Option<WorkingLevelBaseProperties>> {
-        Ok(self.working_level_base_properties.get(id).cloned())
-    }
-
-    fn update_working_level_base_properties(
-        &mut self,
-        id: &str,
-        new_base_properties: WorkingLevelBaseProperties,
-    ) -> Result<()> {
-        if !self.working_level_base_properties.contains_key(id) {
-            bail!("a working level with an id {} is not found", id);
+    fn create_working_level(&mut self, id: WLId, base_properties: WorkingLevel) -> Result<()> {
+        if let Some(level) = self.working_levels.get(&id) {
+            bail!(
+                "a working level with an id {} already exists: {:?}",
+                id,
+                level
+            );
         }
 
-        self.working_level_base_properties
-            .insert(id.to_string(), new_base_properties);
+        self.working_levels.insert(id.clone(), base_properties);
+
+        self.created_working_levels.insert(id);
 
         Ok(())
+    }
+
+    fn get_working_level_by_id(&self, id: &str) -> Result<Option<WorkingLevel>> {
+        Ok(self.working_levels.get(id).cloned())
     }
 
     fn move_working_level_to_active(&mut self, id: &str) -> Result<()> {
@@ -565,7 +502,7 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
     }
 
     fn remove_working_level(&mut self, id: &str) -> Result<()> {
-        if self.working_level_base_properties.remove(id).is_none() {
+        if self.working_levels.remove(id).is_none() {
             bail!("a working level with an id {} doesn't exist", id);
         }
 
@@ -589,16 +526,37 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_created_working_levels(&self) -> Result<HashSet<WLId>> {
-        Ok(self.created_working_levels.clone())
+    fn get_created_working_levels(&self) -> Result<Vec<WorkingLevel>> {
+        Ok(self
+            .created_working_levels
+            .iter()
+            .map(|working_level_id| {
+                self.get_working_level_by_id(working_level_id)?
+                    .context(format!("no working level with an id {}", working_level_id))
+            })
+            .collect::<Result<_, _>>()?)
     }
 
-    fn get_active_working_levels(&self) -> Result<HashSet<WLId>> {
-        Ok(self.active_working_levels.clone())
+    fn get_active_working_levels(&self) -> Result<Vec<WorkingLevel>> {
+        Ok(self
+            .active_working_levels
+            .iter()
+            .map(|working_level_id| {
+                self.get_working_level_by_id(working_level_id)?
+                    .context(format!("no working level with an id {}", working_level_id))
+            })
+            .collect::<Result<_, _>>()?)
     }
 
-    fn get_removed_working_levels(&self) -> Result<HashSet<WLId>> {
-        Ok(self.removed_working_levels.clone())
+    fn get_removed_working_levels(&self) -> Result<Vec<WorkingLevel>> {
+        Ok(self
+            .removed_working_levels
+            .iter()
+            .map(|working_level_id| {
+                self.get_working_level_by_id(working_level_id)?
+                    .context(format!("no working level with an id {}", working_level_id))
+            })
+            .collect::<Result<_, _>>()?)
     }
 
     fn add_candle_to_working_level_corridor(
@@ -607,17 +565,14 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         candle_id: CandleId,
         corridor_type: CorridorType,
     ) -> Result<()> {
-        if !self
-            .working_level_base_properties
-            .contains_key(working_level_id)
-        {
+        if !self.working_levels.contains_key(working_level_id) {
             bail!(
                 "a working level with an id {} doesn't exist",
                 working_level_id
             );
         }
 
-        if !self.candle_base_properties.contains_key(&candle_id) {
+        if !self.candles.contains_key(&candle_id) {
             bail!("a candle with an id {} doesn't exist", candle_id);
         }
 
@@ -645,17 +600,24 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         &self,
         working_level_id: &str,
         corridor_type: CorridorType,
-    ) -> Result<Option<HashSet<CandleId>>> {
-        match corridor_type {
-            CorridorType::Small => Ok(self
-                .working_level_small_corridors
-                .get(working_level_id)
-                .cloned()),
-            CorridorType::Big => Ok(self
-                .working_level_big_corridors
-                .get(working_level_id)
-                .cloned()),
-        }
+    ) -> Result<Option<Vec<Candle>>> {
+        let candles = match corridor_type {
+            CorridorType::Small => self.working_level_small_corridors.get(working_level_id),
+            CorridorType::Big => self.working_level_big_corridors.get(working_level_id),
+        };
+
+        let candles = match candles {
+            None => return Ok(None),
+            Some(candles) => candles
+                .iter()
+                .map(|candle_id| {
+                    self.get_candle_by_id(candle_id)?
+                        .context(format!("no candle with an id {}", candle_id))
+                })
+                .collect::<Result<Vec<_>, _>>(),
+        }?;
+
+        Ok(Some(candles))
     }
 
     fn update_max_crossing_value_of_working_level(
@@ -663,10 +625,7 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         working_level_id: &str,
         new_value: WLMaxCrossingValue,
     ) -> Result<()> {
-        if !self
-            .working_level_base_properties
-            .contains_key(working_level_id)
-        {
+        if !self.working_levels.contains_key(working_level_id) {
             bail!(
                 "a working level with an id {} doesn't exist",
                 working_level_id
@@ -689,10 +648,7 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
     }
 
     fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()> {
-        if !self
-            .working_level_base_properties
-            .contains_key(working_level_id)
-        {
+        if !self.working_levels.contains_key(working_level_id) {
             bail!(
                 "a working level with an id {} doesn't exist",
                 working_level_id
@@ -719,12 +675,29 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
             .contains(working_level_id))
     }
 
-    fn get_order_base_prices_by_id(&self, id: &str) -> Result<Option<OrderBasePrices>> {
-        Ok(self.order_base_prices.get(id).cloned())
+    fn create_order(
+        &mut self,
+        id: OrderId,
+        prices: OrderPrices,
+        properties: OrderProperties,
+    ) -> Result<()> {
+        if self.orders.contains_key(&id) {
+            bail!("an order with an id {} already exists", id);
+        }
+
+        let new_order = Order {
+            id: id.clone(),
+            prices,
+            properties,
+        };
+
+        self.orders.insert(id, new_order);
+
+        Ok(())
     }
 
-    fn get_order_base_properties_by_id(&self, id: &str) -> Result<Option<OrderBaseProperties>> {
-        Ok(self.order_base_properties.get(id).cloned())
+    fn get_order_by_id(&self, id: &str) -> Result<Option<Order>> {
+        Ok(self.orders.get(id).cloned())
     }
 
     fn add_order_to_working_level_chain_of_orders(
@@ -732,17 +705,14 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
         working_level_id: &str,
         order_id: OrderId,
     ) -> Result<()> {
-        if !self
-            .working_level_base_properties
-            .contains_key(working_level_id)
-        {
+        if !self.working_levels.contains_key(working_level_id) {
             bail!(
                 "a working level with an id {} doesn't exist",
                 working_level_id
             );
         }
 
-        if !self.order_base_properties.contains_key(&order_id) {
+        if !self.orders.contains_key(&order_id) {
             bail!("an order with an id {} doesn't exist", order_id);
         }
 
@@ -762,10 +732,20 @@ impl StepBaseStore for InMemoryStepBacktestingStore {
     fn get_working_level_chain_of_orders(
         &self,
         working_level_id: &str,
-    ) -> Result<Option<HashSet<OrderId>>> {
-        Ok(self
-            .working_level_chain_of_orders
-            .get(working_level_id)
-            .cloned())
+    ) -> Result<Option<Vec<Order>>> {
+        let orders = self.working_level_chain_of_orders.get(working_level_id);
+
+        let orders = match orders {
+            None => return Ok(None),
+            Some(orders) => orders
+                .iter()
+                .map(|order_id| {
+                    self.get_order_by_id(order_id)?
+                        .context(format!("no order with an id {}", order_id))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        };
+
+        Ok(Some(orders))
     }
 }

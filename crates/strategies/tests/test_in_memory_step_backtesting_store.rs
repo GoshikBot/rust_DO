@@ -1,11 +1,12 @@
+use std::collections::HashSet;
+
 use base::entities::candle::CandleId;
 use base::entities::tick::TickId;
-use base::entities::{CandleBaseProperties, Level, OrderType, TickBaseProperties};
-use std::collections::HashSet;
-use strategies::step::utils::entities::angles::{AngleBaseProperties, AngleId};
-use strategies::step::utils::entities::working_levels::{CorridorType, WorkingLevelBaseProperties};
-use strategies::step::utils::stores::base::{StepBacktestingStore, StepBaseStore};
+use base::entities::Level;
+use strategies::step::utils::entities::angle::AngleId;
+use strategies::step::utils::entities::working_levels::CorridorType;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
+use strategies::step::utils::stores::step_backtesting_store::StepBacktestingStore;
 
 #[test]
 fn should_remove_only_unused_items() {
@@ -41,13 +42,7 @@ fn should_remove_only_unused_items() {
 
     for i in 1..=10 {
         assert!(store
-            .create_angle(
-                i.to_string(),
-                AngleBaseProperties {
-                    candle_id: i.to_string(),
-                    r#type: Level::Min,
-                },
-            )
+            .create_angle(i.to_string(), i.to_string(), Level::Min,)
             .is_ok());
     }
 
@@ -107,11 +102,11 @@ fn should_return_error_on_creating_angle_with_existing_id() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
     assert!(store
-        .create_angle(String::from("1"), Default::default())
+        .create_angle(String::from("1"), String::from("1"), Level::Min)
         .is_ok());
 
     assert!(store
-        .create_angle(String::from("1"), Default::default())
+        .create_angle(String::from("1"), String::from("1"), Level::Min)
         .is_err());
 }
 
@@ -229,9 +224,23 @@ fn should_successfully_remove_working_level() {
 
     assert!(store.remove_working_level("1").is_ok());
 
-    assert!(!store.get_created_working_levels().unwrap().contains("1"));
-    assert!(!store.get_active_working_levels().unwrap().contains("1"));
-    assert!(!store.get_removed_working_levels().unwrap().contains("1"));
+    assert!(!store
+        .get_created_working_levels()
+        .unwrap()
+        .iter()
+        .any(|level| level.id == "1"));
+
+    assert!(!store
+        .get_active_working_levels()
+        .unwrap()
+        .iter()
+        .any(|level| level.id == "1"));
+
+    assert!(!store
+        .get_removed_working_levels()
+        .unwrap()
+        .iter()
+        .any(|level| level.id == "1"));
 
     assert!(store
         .get_candles_of_working_level_corridor("1", CorridorType::Small)
@@ -283,13 +292,15 @@ fn should_successfully_add_candle_to_working_level_corridor() {
         .get_candles_of_working_level_corridor("1", CorridorType::Small)
         .unwrap()
         .unwrap()
-        .contains("1"));
+        .iter()
+        .any(|candle| candle.id == "1"));
 
     assert!(store
         .get_candles_of_working_level_corridor("1", CorridorType::Big)
         .unwrap()
         .unwrap()
-        .contains("2"));
+        .iter()
+        .any(|candle| candle.id == "2"));
 }
 
 #[test]
@@ -332,7 +343,8 @@ fn should_successfully_add_order_to_working_level_chain_of_orders() {
         .get_working_level_chain_of_orders("1")
         .unwrap()
         .unwrap()
-        .contains("1"));
+        .iter()
+        .any(|order| order.id == "1"));
 }
 
 #[test]
@@ -360,16 +372,6 @@ fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is
 #[test]
 fn should_return_error_when_inserting_nonexistent_entity() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
-
-    assert!(store
-        .update_candle_base_properties("1", Default::default())
-        .is_err());
-    assert!(store
-        .update_working_level_base_properties("1", Default::default())
-        .is_err());
-    assert!(store
-        .update_angle_base_properties("1", Default::default())
-        .is_err());
 
     assert!(store
         .update_angle_of_second_level_after_bargaining_tendency_change(String::from("1"))

@@ -1,19 +1,21 @@
-use base::entities::{candle::CandleId, order::OrderId, OrderType};
+use crate::step::utils::entities::order::OrderType;
 use chrono::{NaiveDateTime, Utc};
 
 pub type WLId = String;
 pub type WLPrice = f32;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct WorkingLevelBaseProperties {
+pub struct WorkingLevel {
+    pub id: WLId,
     pub price: WLPrice,
     pub r#type: OrderType,
     pub time: NaiveDateTime,
 }
 
-impl Default for WorkingLevelBaseProperties {
+impl Default for WorkingLevel {
     fn default() -> Self {
         Self {
+            id: String::from("1"),
             price: 1.38,
             r#type: OrderType::Buy,
             time: Utc::now().naive_utc(),
