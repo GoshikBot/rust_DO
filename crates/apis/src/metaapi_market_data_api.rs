@@ -16,10 +16,7 @@ use base::helpers::{mean, price_to_points};
 
 use crate::api::MarketDataApi;
 use crate::entities::HistoricalTimeframe;
-use crate::helpers::{
-    from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime,
-    get_amount_of_weekends_between_two_dates,
-};
+use crate::helpers::{from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime};
 
 pub const HOURS_IN_DAY: u8 = 24;
 pub const DAYS_FOR_VOLATILITY: u8 = 7;
