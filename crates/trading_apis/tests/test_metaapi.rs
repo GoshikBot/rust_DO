@@ -1,8 +1,8 @@
 use chrono::{DateTime, Duration, Timelike};
 use log::Level;
-use metaapi::entities::HistoricalTimeframe;
-use metaapi::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 use std::time::Instant;
+use trading_apis::entities::HistoricalTimeframe;
+use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 
 #[test]
 #[ignore]

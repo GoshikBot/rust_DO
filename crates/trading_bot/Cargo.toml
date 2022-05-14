@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 polars = {version = "0.20.0", features = ["docs-selection"]}
+strategy_runners = {path = "../strategy_runners"}
