@@ -1,7 +1,8 @@
+use base::requests::ureq::Ureq;
 use chrono::{DateTime, Duration, Timelike};
 use log::Level;
 use std::time::Instant;
-use trading_apis::entities::HistoricalTimeframe;
+use trading_apis::metaapi_market_data_api::{Timeframe, DAYS_FOR_VOLATILITY};
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 
 #[test]
@@ -14,7 +15,7 @@ fn should_successfully_get_current_tick() {
 
     let symbol = "GBPUSDm";
 
-    let metaapi = MetaapiMarketDataApi::new(
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
         String::from("test"),
@@ -38,7 +39,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
 
     testing_logger::setup();
 
-    let metaapi = MetaapiMarketDataApi::new(
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
         String::from("test"),
@@ -64,7 +65,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
         let number_of_error_logs = captures_logs
             .iter()
             .filter(|log| matches!(log.level, Level::Error))
-            .count() as u8;
+            .count() as u32;
         let expected_number_of_logs = number_of_request_retries + 1;
 
         assert_eq!(number_of_error_logs, expected_number_of_logs);
@@ -80,9 +81,9 @@ fn should_successfully_get_current_candle() {
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
     let symbol = "GBPUSDm";
-    let timeframe = "1h";
+    let timeframe = Timeframe::Hour;
 
-    let metaapi = MetaapiMarketDataApi::new(
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
         String::from("test"),
@@ -101,13 +102,13 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
     let account_id = String::from("invalid");
 
     let symbol = "GBPUSDm";
-    let timeframe = "1h";
+    let timeframe = Timeframe::Hour;
     let number_of_request_retries = 3;
     let seconds_to_sleep_before_request_retry = 1;
 
     testing_logger::setup();
 
-    let metaapi = MetaapiMarketDataApi::new(
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
         String::from("test"),
@@ -133,7 +134,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
         let number_of_error_logs = captures_logs
             .iter()
             .filter(|log| matches!(log.level, Level::Error))
-            .count() as u8;
+            .count() as u32;
         let expected_number_of_logs = number_of_request_retries + 1;
 
         assert_eq!(number_of_error_logs, expected_number_of_logs);
@@ -142,16 +143,16 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
 
 #[test]
 #[ignore]
-fn should_successfully_get_historical_candles() {
+fn should_successfully_get_hourly_historical_candles() {
     dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
     let symbol = "GBPUSDm";
-    let timeframe = HistoricalTimeframe::Hour;
+    let timeframe = Timeframe::Hour;
 
-    let metaapi = MetaapiMarketDataApi::new(
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
         String::from("test"),
@@ -170,25 +171,151 @@ fn should_successfully_get_historical_candles() {
 
     let candles = candles.unwrap();
 
-    let diff_between_first_and_last_candles =
-        candles.last().unwrap().properties.time - candles.first().unwrap().properties.time;
-    assert!(diff_between_first_and_last_candles >= duration);
+    assert_eq!(
+        candles.iter().filter(|candle| candle.is_some()).count() as i64,
+        duration.num_hours() - Duration::days(DAYS_FOR_VOLATILITY as i64).num_hours() + 1
+    );
 
-    // checks that there are no skipped candles
-    let mut current_hour = candles.first().unwrap().properties.time.hour();
-    let mut expected_hour = match current_hour {
-        23 => 0,
-        _ => current_hour + 1,
-    };
+    // test for proper amount of nones between adjacent candles
+    let mut number_of_nones_in_row = 0;
+    let mut previous_candle = candles.first().unwrap().as_ref().unwrap();
+    for candle in &candles[1..] {
+        match candle {
+            Some(candle) => {
+                let number_of_hours_between_adjacent_candles =
+                    (candle.properties.time - previous_candle.properties.time).num_hours();
 
-    for candle in (&candles[1..]).iter() {
-        current_hour = candle.properties.time.hour();
+                assert_eq!(
+                    number_of_nones_in_row,
+                    number_of_hours_between_adjacent_candles - 1,
+                    "the number of nons in the row ({}) should be equal to the number of hours between adjacent candles ({})",
+                    number_of_nones_in_row,
+                    number_of_hours_between_adjacent_candles - 1
+                );
 
-        assert_eq!(current_hour, expected_hour);
+                number_of_nones_in_row = 0;
+                previous_candle = candle;
+            }
+            None => number_of_nones_in_row += 1,
+        }
+    }
+}
 
-        expected_hour = match current_hour {
-            23 => 0,
-            _ => current_hour + 1,
+#[test]
+#[ignore]
+fn should_successfully_get_minute_historical_candles() {
+    dotenv::dotenv().unwrap();
+
+    let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
+    let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
+
+    let symbol = "GBPUSDm";
+    let timeframe = Timeframe::OneMin;
+
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
+        auth_token,
+        account_id,
+        String::from("test"),
+        Default::default(),
+    );
+
+    let end_time = DateTime::from(
+        DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
+    );
+
+    let duration = Duration::weeks(4);
+
+    let candles = metaapi.get_historical_candles(symbol, timeframe, end_time, duration);
+
+    assert!(candles.is_ok());
+
+    let candles = candles.unwrap();
+
+    assert_eq!(
+        candles.iter().filter(|candle| candle.is_some()).count() as i64,
+        duration.num_minutes() - Duration::days(DAYS_FOR_VOLATILITY as i64).num_minutes() + 1
+    );
+
+    // test for proper amount of nones between adjacent candles
+    let mut number_of_nones_in_row = 0;
+    let mut previous_candle = candles.first().unwrap().as_ref().unwrap();
+    for candle in &candles[1..] {
+        match candle {
+            Some(candle) => {
+                let number_of_minutes_between_adjacent_candles =
+                    (candle.properties.time - previous_candle.properties.time).num_minutes();
+
+                assert_eq!(
+                    number_of_nones_in_row,
+                    number_of_minutes_between_adjacent_candles - 1,
+                    "the number of nones in the row ({}) should be equal to the number of hours between adjacent candles ({})",
+                    number_of_nones_in_row,
+                    number_of_minutes_between_adjacent_candles - 1
+                );
+
+                number_of_nones_in_row = 0;
+                previous_candle = candle;
+            }
+            None => number_of_nones_in_row += 1,
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn should_successfully_get_historical_ticks() {
+    dotenv::dotenv().unwrap();
+
+    let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
+    let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
+
+    let symbol = "GBPUSDm";
+
+    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
+        auth_token,
+        account_id,
+        String::from("test"),
+        Default::default(),
+    );
+
+    let end_time = DateTime::from(
+        DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
+    );
+
+    let duration = Duration::weeks(4);
+
+    let ticks = metaapi.get_historical_ticks(symbol, end_time, duration);
+
+    assert!(ticks.is_ok());
+
+    let ticks = ticks.unwrap();
+
+    assert_eq!(
+        ticks.iter().filter(|tick| tick.is_some()).count() as i64,
+        duration.num_minutes() - Duration::days(DAYS_FOR_VOLATILITY as i64).num_minutes() + 1
+    );
+
+    // test for proper amount of nones between adjacent candles
+    let mut number_of_nones_in_row = 0;
+    let mut previous_tick = ticks.first().unwrap().as_ref().unwrap();
+    for tick in &ticks[1..] {
+        match tick {
+            Some(tick) => {
+                let number_of_minutes_between_adjacent_candles =
+                    (tick.time - previous_tick.time).num_minutes();
+
+                assert_eq!(
+                    number_of_nones_in_row,
+                    number_of_minutes_between_adjacent_candles - 1,
+                    "the number of nones in the row ({}) should be equal to the number of hours between adjacent ticks ({})",
+                    number_of_nones_in_row,
+                    number_of_minutes_between_adjacent_candles - 1
+                );
+
+                number_of_nones_in_row = 0;
+                previous_tick = tick;
+            }
+            None => number_of_nones_in_row += 1,
         }
     }
 }

@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use base::entities::{
-    candle::CandleId, tick::TickId, CandleBaseProperties, CandleEdgePrices, Level,
-    TickBaseProperties,
+    candle::CandleId, tick::TickId, BasicTick, CandleBaseProperties, CandleEdgePrices, Level,
 };
 
 use crate::step::utils::entities::candle::Candle;
@@ -49,7 +48,7 @@ pub trait StepBacktestingStore {
     fn get_max_angle_before_bargaining_corridor(&self) -> Result<Option<Angle>>;
     fn update_max_angle_before_bargaining_corridor(&mut self, new_angle: AngleId) -> Result<()>;
 
-    fn create_tick(&mut self, id: TickId, tick_base_properties: TickBaseProperties) -> Result<()>;
+    fn create_tick(&mut self, id: TickId, tick_base_properties: BasicTick) -> Result<()>;
     fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Tick>>;
     fn get_all_ticks(&self) -> Result<HashSet<TickId>>;
 

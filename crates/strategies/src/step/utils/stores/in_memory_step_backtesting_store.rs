@@ -4,8 +4,7 @@ use anyhow::{bail, Context, Result};
 
 use base::entities::candle::BasicCandle;
 use base::entities::{
-    candle::CandleId, tick::TickId, CandleBaseProperties, CandleEdgePrices, Level,
-    TickBaseProperties,
+    candle::CandleId, tick::TickId, BasicTick, CandleBaseProperties, CandleEdgePrices, Level,
 };
 
 use crate::step::utils::entities::candle::Candle;
@@ -317,7 +316,7 @@ impl StepBacktestingStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn create_tick(&mut self, id: TickId, tick_base_properties: TickBaseProperties) -> Result<()> {
+    fn create_tick(&mut self, id: TickId, tick_base_properties: BasicTick) -> Result<()> {
         if let Some(tick) = self.ticks.get(&id) {
             bail!("a tick with an id {} already exists: {:?}", id, tick);
         }

@@ -2,7 +2,7 @@ pub mod candle;
 pub mod tick;
 
 pub use candle::{CandleBaseProperties, CandleEdgePrices, CandleType};
-pub use tick::TickBaseProperties;
+pub use tick::BasicTick;
 
 pub const LOT: i32 = 100_000;
 

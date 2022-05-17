@@ -1,5 +1,4 @@
 pub mod api;
-pub mod entities;
 pub mod helpers;
 pub mod metaapi_market_data_api;
 

@@ -1,28 +1,31 @@
-use std::collections::{LinkedList, VecDeque};
-use std::{thread, time};
+use std::collections::VecDeque;
+use std::fmt::{Display, Formatter};
+use std::marker::PhantomData;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use log::{error, info};
 use polars::prelude::RollingOptions;
 use polars::series::Series;
 use serde::Deserialize;
-use ureq::{Request, Response};
 
 use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleOpenClose, CandleVolatility};
 use base::entities::tick::TickPrice;
-use base::entities::{CandleBaseProperties, CandleEdgePrices, CandleType, TickBaseProperties};
+use base::entities::{BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType};
 use base::helpers::{mean, price_to_points};
+use base::requests::api::HttpRequest;
+use base::requests::entities::{
+    Headers, HttpRequestData, HttpRequestType, HttpRequestWithRetriesParams, Queries,
+};
+use base::requests::http_request_with_retries;
 
 use crate::api::MarketDataApi;
-use crate::entities::HistoricalTimeframe;
 use crate::helpers::{from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime};
 
 pub const HOURS_IN_DAY: u8 = 24;
 pub const DAYS_FOR_VOLATILITY: u8 = 7;
 
-pub type NumberOfRequestRetries = u8;
-pub type SecondsToSleepBeforeRequestRetry = u8;
+pub type NumberOfRequestRetries = u32;
+pub type SecondsToSleepBeforeRequestRetry = u32;
 
 pub const DEFAULT_NUMBER_OF_REQUEST_RETRIES: NumberOfRequestRetries = 5;
 pub const DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY:
@@ -31,6 +34,27 @@ pub const DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY:
 const MAX_NUMBER_OF_CANDLES_PER_REQUEST: u64 = 1000;
 
 type MetatraderTime = String;
+
+const TICK_TIMEFRAME: Timeframe = Timeframe::OneMin;
+
+#[derive(Copy, Clone)]
+pub enum Timeframe {
+    Hour,
+    ThirtyMin,
+    FifteenMin,
+    OneMin,
+}
+
+impl Display for Timeframe {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Timeframe::Hour => write!(f, "1h"),
+            Timeframe::ThirtyMin => write!(f, "30m"),
+            Timeframe::FifteenMin => write!(f, "15m"),
+            Timeframe::OneMin => write!(f, "1m"),
+        }
+    }
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +84,6 @@ pub type AuthToken = String;
 pub type AccountId = String;
 pub type Symbol = String;
 pub type ApiUrl = String;
-pub type Timeframe = String;
 pub type LoggerTarget = String;
 
 struct ApiUrls {
@@ -80,28 +103,32 @@ impl Default for RetrySettings {
 
 enum TuneCandleConfig<'a> {
     WithVolatility(CandleVolatility),
-    WithoutVolatility { symbol: &'a str, timeframe: &'a str },
+    WithoutVolatility {
+        symbol: &'a str,
+        timeframe: Timeframe,
+    },
 }
 
-pub struct MetaapiMarketDataApi {
+pub struct MetaapiMarketDataApi<R: HttpRequest> {
     auth_token: AuthToken,
     account_id: AccountId,
     api_urls: ApiUrls,
     target_logger: LoggerTarget,
     retry_settings: RetrySettings,
+    request_api: PhantomData<R>,
 }
 
-impl MetaapiMarketDataApi {
+impl<R: HttpRequest> MetaapiMarketDataApi<R> {
     pub fn new(
         auth_token: AuthToken,
         account_id: AccountId,
         logger_target: LoggerTarget,
         retry_settings: RetrySettings,
-    ) -> MetaapiMarketDataApi {
+    ) -> MetaapiMarketDataApi<R> {
         let main_url = dotenv::var("MAIN_API_URL").unwrap();
         let market_data_url = dotenv::var("MARKET_DATA_API_URL").unwrap();
 
-        MetaapiMarketDataApi {
+        Self {
             auth_token,
             account_id,
             api_urls: ApiUrls {
@@ -110,49 +137,15 @@ impl MetaapiMarketDataApi {
             },
             target_logger: logger_target,
             retry_settings,
+            request_api: PhantomData,
         }
     }
 
-    fn request_with_retries(
+    fn get_current_volatility(
         &self,
-        request: Request,
-        request_entity_name: &str,
-    ) -> Result<Response> {
-        let mut current_request_try = 1;
-
-        loop {
-            let response = request.clone().call();
-
-            match response {
-                Ok(item) => {
-                    break Ok(item);
-                }
-                Err(err) => {
-                    error!(
-                        target: &self.target_logger,
-                        "an error occurred on a {} try to request {}: {:?}",
-                        current_request_try, request_entity_name, err
-                    );
-
-                    if current_request_try <= self.retry_settings.number_of_request_retries {
-                        thread::sleep(time::Duration::from_secs(
-                            self.retry_settings.seconds_to_sleep_before_request_retry as u64,
-                        ));
-
-                        current_request_try += 1;
-                        continue;
-                    } else {
-                        return Err(err).context(format!(
-                            "an error occurred on requesting {}",
-                            request_entity_name
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    fn get_current_volatility(&self, symbol: &str, timeframe: &str) -> Result<CandleVolatility> {
+        symbol: &str,
+        timeframe: Timeframe,
+    ) -> Result<CandleVolatility> {
         let number_of_candles_to_determine_volatility = DAYS_FOR_VOLATILITY * HOURS_IN_DAY;
 
         let get_last_n_candles_url = format!(
@@ -160,33 +153,27 @@ impl MetaapiMarketDataApi {
             self.api_urls.market_data, self.account_id, symbol, timeframe
         );
 
-        let request = ureq::get(&get_last_n_candles_url)
-            .set("auth-token", &self.auth_token)
-            .query(
-                "limit",
-                &number_of_candles_to_determine_volatility.to_string(),
-            );
+        let limit = number_of_candles_to_determine_volatility.to_string();
 
-        assert!(
-            format!("{:?}", request).contains(&format!(
-                "limit={}",
-                number_of_candles_to_determine_volatility
-            )),
-            "amount of candles to determine volatility is wrong"
-        );
+        let req_data = HttpRequestData {
+            req_type: HttpRequestType::Get,
+            url: &get_last_n_candles_url,
+            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            queries: Queries::from([("limit", limit.as_str())]),
+        };
 
-        let response = self.request_with_retries(
-            request,
-            &format!(
+        let req_params = HttpRequestWithRetriesParams {
+            req_entity_name: &format!(
                 "the last {} candles",
                 number_of_candles_to_determine_volatility
             ),
-        )?;
+            target_logger: &self.target_logger,
+            number_of_retries: self.retry_settings.number_of_request_retries,
+            seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
+        };
 
-        let last_n_candles: Vec<MetatraderCandleJson> = response.into_json().context(format!(
-            "an error occurred on parsing the last {} candles response to the inner struct",
-            number_of_candles_to_determine_volatility
-        ))?;
+        let last_n_candles =
+            http_request_with_retries::<R, Vec<MetatraderCandleJson>>(req_data, req_params)?;
 
         let sizes_of_candles: Vec<f32> = last_n_candles
             .iter()
@@ -236,96 +223,14 @@ impl MetaapiMarketDataApi {
             edge_prices: candle_edge_prices,
         })
     }
-}
 
-impl MarketDataApi for MetaapiMarketDataApi {
-    fn get_current_tick(&self, symbol: &str) -> Result<TickBaseProperties> {
-        let url = format!(
-            "{}/users/current/accounts/{}/symbols/{}/current-price",
-            self.api_urls.main, self.account_id, symbol
-        );
-
-        let request = ureq::get(&url)
-            .set("auth-token", &self.auth_token)
-            .query("keepSubscription", "true");
-
-        let response = self
-            .request_with_retries(request, "the current tick")
-            .context(format!(
-                "wasn't able to get the current tick after {} retries",
-                self.retry_settings.number_of_request_retries
-            ))?;
-
-        let tick_json: MetatraderTickJson = response
-            .into_json()
-            .context("an error occurred on parsing the current tick response to an inner struct")?;
-
-        let time = from_naive_str_to_naive_datetime(&tick_json.broker_time)?;
-
-        let tick = TickBaseProperties {
-            time,
-            ask: tick_json.ask,
-            bid: tick_json.bid,
-        };
-
-        Ok(tick)
-    }
-
-    fn get_current_candle(&self, symbol: &str, timeframe: &str) -> Result<BasicCandle> {
-        let get_current_candle_url = format!(
-            "{}/users/current/accounts/{}/symbols/{}/current-candles/{}",
-            self.api_urls.main, self.account_id, symbol, timeframe
-        );
-
-        let request = ureq::get(&get_current_candle_url)
-            .set("auth-token", &self.auth_token)
-            .query("keepSubscription", "true");
-
-        let response = self
-            .request_with_retries(request, "the current candle")
-            .context(format!(
-                "wasn't able to get the current candle after {} retries",
-                self.retry_settings.number_of_request_retries
-            ))?;
-
-        let candle_json: MetatraderCandleJson = response.into_json().context(
-            "an error occurred on parsing the current candle response to the inner struct",
-        )?;
-
-        self.tune_candle(
-            &candle_json,
-            TuneCandleConfig::WithoutVolatility { symbol, timeframe },
-        )
-    }
-
-    fn get_historical_candles(
+    fn get_blocks_of_historical_candles(
         &self,
         symbol: &str,
-        timeframe: HistoricalTimeframe,
+        timeframe: Timeframe,
+        mut total_amount_of_candles: u64,
         mut end_time: DateTime<Utc>,
-        duration: Duration,
-    ) -> Result<Vec<BasicCandle>> {
-        let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
-
-        let (mut total_amount_of_candles, volatility_window) = match timeframe {
-            HistoricalTimeframe::Hour => (
-                duration.num_hours() as u64,
-                days_for_volatility.num_hours() as usize,
-            ),
-            HistoricalTimeframe::ThirtyMin => (
-                (duration.num_hours() * 2) as u64,
-                (days_for_volatility.num_hours() * 2) as usize,
-            ),
-            HistoricalTimeframe::FifteenMin => (
-                (duration.num_hours() * 4) as u64,
-                (days_for_volatility.num_hours() * 4) as usize,
-            ),
-            HistoricalTimeframe::OneMin => (
-                duration.num_minutes() as u64,
-                days_for_volatility.num_minutes() as usize,
-            ),
-        };
-
+    ) -> Result<VecDeque<MetatraderCandleJson>> {
         let get_last_n_candles_url = format!(
             "{}/users/current/accounts/{}/historical-market-data/symbols/{}/timeframes/{}/candles",
             self.api_urls.market_data, self.account_id, symbol, timeframe
@@ -340,21 +245,30 @@ impl MarketDataApi for MetaapiMarketDataApi {
                 total_amount_of_candles
             };
 
-            let request = ureq::get(&get_last_n_candles_url)
-                .set("auth-token", &self.auth_token)
-                .query("startTime", &end_time.to_rfc3339())
-                .query("limit", &limit.to_string());
+            let start_time = end_time.to_rfc3339();
+            let limit_str = limit.to_string();
 
-            let response = self
-                .request_with_retries(request, &format!("the block of {} candles", limit))
-                .context(format!(
-                    "wasn't able to get historical candles after {} retries",
-                    self.retry_settings.number_of_request_retries
-                ))?;
+            let req_data = HttpRequestData {
+                req_type: HttpRequestType::Get,
+                url: &get_last_n_candles_url,
+                headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+                queries: Queries::from([
+                    ("startTime", start_time.as_str()),
+                    ("limit", limit_str.as_str()),
+                ]),
+            };
 
-            let mut block_of_candles: VecDeque<MetatraderCandleJson> = response.into_json().context(
-                "an error occurred on parsing the block of historical candles response to the inner struct",
-            )?;
+            let req_params = HttpRequestWithRetriesParams {
+                req_entity_name: &format!("the block of {} candles", limit),
+                target_logger: &self.target_logger,
+                number_of_retries: self.retry_settings.number_of_request_retries,
+                seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
+            };
+
+            let mut block_of_candles = http_request_with_retries::<
+                R,
+                VecDeque<MetatraderCandleJson>,
+            >(req_data, req_params)?;
 
             block_of_candles.append(&mut all_candles);
             all_candles = block_of_candles;
@@ -370,6 +284,172 @@ impl MarketDataApi for MetaapiMarketDataApi {
                     from_iso_utc_str_to_utc_datetime(&all_candles.pop_front().unwrap().time)?;
             }
         }
+
+        Ok(all_candles)
+    }
+
+    fn get_items_with_filled_gaps<T, F>(
+        items: Vec<T>,
+        timeframe: Timeframe,
+        get_time_of_item: F,
+    ) -> Result<Vec<Option<T>>>
+    where
+        F: Fn(&T) -> NaiveDateTime,
+    {
+        match items.len() {
+            0 => return Ok(Vec::new()),
+            1 => return Ok(items.into_iter().map(|tick| Some(tick)).collect()),
+            _ => (),
+        }
+
+        let number_of_minutes_between_adjacent_items = match timeframe {
+            Timeframe::Hour => 60,
+            Timeframe::ThirtyMin => 30,
+            Timeframe::FifteenMin => 15,
+            Timeframe::OneMin => 1,
+        };
+
+        let mut all_items_with_filled_gaps: Vec<Option<T>> = Vec::new();
+        let mut previous_item_time =
+            get_time_of_item(items.first().context("no first tick in vector")?);
+
+        for (i, item) in items.into_iter().enumerate() {
+            let current_item_time = get_time_of_item(&item);
+
+            if i == 0 {
+                all_items_with_filled_gaps.push(Some(item));
+            } else {
+                let diff_in_minutes_between_current_and_previous_items =
+                    (current_item_time - previous_item_time).num_minutes();
+
+                match diff_in_minutes_between_current_and_previous_items {
+                    n if n == number_of_minutes_between_adjacent_items => {
+                        all_items_with_filled_gaps.push(Some(item))
+                    }
+                    n if n > number_of_minutes_between_adjacent_items
+                        && n % number_of_minutes_between_adjacent_items == 0 =>
+                    {
+                        let number_of_nones_to_add = n / number_of_minutes_between_adjacent_items - 1;
+
+                        for _ in 0..number_of_nones_to_add {
+                            all_items_with_filled_gaps.push(None);
+                        }
+
+                        all_items_with_filled_gaps.push(Some(item));
+                    }
+                    n => bail!(
+                        "invalid difference in minutes between current ({}) and previous ({}) items: {}",
+                        current_item_time,
+                        previous_item_time,
+                        n
+                    ),
+                }
+            }
+
+            previous_item_time = current_item_time;
+        }
+
+        Ok(all_items_with_filled_gaps)
+    }
+}
+
+impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
+    fn get_current_tick(&self, symbol: &str) -> Result<BasicTick> {
+        let get_current_tick_url = format!(
+            "{}/users/current/accounts/{}/symbols/{}/current-price",
+            self.api_urls.main, self.account_id, symbol
+        );
+
+        let req_data = HttpRequestData {
+            req_type: HttpRequestType::Get,
+            url: &get_current_tick_url,
+            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            queries: Queries::from([("keepSubscription", "true")]),
+        };
+
+        let req_params = HttpRequestWithRetriesParams {
+            req_entity_name: "the current tick",
+            target_logger: &self.target_logger,
+            number_of_retries: self.retry_settings.number_of_request_retries,
+            seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
+        };
+
+        let tick_json = http_request_with_retries::<R, MetatraderTickJson>(req_data, req_params)?;
+
+        let time = from_naive_str_to_naive_datetime(&tick_json.broker_time)?;
+
+        let tick = BasicTick {
+            time,
+            ask: tick_json.ask,
+            bid: tick_json.bid,
+        };
+
+        Ok(tick)
+    }
+
+    fn get_current_candle(&self, symbol: &str, timeframe: Timeframe) -> Result<BasicCandle> {
+        let get_current_candle_url = format!(
+            "{}/users/current/accounts/{}/symbols/{}/current-candles/{}",
+            self.api_urls.main, self.account_id, symbol, timeframe
+        );
+
+        let req_data = HttpRequestData {
+            req_type: HttpRequestType::Get,
+            url: &get_current_candle_url,
+            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            queries: Queries::from([("keepSubscription", "true")]),
+        };
+
+        let req_params = HttpRequestWithRetriesParams {
+            req_entity_name: "the current candle",
+            target_logger: &self.target_logger,
+            number_of_retries: self.retry_settings.number_of_request_retries,
+            seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
+        };
+
+        let candle_json =
+            http_request_with_retries::<R, MetatraderCandleJson>(req_data, req_params)?;
+
+        self.tune_candle(
+            &candle_json,
+            TuneCandleConfig::WithoutVolatility { symbol, timeframe },
+        )
+    }
+
+    fn get_historical_candles(
+        &self,
+        symbol: &str,
+        timeframe: Timeframe,
+        end_time: DateTime<Utc>,
+        duration: Duration,
+    ) -> Result<Vec<Option<BasicCandle>>> {
+        let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
+
+        let (total_amount_of_candles, volatility_window) = match timeframe {
+            Timeframe::Hour => (
+                duration.num_hours() as u64,
+                days_for_volatility.num_hours() as usize,
+            ),
+            Timeframe::ThirtyMin => (
+                (duration.num_hours() * 2) as u64,
+                (days_for_volatility.num_hours() * 2) as usize,
+            ),
+            Timeframe::FifteenMin => (
+                (duration.num_hours() * 4) as u64,
+                (days_for_volatility.num_hours() * 4) as usize,
+            ),
+            Timeframe::OneMin => (
+                duration.num_minutes() as u64,
+                days_for_volatility.num_minutes() as usize,
+            ),
+        };
+
+        let all_candles = self.get_blocks_of_historical_candles(
+            symbol,
+            timeframe,
+            total_amount_of_candles,
+            end_time,
+        )?;
 
         let all_candle_sizes: Series = all_candles
             .iter()
@@ -389,7 +469,7 @@ impl MarketDataApi for MetaapiMarketDataApi {
             .f32()
             .context("error on casting rolling volatilities to f32 ChunkedArray")?;
 
-        all_candles
+        let all_candles = all_candles
             .iter()
             .zip(all_candle_volatilities.into_iter())
             .filter(|(_, volatility)| volatility.is_some())
@@ -399,6 +479,38 @@ impl MarketDataApi for MetaapiMarketDataApi {
                     TuneCandleConfig::WithVolatility(volatility.unwrap()),
                 )
             })
-            .collect::<Result<Vec<_>, _>>()
+            .collect::<Result<Vec<_>>>()?;
+
+        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.properties.time)
+    }
+
+    fn get_historical_ticks(
+        &self,
+        symbol: &str,
+        end_time: DateTime<Utc>,
+        duration: Duration,
+    ) -> Result<Vec<Option<BasicTick>>> {
+        let volatility_window = Duration::days(DAYS_FOR_VOLATILITY as i64).num_minutes();
+        let total_amount_of_candles = (duration.num_minutes() - volatility_window + 1) as u64;
+
+        let all_candles = self.get_blocks_of_historical_candles(
+            symbol,
+            TICK_TIMEFRAME,
+            total_amount_of_candles,
+            end_time,
+        )?;
+
+        let all_ticks = all_candles
+            .iter()
+            .map(|candle| {
+                Ok(BasicTick {
+                    time: from_naive_str_to_naive_datetime(&candle.broker_time)?,
+                    ask: candle.close,
+                    bid: candle.close,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Self::get_items_with_filled_gaps(all_ticks, Timeframe::OneMin, |tick| tick.time)
     }
 }

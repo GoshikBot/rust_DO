@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 plotly = "0.7.0"
-trading_apis = {path = "../trading_apis" }
+trading_apis = { path = "../trading_apis" }
 chrono = "0.4.19"
 dotenv = "0.15.0"
+base = { path = "../base" }

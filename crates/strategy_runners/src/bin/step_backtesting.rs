@@ -1,7 +1,8 @@
+use base::entities::candle::BasicCandle;
 use chrono::{DateTime, Duration};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
-use trading_apis::entities::HistoricalTimeframe;
+use trading_apis::metaapi_market_data_api::Timeframe;
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi};
 
 fn main() {
@@ -11,7 +12,8 @@ fn main() {
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
     let symbol = "GBPUSDm";
-    let timeframe = HistoricalTimeframe::Hour;
+    let candle_timeframe = Timeframe::Hour;
+    let tick_timeframe = Timeframe::OneMin;
 
     let metaapi = MetaapiMarketDataApi::new(
         auth_token,
@@ -21,15 +23,28 @@ fn main() {
     );
 
     let end_time = DateTime::from(
-        DateTime::parse_from_str("2022-03-01 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
+        DateTime::parse_from_str("14-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
     );
 
-    let duration = Duration::weeks(12);
+    let duration = Duration::weeks(2);
 
     let candles = metaapi
-        .get_historical_candles(symbol, timeframe, end_time, duration)
+        .get_historical_candles(symbol, candle_timeframe, end_time, duration)
         .unwrap();
 
+    let ticks = metaapi
+        .get_historical_candles(symbol, tick_timeframe, end_time, duration)
+        .unwrap();
+
+    // println!("first tick {}", ticks.first().unwrap().properties.time);
+    // println!("last tick {}", ticks.last().unwrap().properties.time);
+    // println!("first candle {}", candles.first().unwrap().properties.time);
+    // println!("last candle {}", candles.last().unwrap().properties.time);
+    //
+    // plot_results(candles);
+}
+
+fn plot_results(candles: Vec<BasicCandle>) {
     let x = candles
         .iter()
         .map(|candle| {

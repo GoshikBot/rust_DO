@@ -1,5 +1,5 @@
 use base::entities::tick::{TickId, TickPrice};
-use base::entities::TickBaseProperties;
+use base::entities::BasicTick;
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone)]
