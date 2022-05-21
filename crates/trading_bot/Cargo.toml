@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 polars = {version = "0.20.0", features = ["docs-selection"]}
 strategy_runners = {path = "../strategy_runners"}
+csv = "1.1.6"
+serde = {version = "1.0.136", features = ["derive"]}
+chrono = "0.4.19"

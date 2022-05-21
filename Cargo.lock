@@ -1974,6 +1974,7 @@ dependencies = [
 name = "strategy_runners"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base",
  "chrono",
  "dotenv",
@@ -2184,7 +2185,10 @@ dependencies = [
 name = "trading_bot"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "csv",
  "polars",
+ "serde",
  "strategy_runners",
 ]
 

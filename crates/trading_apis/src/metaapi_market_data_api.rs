@@ -32,10 +32,9 @@ pub const DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY:
     SecondsToSleepBeforeRequestRetry = 1;
 
 const MAX_NUMBER_OF_CANDLES_PER_REQUEST: u64 = 1000;
+const DEFAULT_LOGGER_TARGET: &str = "";
 
 type MetatraderTime = String;
-
-const TICK_TIMEFRAME: Timeframe = Timeframe::OneMin;
 
 #[derive(Copy, Clone)]
 pub enum Timeframe {
@@ -122,7 +121,7 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
     pub fn new(
         auth_token: AuthToken,
         account_id: AccountId,
-        logger_target: LoggerTarget,
+        logger_target: Option<LoggerTarget>,
         retry_settings: RetrySettings,
     ) -> MetaapiMarketDataApi<R> {
         let main_url = dotenv::var("MAIN_API_URL").unwrap();
@@ -135,7 +134,7 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
                 main: main_url,
                 market_data: market_data_url,
             },
-            target_logger: logger_target,
+            target_logger: logger_target.unwrap_or_else(|| DEFAULT_LOGGER_TARGET.to_string()),
             retry_settings,
             request_api: PhantomData,
         }
@@ -487,6 +486,7 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
     fn get_historical_ticks(
         &self,
         symbol: &str,
+        timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
     ) -> Result<Vec<Option<BasicTick>>> {
@@ -495,7 +495,7 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
 
         let all_candles = self.get_blocks_of_historical_candles(
             symbol,
-            TICK_TIMEFRAME,
+            timeframe,
             total_amount_of_candles,
             end_time,
         )?;

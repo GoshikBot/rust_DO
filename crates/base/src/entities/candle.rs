@@ -70,7 +70,7 @@ impl Default for CandleEdgePrices {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct BasicCandle {
     pub properties: CandleBaseProperties,
     pub edge_prices: CandleEdgePrices,

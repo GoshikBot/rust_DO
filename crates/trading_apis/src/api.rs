@@ -20,6 +20,7 @@ pub trait MarketDataApi {
     fn get_historical_ticks(
         &self,
         symbol: &str,
+        timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
     ) -> Result<Vec<Option<BasicTick>>>;

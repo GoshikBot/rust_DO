@@ -1,47 +1,50 @@
+use anyhow::{Context, Result};
 use base::entities::candle::BasicCandle;
-use chrono::{DateTime, Duration};
+use base::entities::BasicTick;
+use base::requests::ureq::Ureq;
+use chrono::{DateTime, Duration, Utc};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
-use trading_apis::metaapi_market_data_api::Timeframe;
+use std::cmp::Ordering;
+use trading_apis::metaapi_market_data_api::{LoggerTarget, Timeframe};
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi};
 
-fn main() {
+fn main() -> Result<()> {
+    let _ = backtest_step_strategy(
+        "GBPUSDm",
+        Timeframe::Hour,
+        Timeframe::OneMin,
+        DateTime::from(
+            DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+        ),
+        Duration::weeks(16),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn backtest_step_strategy(
+    symbol: &str,
+    candle_timeframe: Timeframe,
+    tick_timeframe: Timeframe,
+    end_time: DateTime<Utc>,
+    duration: Duration,
+    logger_target: Option<LoggerTarget>,
+) -> Result<()> {
     dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
-    let symbol = "GBPUSDm";
-    let candle_timeframe = Timeframe::Hour;
-    let tick_timeframe = Timeframe::OneMin;
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, logger_target, Default::default());
 
-    let metaapi = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let candles = metaapi.get_historical_candles(symbol, candle_timeframe, end_time, duration)?;
 
-    let end_time = DateTime::from(
-        DateTime::parse_from_str("14-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
-    );
+    let ticks = metaapi.get_historical_ticks(symbol, tick_timeframe, end_time, duration)?;
 
-    let duration = Duration::weeks(2);
-
-    let candles = metaapi
-        .get_historical_candles(symbol, candle_timeframe, end_time, duration)
-        .unwrap();
-
-    let ticks = metaapi
-        .get_historical_candles(symbol, tick_timeframe, end_time, duration)
-        .unwrap();
-
-    // println!("first tick {}", ticks.first().unwrap().properties.time);
-    // println!("last tick {}", ticks.last().unwrap().properties.time);
-    // println!("first candle {}", candles.first().unwrap().properties.time);
-    // println!("last candle {}", candles.last().unwrap().properties.time);
-    //
-    // plot_results(candles);
+    Ok(())
 }
 
 fn plot_results(candles: Vec<BasicCandle>) {

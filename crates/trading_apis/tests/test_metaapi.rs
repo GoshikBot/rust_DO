@@ -15,12 +15,8 @@ fn should_successfully_get_current_tick() {
 
     let symbol = "GBPUSDm";
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
 
     assert!(metaapi.get_current_tick(symbol).is_ok());
 }
@@ -42,7 +38,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
     let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
-        String::from("test"),
+        None,
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
@@ -83,12 +79,8 @@ fn should_successfully_get_current_candle() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::Hour;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
 
     assert!(metaapi.get_current_candle(symbol, timeframe).is_ok());
 }
@@ -111,7 +103,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
     let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
         auth_token,
         account_id,
-        String::from("test"),
+        None,
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
@@ -152,12 +144,8 @@ fn should_successfully_get_hourly_historical_candles() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::Hour;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-03-01 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -212,12 +200,8 @@ fn should_successfully_get_minute_historical_candles() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::OneMin;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -271,12 +255,10 @@ fn should_successfully_get_historical_ticks() {
 
     let symbol = "GBPUSDm";
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        String::from("test"),
-        Default::default(),
-    );
+    let metaapi: MetaapiMarketDataApi<Ureq> =
+        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+
+    let timeframe = Timeframe::OneMin;
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -284,7 +266,7 @@ fn should_successfully_get_historical_ticks() {
 
     let duration = Duration::weeks(4);
 
-    let ticks = metaapi.get_historical_ticks(symbol, end_time, duration);
+    let ticks = metaapi.get_historical_ticks(symbol, timeframe, end_time, duration);
 
     assert!(ticks.is_ok());
 
