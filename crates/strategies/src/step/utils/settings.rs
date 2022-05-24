@@ -1,104 +1,116 @@
 use anyhow::Context;
 use std::collections::HashMap;
-use std::num::ParseFloatError;
+use std::fmt::Display;
+use std::marker::PhantomData;
+use std::path::Path;
 
 use csv::Reader;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use base::entities::candle::CandleVolatility;
 
 pub type SettingName = String;
-pub type SettingValue = String;
+pub type CsvSettingValue = String;
 pub type PointSettingValue = f32;
 
-fn get_point_value_from_ratio(
-    ratio_value: &str,
-    volatility: CandleVolatility,
-) -> Result<f32, ParseFloatError> {
-    Ok(ratio_value[..ratio_value.len() - 1].parse::<f32>()? * volatility)
-}
-
 pub trait Settings {
-    fn get_point_setting_value(&self, name: &str) -> anyhow::Result<PointSettingValue>;
+    type PointSetting: Display;
+    type RatioSetting: Display;
+
+    fn get_point_setting_value(&self, name: Self::PointSetting) -> PointSettingValue;
 
     fn get_ratio_setting_value(
         &self,
-        name: &str,
+        name: Self::RatioSetting,
         volatility: CandleVolatility,
-    ) -> anyhow::Result<PointSettingValue>;
+    ) -> PointSettingValue;
 }
 
-#[derive(Debug, Deserialize)]
-struct CsvRecord {
-    setting_name: SettingName,
-    setting_value: SettingValue,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CsvSetting {
+    pub name: SettingName,
+    pub value: CsvSettingValue,
 }
 
-pub struct ExcelFileSettings {
-    names_values: HashMap<SettingName, SettingValue>,
+pub struct CsvFileSettings<PointSetting, RatioSetting>
+where
+    PointSetting: Display,
+    RatioSetting: Display,
+{
+    point_setting_values: HashMap<SettingName, PointSettingValue>,
+    ratio_setting_values: HashMap<SettingName, PointSettingValue>,
+    point_setting_name: PhantomData<PointSetting>,
+    ratio_setting_name: PhantomData<RatioSetting>,
 }
 
-impl ExcelFileSettings {
-    pub fn new(path_to_file: &str) -> anyhow::Result<Self> {
+impl<PointSetting, RatioSetting> CsvFileSettings<PointSetting, RatioSetting>
+where
+    PointSetting: Display,
+    RatioSetting: Display,
+{
+    pub fn new<P: AsRef<Path>>(path_to_file: P) -> anyhow::Result<Self> {
         let mut settings = Self {
-            names_values: Default::default(),
+            point_setting_values: Default::default(),
+            ratio_setting_values: Default::default(),
+            point_setting_name: PhantomData,
+            ratio_setting_name: PhantomData,
         };
 
         let mut reader = Reader::from_path(path_to_file)
             .context("an error occurred on creating a reader from the path")?;
 
-        for record in reader.deserialize::<CsvRecord>() {
-            let record = record.context("an error on deserializing a record")?;
-            settings
-                .names_values
-                .insert(record.setting_name, record.setting_value);
+        for setting in reader.deserialize() {
+            let setting: CsvSetting = setting.context("an error on deserializing a setting")?;
+
+            if setting
+                .value
+                .chars()
+                .last()
+                .context("empty string setting value was got")?
+                .is_alphabetic()
+            {
+                let numeric_setting_value =
+                    (&setting.value[..setting.value.len() - 1]).parse::<PointSettingValue>()?;
+                settings
+                    .ratio_setting_values
+                    .insert(setting.name, numeric_setting_value);
+            } else {
+                let numeric_setting_value = setting.value.parse::<PointSettingValue>()?;
+                settings
+                    .point_setting_values
+                    .insert(setting.name, numeric_setting_value);
+            }
         }
 
         Ok(settings)
     }
 }
 
-impl Settings for ExcelFileSettings {
-    fn get_point_setting_value(&self, name: &str) -> anyhow::Result<PointSettingValue> {
-        let value = self
-            .names_values
-            .get(name)
-            .context(format!("a point setting with a name {} is not found", name))?;
+impl<PointSetting, RatioSetting> Settings for CsvFileSettings<PointSetting, RatioSetting>
+where
+    PointSetting: Display,
+    RatioSetting: Display,
+{
+    type PointSetting = PointSetting;
+    type RatioSetting = RatioSetting;
 
-        value.parse::<PointSettingValue>().context(format!(
-            "an error on parsing a point setting with a name {}",
-            name
-        ))
+    fn get_point_setting_value(&self, name: Self::PointSetting) -> PointSettingValue {
+        *self
+            .point_setting_values
+            .get(&name.to_string())
+            .unwrap_or_else(|| panic!("a point setting with a name {} is not found", name))
     }
 
     fn get_ratio_setting_value(
         &self,
-        name: &str,
+        name: Self::RatioSetting,
         volatility: CandleVolatility,
-    ) -> anyhow::Result<PointSettingValue> {
+    ) -> PointSettingValue {
         let ratio_value = self
-            .names_values
-            .get(name)
-            .context(format!("a ratio setting with a name {} is not found", name))?;
+            .ratio_setting_values
+            .get(&name.to_string())
+            .unwrap_or_else(|| panic!("a ratio setting with a name {} is not found", name));
 
-        get_point_value_from_ratio(ratio_value, volatility).context(format!(
-            "an error occurred during a conversion from a ratio value {} to a point value",
-            name
-        ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn should_successfully_return_a_point_value_from_a_ratio() {
-        assert_eq!(get_point_value_from_ratio("1.234k", 10.0).unwrap(), 12.34);
-    }
-
-    #[test]
-    fn should_return_an_error_on_getting_a_point_value_from_invalid_ratio() {
-        assert!(get_point_value_from_ratio("hello", 10.0).is_err());
+        ratio_value * volatility
     }
 }

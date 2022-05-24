@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleOpenClose, CandleVolatility};
 use base::entities::tick::TickPrice;
-use base::entities::{BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType};
+use base::entities::{BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, Timeframe};
 use base::helpers::{mean, price_to_points};
 use base::requests::api::HttpRequest;
 use base::requests::entities::{
@@ -35,25 +35,6 @@ const MAX_NUMBER_OF_CANDLES_PER_REQUEST: u64 = 1000;
 const DEFAULT_LOGGER_TARGET: &str = "";
 
 type MetatraderTime = String;
-
-#[derive(Copy, Clone)]
-pub enum Timeframe {
-    Hour,
-    ThirtyMin,
-    FifteenMin,
-    OneMin,
-}
-
-impl Display for Timeframe {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Timeframe::Hour => write!(f, "1h"),
-            Timeframe::ThirtyMin => write!(f, "30m"),
-            Timeframe::FifteenMin => write!(f, "15m"),
-            Timeframe::OneMin => write!(f, "1m"),
-        }
-    }
-}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

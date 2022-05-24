@@ -2,7 +2,7 @@ use base::requests::ureq::Ureq;
 use chrono::{DateTime, Duration, Timelike};
 use log::Level;
 use std::time::Instant;
-use trading_apis::metaapi_market_data_api::{Timeframe, DAYS_FOR_VOLATILITY};
+use trading_apis::metaapi_market_data_api::DAYS_FOR_VOLATILITY;
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 
 #[test]

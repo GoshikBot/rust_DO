@@ -1,14 +1,8 @@
 use crate::entities::candle::BasicCandle;
-use crate::entities::BasicTick;
+use crate::entities::{BasicTick, HistoricalData};
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDateTime;
 use std::cmp::Ordering;
-
-#[derive(Debug, PartialEq)]
-pub struct HistoricalData {
-    pub candles: Vec<Option<BasicCandle>>,
-    pub ticks: Vec<Option<BasicTick>>,
-}
 
 struct Candle {
     index: usize,

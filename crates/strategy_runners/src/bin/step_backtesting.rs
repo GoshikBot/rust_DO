@@ -1,23 +1,27 @@
 use anyhow::{Context, Result};
 use base::entities::candle::BasicCandle;
-use base::entities::BasicTick;
+use base::entities::{BasicTick, StrategyProperties};
+use base::historical_data::synchronization::{sync_candles_and_ticks, HistoricalData};
 use base::requests::ureq::Ureq;
 use chrono::{DateTime, Duration, Utc};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
 use std::cmp::Ordering;
+use base::historical_data::serialization;
 use trading_apis::metaapi_market_data_api::{LoggerTarget, Timeframe};
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi};
 
 fn main() -> Result<()> {
     let _ = backtest_step_strategy(
-        "GBPUSDm",
-        Timeframe::Hour,
-        Timeframe::OneMin,
-        DateTime::from(
-            DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
-        ),
-        Duration::weeks(16),
+        StrategyProperties {
+            symbol: String::from("GBPUSDm"),
+            candle_timeframe: Timeframe::Hour,
+            tick_timeframe: Timeframe::OneMin,
+            end_time: DateTime::from(
+                DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+            ),
+            duration: Duration::weeks(16),
+        },
         None,
     )?;
 
@@ -25,14 +29,18 @@ fn main() -> Result<()> {
 }
 
 fn backtest_step_strategy(
-    symbol: &str,
-    candle_timeframe: Timeframe,
-    tick_timeframe: Timeframe,
-    end_time: DateTime<Utc>,
-    duration: Duration,
+    properties: StrategyProperties,
     logger_target: Option<LoggerTarget>,
 ) -> Result<()> {
     dotenv::dotenv().unwrap();
+
+    let StrategyProperties {
+        symbol,
+        candle_timeframe,
+        tick_timeframe,
+        end_time,
+        duration,
+    } = properties;
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -40,11 +48,15 @@ fn backtest_step_strategy(
     let metaapi: MetaapiMarketDataApi<Ureq> =
         MetaapiMarketDataApi::new(auth_token, account_id, logger_target, Default::default());
 
-    let candles = metaapi.get_historical_candles(symbol, candle_timeframe, end_time, duration)?;
 
-    let ticks = metaapi.get_historical_ticks(symbol, tick_timeframe, end_time, duration)?;
+    let historical_data = serialization::try_to_deserialize_historical_data(&properties)
 
-    Ok(())
+    let candles = metaapi.get_historical_candles(&symbol, candle_timeframe, end_time, duration)?;
+    let ticks = metaapi.get_historical_ticks(&symbol, tick_timeframe, end_time, duration)?;
+
+    let HistoricalData { candles, ticks } =
+        sync_candles_and_ticks(HistoricalData { candles, ticks })
+            .context("error on synchronizing ticks and candles")?;
 }
 
 fn plot_results(candles: Vec<BasicCandle>) {

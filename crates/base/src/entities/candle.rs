@@ -1,4 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 pub type CandleId = String;
 
@@ -7,7 +8,7 @@ pub struct CandleOpenClose {
     pub close: CandleEdgePrice,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy)]
 pub enum CandleType {
     Green = 1,
     Red = -1,
