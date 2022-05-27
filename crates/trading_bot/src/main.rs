@@ -1,8 +1,5 @@
-use std::path::PathBuf;
-
 fn main() {
-    let mut path = PathBuf::from(r"D:\hello.txt");
-    path.push(r"\dir");
+    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
 
-    println!("{:?}", path);
+    log::info!(target: "step", "New message");
 }

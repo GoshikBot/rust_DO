@@ -1,9 +1,10 @@
+use backtesting::historical_data::serialization::{
+    HistoricalDataCsvSerialization, HistoricalDataSerialization,
+};
 use base::entities::candle::BasicCandle;
 use base::entities::{
     BasicTick, CandleBaseProperties, HistoricalData, StrategyProperties, Timeframe,
 };
-use base::historical_data::serialization;
-use base::historical_data::serialization::HistoricalDataCsvSerializer;
 use chrono::{DateTime, Duration, NaiveDateTime};
 use tempfile::TempDir;
 
@@ -77,19 +78,26 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
 
     let temp_dir = TempDir::new().unwrap();
 
-    serialization::serialize_historical_data::<HistoricalDataCsvSerializer, _>(
-        &historical_data,
-        &strategy_properties,
-        temp_dir.path(),
-    )
-    .unwrap();
+    let historical_data_csv_serialization = HistoricalDataCsvSerialization::new();
 
-    let deserialized_historical_data = serialization::try_to_deserialize_historical_data::<
-        HistoricalDataCsvSerializer,
-        _,
-    >(&strategy_properties, temp_dir.path())
-    .unwrap()
-    .unwrap();
+    historical_data_csv_serialization
+        .serialize_historical_data(&historical_data, &strategy_properties, temp_dir.path())
+        .unwrap();
+
+    let expected_candles_file_path = temp_dir
+        .path()
+        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)\candles.csv");
+    let expected_ticks_file_path = temp_dir
+        .path()
+        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)\ticks.csv");
+
+    assert!(expected_candles_file_path.exists());
+    assert!(expected_ticks_file_path.exists());
+
+    let deserialized_historical_data = historical_data_csv_serialization
+        .try_to_deserialize_historical_data(&strategy_properties, temp_dir.path())
+        .unwrap()
+        .unwrap();
 
     assert_eq!(deserialized_historical_data, historical_data);
 }

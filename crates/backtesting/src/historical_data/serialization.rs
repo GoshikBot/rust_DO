@@ -1,6 +1,6 @@
-use crate::entities::candle::{BasicCandle, CandleEdgePrice, CandleSize, CandleVolatility};
-use crate::entities::tick::TickPrice;
-use crate::entities::{
+use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleSize, CandleVolatility};
+use base::entities::tick::TickPrice;
+use base::entities::{
     BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, HistoricalData,
     StrategyProperties,
 };
@@ -23,15 +23,6 @@ pub struct HistoricalDataPaths {
     ticks_file_path: PathBuf,
 }
 
-pub trait HistoricalDataSerializer {
-    fn serialize(
-        historical_data: &HistoricalData,
-        historical_data_paths: &HistoricalDataPaths,
-    ) -> anyhow::Result<()>;
-
-    fn deserialize(historical_data_paths: &HistoricalDataPaths) -> anyhow::Result<HistoricalData>;
-}
-
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Candle {
     time: Option<String>,
@@ -51,9 +42,75 @@ struct Tick {
     bid: Option<TickPrice>,
 }
 
-pub struct HistoricalDataCsvSerializer;
+fn get_directory_name_for_data_config(strategy_properties: &StrategyProperties) -> String {
+    let StrategyProperties {
+        symbol,
+        candle_timeframe,
+        tick_timeframe,
+        end_time,
+        duration,
+    } = strategy_properties;
 
-impl HistoricalDataCsvSerializer {
+    format!(
+        "{}_{}_{}_{}_{}_({}_weeks)",
+        symbol,
+        candle_timeframe,
+        tick_timeframe,
+        end_time.format(TIME_PATTERN_FOR_PATH),
+        duration.num_minutes(),
+        duration.num_weeks()
+    )
+}
+
+fn get_paths_for_historical_data<P: Into<PathBuf>>(
+    directory: P,
+    strategy_properties: &StrategyProperties,
+) -> HistoricalDataPaths {
+    let mut directory = directory.into();
+
+    let directory_for_candles_and_ticks = get_directory_name_for_data_config(strategy_properties);
+    directory.push(directory_for_candles_and_ticks);
+
+    let mut candles_file_path = directory.clone();
+    candles_file_path.push(CANDLES_CSV_FILE_NAME);
+
+    let mut ticks_file_path = directory;
+    ticks_file_path.push(TICKS_CSV_FILE_NAME);
+
+    HistoricalDataPaths {
+        candles_file_path,
+        ticks_file_path,
+    }
+}
+
+fn historical_data_files_exist(historical_data_paths: &HistoricalDataPaths) -> bool {
+    historical_data_paths.candles_file_path.exists()
+        && historical_data_paths.ticks_file_path.exists()
+}
+
+pub trait HistoricalDataSerialization {
+    fn serialize_historical_data<P: Into<PathBuf>>(
+        &self,
+        historical_data: &HistoricalData,
+        strategy_properties: &StrategyProperties,
+        directory: P,
+    ) -> anyhow::Result<()>;
+
+    fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
+        &self,
+        strategy_properties: &StrategyProperties,
+        directory: P,
+    ) -> anyhow::Result<Option<HistoricalData>>;
+}
+
+#[derive(Default)]
+pub struct HistoricalDataCsvSerialization;
+
+impl HistoricalDataCsvSerialization {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     fn create_required_dirs_for_serialization(
         historical_data_paths: &HistoricalDataPaths,
     ) -> anyhow::Result<()> {
@@ -78,9 +135,7 @@ impl HistoricalDataCsvSerializer {
 
         Ok(())
     }
-}
 
-impl HistoricalDataSerializer for HistoricalDataCsvSerializer {
     fn serialize(
         historical_data: &HistoricalData,
         historical_data_paths: &HistoricalDataPaths,
@@ -90,7 +145,7 @@ impl HistoricalDataSerializer for HistoricalDataCsvSerializer {
             ticks_file_path,
         } = historical_data_paths;
 
-        HistoricalDataCsvSerializer::create_required_dirs_for_serialization(historical_data_paths)?;
+        Self::create_required_dirs_for_serialization(historical_data_paths)?;
 
         let mut candles_writer = Writer::from_path(candles_file_path)?;
 
@@ -199,167 +254,29 @@ impl HistoricalDataSerializer for HistoricalDataCsvSerializer {
     }
 }
 
-fn get_directory_name_for_data_config(strategy_properties: &StrategyProperties) -> String {
-    let StrategyProperties {
-        symbol,
-        candle_timeframe,
-        tick_timeframe,
-        end_time,
-        duration,
-    } = strategy_properties;
-
-    format!(
-        "{}_{}_{}_{}_{}_({}_weeks)",
-        symbol,
-        candle_timeframe,
-        tick_timeframe,
-        end_time.format(TIME_PATTERN_FOR_PATH),
-        duration.num_minutes(),
-        duration.num_weeks()
-    )
-}
-
-fn get_paths_for_historical_data<P: Into<PathBuf>>(
-    directory: P,
-    strategy_properties: &StrategyProperties,
-) -> HistoricalDataPaths {
-    let mut directory = directory.into();
-
-    let directory_for_candles_and_ticks = get_directory_name_for_data_config(strategy_properties);
-    directory.push(directory_for_candles_and_ticks);
-
-    let mut candles_file_path = directory.clone();
-    candles_file_path.push(CANDLES_CSV_FILE_NAME);
-
-    let mut ticks_file_path = directory;
-    ticks_file_path.push(TICKS_CSV_FILE_NAME);
-
-    HistoricalDataPaths {
-        candles_file_path,
-        ticks_file_path,
+impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
+    fn serialize_historical_data<P: Into<PathBuf>>(
+        &self,
+        historical_data: &HistoricalData,
+        strategy_properties: &StrategyProperties,
+        directory: P,
+    ) -> anyhow::Result<()> {
+        let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
+        Self::serialize(historical_data, &historical_data_paths)
     }
-}
 
-pub fn serialize_historical_data<T, P>(
-    historical_data: &HistoricalData,
-    strategy_properties: &StrategyProperties,
-    directory: P,
-) -> anyhow::Result<()>
-where
-    T: HistoricalDataSerializer,
-    P: Into<PathBuf>,
-{
-    let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
-    T::serialize(historical_data, &historical_data_paths)
-}
+    fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
+        &self,
+        strategy_properties: &StrategyProperties,
+        directory: P,
+    ) -> anyhow::Result<Option<HistoricalData>> {
+        let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
 
-fn historical_data_files_exist(historical_data_paths: &HistoricalDataPaths) -> bool {
-    historical_data_paths.candles_file_path.exists()
-        && historical_data_paths.ticks_file_path.exists()
-}
-
-pub fn try_to_deserialize_historical_data<T, P>(
-    strategy_properties: &StrategyProperties,
-    directory: P,
-) -> anyhow::Result<Option<HistoricalData>>
-where
-    T: HistoricalDataSerializer,
-    P: Into<PathBuf>,
-{
-    let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
-
-    if historical_data_files_exist(&historical_data_paths) {
-        let historical_data = T::deserialize(&historical_data_paths)?;
-        Ok(Some(historical_data))
-    } else {
-        Ok(None)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::entities::Timeframe;
-    use chrono::{DateTime, Duration};
-
-    struct TestHistoricalDataSerializer;
-
-    impl TestHistoricalDataSerializer {
-        fn expected_paths() -> HistoricalDataPaths {
-            HistoricalDataPaths {
-                candles_file_path: PathBuf::from(
-                    r"D:\GBPUSDm_1h_1m_2022-05-17_18-00_20160_(2_weeks)\candles.csv",
-                ),
-                ticks_file_path: PathBuf::from(
-                    r"D:\GBPUSDm_1h_1m_2022-05-17_18-00_20160_(2_weeks)\ticks.csv",
-                ),
-            }
+        if historical_data_files_exist(&historical_data_paths) {
+            let historical_data = Self::deserialize(&historical_data_paths)?;
+            Ok(Some(historical_data))
+        } else {
+            Ok(None)
         }
-    }
-
-    impl HistoricalDataSerializer for TestHistoricalDataSerializer {
-        fn serialize(
-            _historical_data: &HistoricalData,
-            historical_data_paths: &HistoricalDataPaths,
-        ) -> anyhow::Result<()> {
-            assert_eq!(
-                historical_data_paths,
-                &TestHistoricalDataSerializer::expected_paths()
-            );
-
-            Ok(())
-        }
-
-        fn deserialize(
-            historical_data_paths: &HistoricalDataPaths,
-        ) -> anyhow::Result<HistoricalData> {
-            assert_eq!(
-                historical_data_paths,
-                &TestHistoricalDataSerializer::expected_paths()
-            );
-
-            Ok(Default::default())
-        }
-    }
-
-    #[test]
-    fn serialize_historical_data_proper_paths_true() {
-        let strategy_properties = StrategyProperties {
-            symbol: String::from("GBPUSDm"),
-            candle_timeframe: Timeframe::Hour,
-            tick_timeframe: Timeframe::OneMin,
-            end_time: DateTime::from(
-                DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
-            ),
-            duration: Duration::weeks(2),
-        };
-
-        let directory = r"D:\";
-
-        let _ = serialize_historical_data::<TestHistoricalDataSerializer, _>(
-            &Default::default(),
-            &strategy_properties,
-            directory,
-        );
-    }
-
-    #[test]
-    fn try_to_deserialize_historical_data_proper_paths_true() {
-        let strategy_properties = StrategyProperties {
-            symbol: String::from("GBPUSDm"),
-            candle_timeframe: Timeframe::Hour,
-            tick_timeframe: Timeframe::OneMin,
-            end_time: DateTime::from(
-                DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
-            ),
-            duration: Duration::weeks(2),
-        };
-
-        let directory = r"D:\";
-
-        let _ = try_to_deserialize_historical_data::<TestHistoricalDataSerializer, _>(
-            &strategy_properties,
-            directory,
-        );
     }
 }

@@ -5,16 +5,16 @@ use ureq::serde::de::DeserializeOwned;
 use ureq::Error;
 
 #[derive(Default)]
-pub struct Ureq {}
+pub struct UreqRequestApi {}
 
-impl Ureq {
+impl UreqRequestApi {
     pub fn new() -> Self {
         Default::default()
     }
 }
 
-impl HttpRequest for Ureq {
-    fn call<T>(req: HttpRequestData) -> Result<T>
+impl HttpRequest for UreqRequestApi {
+    fn call<T>(&self, req: HttpRequestData) -> Result<T>
     where
         T: DeserializeOwned,
     {

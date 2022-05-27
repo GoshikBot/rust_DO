@@ -1,5 +1,7 @@
 use polars_lazy::prelude::LazyFrame;
 
+pub mod historical_data;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum BacktestingOrderStatus {
     Pending = 0,

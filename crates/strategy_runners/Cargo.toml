@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 trading_apis = { path = "../trading_apis" }
+backtesting = { path = "../backtesting" }
 base = { path = "../base" }
 plotly = "0.7.0"
 chrono = "0.4.19"

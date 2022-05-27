@@ -1,18 +1,26 @@
 use anyhow::{Context, Result};
+use backtesting::historical_data::serialization::{
+    HistoricalDataCsvSerialization, HistoricalDataSerialization,
+};
+use backtesting::historical_data::synchronization::sync_candles_and_ticks;
+use backtesting::historical_data::{get_historical_data, serialization, synchronization};
 use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, StrategyProperties};
-use base::historical_data::synchronization::{sync_candles_and_ticks, HistoricalData};
-use base::requests::ureq::Ureq;
+use base::entities::{BasicTick, HistoricalData, StrategyProperties, Timeframe};
+use base::requests::ureq::UreqRequestApi;
 use chrono::{DateTime, Duration, Utc};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
 use std::cmp::Ordering;
-use base::historical_data::serialization;
-use trading_apis::metaapi_market_data_api::{LoggerTarget, Timeframe};
-use trading_apis::{MarketDataApi, MetaapiMarketDataApi};
+use std::path::{Path, PathBuf};
+use trading_apis::metaapi_market_data_api::LoggerTarget;
+use trading_apis::MetaapiMarketDataApi;
+
+const AUTH_TOKEN: &str = "AUTH_TOKEN";
+const DEMO_ACCOUNT_ID: &str = "DEMO_ACCOUNT_ID";
+const STEP_HISTORICAL_DATA_FOLDER_ENV: &str = "STEP_HISTORICAL_DATA_FOLDER";
 
 fn main() -> Result<()> {
-    let _ = backtest_step_strategy(
+    backtest_step_strategy(
         StrategyProperties {
             symbol: String::from("GBPUSDm"),
             candle_timeframe: Timeframe::Hour,
@@ -22,41 +30,44 @@ fn main() -> Result<()> {
             ),
             duration: Duration::weeks(16),
         },
-        None,
+        "",
     )?;
 
     Ok(())
 }
 
 fn backtest_step_strategy(
-    properties: StrategyProperties,
-    logger_target: Option<LoggerTarget>,
+    strategy_properties: StrategyProperties,
+    logger_target: &str,
 ) -> Result<()> {
     dotenv::dotenv().unwrap();
 
-    let StrategyProperties {
-        symbol,
-        candle_timeframe,
-        tick_timeframe,
-        end_time,
-        duration,
-    } = properties;
+    let auth_token = dotenv::var(AUTH_TOKEN).unwrap();
+    let account_id = dotenv::var(DEMO_ACCOUNT_ID).unwrap();
 
-    let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
-    let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
+    let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, logger_target, Default::default());
+    let market_data_api = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        logger_target,
+        Default::default(),
+        &request_api,
+    );
 
+    let step_historical_data_folder = dotenv::var(STEP_HISTORICAL_DATA_FOLDER_ENV).unwrap();
 
-    let historical_data = serialization::try_to_deserialize_historical_data(&properties)
+    let historical_data_csv_serialization = HistoricalDataCsvSerialization::new();
 
-    let candles = metaapi.get_historical_candles(&symbol, candle_timeframe, end_time, duration)?;
-    let ticks = metaapi.get_historical_ticks(&symbol, tick_timeframe, end_time, duration)?;
+    let historical_data = get_historical_data(
+        step_historical_data_folder,
+        &strategy_properties,
+        &market_data_api,
+        &historical_data_csv_serialization,
+        sync_candles_and_ticks,
+    )?;
 
-    let HistoricalData { candles, ticks } =
-        sync_candles_and_ticks(HistoricalData { candles, ticks })
-            .context("error on synchronizing ticks and candles")?;
+    Ok(())
 }
 
 fn plot_results(candles: Vec<BasicCandle>) {

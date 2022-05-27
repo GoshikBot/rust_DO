@@ -1,5 +1,5 @@
+use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
 use anyhow::{bail, Context, Result};
@@ -18,8 +18,11 @@ use base::requests::entities::{
 };
 use base::requests::http_request_with_retries;
 
-use crate::api::MarketDataApi;
 use crate::helpers::{from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime};
+use crate::MarketDataApi;
+
+const MAIN_API_URL: &str = "MAIN_API_URL";
+const MARKET_DATA_API_URL: &str = "MARKET_DATA_API_URL";
 
 pub const HOURS_IN_DAY: u8 = 24;
 pub const DAYS_FOR_VOLATILITY: u8 = 7;
@@ -32,7 +35,6 @@ pub const DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY:
     SecondsToSleepBeforeRequestRetry = 1;
 
 const MAX_NUMBER_OF_CANDLES_PER_REQUEST: u64 = 1000;
-const DEFAULT_LOGGER_TARGET: &str = "";
 
 type MetatraderTime = String;
 
@@ -89,24 +91,31 @@ enum TuneCandleConfig<'a> {
     },
 }
 
-pub struct MetaapiMarketDataApi<R: HttpRequest> {
-    auth_token: AuthToken,
-    account_id: AccountId,
+pub struct MetaapiMarketDataApi<'a, R>
+where
+    R: HttpRequest,
+{
+    auth_token: &'a str,
+    account_id: &'a str,
     api_urls: ApiUrls,
-    target_logger: LoggerTarget,
+    target_logger: &'a str,
     retry_settings: RetrySettings,
-    request_api: PhantomData<R>,
+    request_api: &'a R,
 }
 
-impl<R: HttpRequest> MetaapiMarketDataApi<R> {
+impl<'a, R> MetaapiMarketDataApi<'a, R>
+where
+    R: HttpRequest,
+{
     pub fn new(
-        auth_token: AuthToken,
-        account_id: AccountId,
-        logger_target: Option<LoggerTarget>,
+        auth_token: &'a str,
+        account_id: &'a str,
+        target_logger: &'a str,
         retry_settings: RetrySettings,
-    ) -> MetaapiMarketDataApi<R> {
-        let main_url = dotenv::var("MAIN_API_URL").unwrap();
-        let market_data_url = dotenv::var("MARKET_DATA_API_URL").unwrap();
+        request_api: &'a R,
+    ) -> MetaapiMarketDataApi<'a, R> {
+        let main_url = dotenv::var(MAIN_API_URL).unwrap();
+        let market_data_url = dotenv::var(MARKET_DATA_API_URL).unwrap();
 
         Self {
             auth_token,
@@ -115,9 +124,9 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
                 main: main_url,
                 market_data: market_data_url,
             },
-            target_logger: logger_target.unwrap_or_else(|| DEFAULT_LOGGER_TARGET.to_string()),
+            target_logger,
             retry_settings,
-            request_api: PhantomData,
+            request_api,
         }
     }
 
@@ -138,7 +147,7 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
         let req_data = HttpRequestData {
             req_type: HttpRequestType::Get,
             url: &get_last_n_candles_url,
-            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            headers: Headers::from([("auth-token", self.auth_token)]),
             queries: Queries::from([("limit", limit.as_str())]),
         };
 
@@ -152,8 +161,8 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let last_n_candles =
-            http_request_with_retries::<R, Vec<MetatraderCandleJson>>(req_data, req_params)?;
+        let last_n_candles: Vec<MetatraderCandleJson> =
+            http_request_with_retries(req_data, req_params, self.request_api)?;
 
         let sizes_of_candles: Vec<f32> = last_n_candles
             .iter()
@@ -231,7 +240,7 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
             let req_data = HttpRequestData {
                 req_type: HttpRequestType::Get,
                 url: &get_last_n_candles_url,
-                headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+                headers: Headers::from([("auth-token", self.auth_token)]),
                 queries: Queries::from([
                     ("startTime", start_time.as_str()),
                     ("limit", limit_str.as_str()),
@@ -245,10 +254,8 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
                 seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
             };
 
-            let mut block_of_candles = http_request_with_retries::<
-                R,
-                VecDeque<MetatraderCandleJson>,
-            >(req_data, req_params)?;
+            let mut block_of_candles: VecDeque<MetatraderCandleJson> =
+                http_request_with_retries(req_data, req_params, self.request_api)?;
 
             block_of_candles.append(&mut all_candles);
             all_candles = block_of_candles;
@@ -333,7 +340,10 @@ impl<R: HttpRequest> MetaapiMarketDataApi<R> {
     }
 }
 
-impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
+impl<'a, R> MarketDataApi for MetaapiMarketDataApi<'a, R>
+where
+    R: HttpRequest,
+{
     fn get_current_tick(&self, symbol: &str) -> Result<BasicTick> {
         let get_current_tick_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-price",
@@ -343,7 +353,7 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         let req_data = HttpRequestData {
             req_type: HttpRequestType::Get,
             url: &get_current_tick_url,
-            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            headers: Headers::from([("auth-token", self.auth_token)]),
             queries: Queries::from([("keepSubscription", "true")]),
         };
 
@@ -354,7 +364,8 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let tick_json = http_request_with_retries::<R, MetatraderTickJson>(req_data, req_params)?;
+        let tick_json: MetatraderTickJson =
+            http_request_with_retries(req_data, req_params, self.request_api)?;
 
         let time = from_naive_str_to_naive_datetime(&tick_json.broker_time)?;
 
@@ -376,7 +387,7 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         let req_data = HttpRequestData {
             req_type: HttpRequestType::Get,
             url: &get_current_candle_url,
-            headers: Headers::from([("auth-token", self.auth_token.as_str())]),
+            headers: Headers::from([("auth-token", self.auth_token)]),
             queries: Queries::from([("keepSubscription", "true")]),
         };
 
@@ -387,8 +398,8 @@ impl<R: HttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let candle_json =
-            http_request_with_retries::<R, MetatraderCandleJson>(req_data, req_params)?;
+        let candle_json: MetatraderCandleJson =
+            http_request_with_retries(req_data, req_params, self.request_api)?;
 
         self.tune_candle(
             &candle_json,

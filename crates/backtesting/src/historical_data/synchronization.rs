@@ -1,6 +1,6 @@
-use crate::entities::candle::BasicCandle;
-use crate::entities::{BasicTick, HistoricalData};
 use anyhow::{bail, Context, Result};
+use base::entities::candle::BasicCandle;
+use base::entities::{BasicTick, HistoricalData};
 use chrono::NaiveDateTime;
 use std::cmp::Ordering;
 
@@ -251,7 +251,7 @@ pub fn sync_candles_and_ticks(mut historical_data: HistoricalData) -> Result<His
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::CandleBaseProperties;
+    use base::entities::CandleBaseProperties;
 
     #[test]
     fn sync_candles_and_ticks_first_candle_before_first_tick_last_tick_after_last_candle_successfully(

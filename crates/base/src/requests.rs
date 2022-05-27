@@ -9,18 +9,15 @@ pub mod api;
 pub mod entities;
 pub mod ureq;
 
-pub fn http_request_with_retries<R, T>(
+pub fn http_request_with_retries<T: DeserializeOwned>(
     req_data: HttpRequestData,
     req_params: HttpRequestWithRetriesParams,
-) -> Result<T>
-where
-    R: HttpRequest,
-    T: DeserializeOwned,
-{
+    request_api: &impl HttpRequest,
+) -> Result<T> {
     let mut current_request_try = 1;
 
     loop {
-        let response = R::call(req_data.clone());
+        let response = request_api.call(req_data.clone());
 
         match response {
             Ok(item) => {
@@ -54,18 +51,22 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use log::Level;
     use serde::Deserialize;
     use serde_json;
+    use std::cell::RefCell;
     use std::time::Instant;
 
-    struct TestErrorRequest;
+    #[derive(Default)]
+    struct HttpErrorRequest {
+        number_of_requests: RefCell<u32>,
+    }
 
-    impl HttpRequest for TestErrorRequest {
-        fn call<T>(_req: HttpRequestData) -> Result<T>
+    impl HttpRequest for HttpErrorRequest {
+        fn call<T>(&self, _req: HttpRequestData) -> Result<T>
         where
             T: DeserializeOwned,
         {
+            *self.number_of_requests.borrow_mut() += 1;
             bail!("error")
         }
     }
@@ -75,13 +76,17 @@ mod tests {
         test: String,
     }
 
-    struct TestSuccessfulRequest;
+    #[derive(Default)]
+    struct HttpSuccessfulRequest {
+        number_of_requests: RefCell<u32>,
+    }
 
-    impl HttpRequest for TestSuccessfulRequest {
-        fn call<T>(_req: HttpRequestData) -> Result<T>
+    impl HttpRequest for HttpSuccessfulRequest {
+        fn call<T>(&self, _req: HttpRequestData) -> Result<T>
         where
             T: DeserializeOwned,
         {
+            *self.number_of_requests.borrow_mut() += 1;
             Ok(serde_json::from_str(r#"{"test": "test"}"#)?)
         }
     }
@@ -92,16 +97,17 @@ mod tests {
         let number_of_retries = 3;
         let seconds_to_sleep = 1;
 
-        testing_logger::setup();
+        let http_request: HttpErrorRequest = Default::default();
 
         let start = Instant::now();
-        let res = http_request_with_retries::<TestErrorRequest, Vec<i32>>(
+        let res: Result<Test> = http_request_with_retries(
             Default::default(),
             HttpRequestWithRetriesParams {
                 number_of_retries,
                 seconds_to_sleep,
                 ..Default::default()
             },
+            &http_request,
         );
         let duration = start.elapsed().as_secs();
         let min_amount_of_time_for_method_execution = (number_of_retries * seconds_to_sleep) as u64;
@@ -118,31 +124,22 @@ mod tests {
             "the request should be completed with an error"
         );
 
-        // check that the defined number of error log messages
-        // for the request retries were called
-        testing_logger::validate(|captures_logs| {
-            let number_of_error_logs = captures_logs
-                .iter()
-                .filter(|log| matches!(log.level, Level::Error))
-                .count() as u32;
-            let expected_number_of_logs = number_of_retries + 1;
-
-            assert_eq!(
-                number_of_error_logs, expected_number_of_logs,
-                "the number of error logs ({}) should be equal to expected amount ({})",
-                number_of_error_logs, expected_number_of_logs
-            );
-        });
+        let expected_number_of_requests = number_of_retries + 1;
+        assert_eq!(
+            *http_request.number_of_requests.borrow(),
+            expected_number_of_requests
+        );
     }
 
     #[test]
     fn should_successfully_request_item() {
-        let res = http_request_with_retries::<TestSuccessfulRequest, Test>(
-            Default::default(),
-            Default::default(),
-        );
+        let http_request: HttpSuccessfulRequest = Default::default();
+
+        let res: Result<Test> =
+            http_request_with_retries(Default::default(), Default::default(), &http_request);
 
         assert!(res.is_ok());
+        assert_eq!(*http_request.number_of_requests.borrow(), 1);
         assert_eq!(res.unwrap().test, "test");
     }
 }

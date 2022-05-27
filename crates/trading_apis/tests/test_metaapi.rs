@@ -1,6 +1,6 @@
-use base::requests::ureq::Ureq;
-use chrono::{DateTime, Duration, Timelike};
-use log::Level;
+use base::entities::Timeframe;
+use base::requests::ureq::UreqRequestApi;
+use chrono::{DateTime, Duration};
 use std::time::Instant;
 use trading_apis::metaapi_market_data_api::DAYS_FOR_VOLATILITY;
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
@@ -8,23 +8,29 @@ use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 #[test]
 #[ignore]
 fn should_successfully_get_current_tick() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
     let symbol = "GBPUSDm";
+    let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+    let metaapi = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
+        Default::default(),
+        &request_api,
+    );
 
-    assert!(metaapi.get_current_tick(symbol).is_ok());
+    metaapi.get_current_tick(symbol).unwrap();
 }
 
 #[test]
 #[ignore]
 fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = String::from("invalid");
     let account_id = String::from("invalid");
@@ -33,16 +39,17 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
     let number_of_request_retries = 3;
     let seconds_to_sleep_before_request_retry = 1;
 
-    testing_logger::setup();
+    let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        None,
+    let metaapi = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
         },
+        &request_api,
     );
 
     // check that the method takes at least min amount of time to execute
@@ -54,24 +61,12 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
     let min_amount_of_time_for_method_execution =
         seconds_to_sleep_before_request_retry * number_of_request_retries;
     assert!(duration >= min_amount_of_time_for_method_execution as u64);
-
-    // check that the defined number of error log messages
-    // for the request retries were called
-    testing_logger::validate(|captures_logs| {
-        let number_of_error_logs = captures_logs
-            .iter()
-            .filter(|log| matches!(log.level, Level::Error))
-            .count() as u32;
-        let expected_number_of_logs = number_of_request_retries + 1;
-
-        assert_eq!(number_of_error_logs, expected_number_of_logs);
-    });
 }
 
 #[test]
 #[ignore]
 fn should_successfully_get_current_candle() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -79,8 +74,15 @@ fn should_successfully_get_current_candle() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::Hour;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+    let request_api = UreqRequestApi::new();
+
+    let metaapi = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
+        Default::default(),
+        &request_api,
+    );
 
     assert!(metaapi.get_current_candle(symbol, timeframe).is_ok());
 }
@@ -88,7 +90,7 @@ fn should_successfully_get_current_candle() {
 #[test]
 #[ignore]
 fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = String::from("invalid");
     let account_id = String::from("invalid");
@@ -98,16 +100,17 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
     let number_of_request_retries = 3;
     let seconds_to_sleep_before_request_retry = 1;
 
-    testing_logger::setup();
+    let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<Ureq> = MetaapiMarketDataApi::new(
-        auth_token,
-        account_id,
-        None,
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
         },
+        &request_api,
     );
 
     // check that the method takes at least min amount of time to execute
@@ -119,24 +122,12 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
     let min_amount_of_time_for_method_execution =
         seconds_to_sleep_before_request_retry * number_of_request_retries;
     assert!(duration >= min_amount_of_time_for_method_execution as u64);
-
-    // check that the defined number of error log messages
-    // for the request retries were called
-    testing_logger::validate(|captures_logs| {
-        let number_of_error_logs = captures_logs
-            .iter()
-            .filter(|log| matches!(log.level, Level::Error))
-            .count() as u32;
-        let expected_number_of_logs = number_of_request_retries + 1;
-
-        assert_eq!(number_of_error_logs, expected_number_of_logs);
-    });
 }
 
 #[test]
 #[ignore]
 fn should_successfully_get_hourly_historical_candles() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -144,8 +135,15 @@ fn should_successfully_get_hourly_historical_candles() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::Hour;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+    let request_api = UreqRequestApi::new();
+
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
+        Default::default(),
+        &request_api,
+    );
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-03-01 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -192,7 +190,7 @@ fn should_successfully_get_hourly_historical_candles() {
 #[test]
 #[ignore]
 fn should_successfully_get_minute_historical_candles() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -200,8 +198,15 @@ fn should_successfully_get_minute_historical_candles() {
     let symbol = "GBPUSDm";
     let timeframe = Timeframe::OneMin;
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+    let request_api = UreqRequestApi::new();
+
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
+        Default::default(),
+        &request_api,
+    );
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -248,15 +253,22 @@ fn should_successfully_get_minute_historical_candles() {
 #[test]
 #[ignore]
 fn should_successfully_get_historical_ticks() {
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
 
     let symbol = "GBPUSDm";
 
-    let metaapi: MetaapiMarketDataApi<Ureq> =
-        MetaapiMarketDataApi::new(auth_token, account_id, None, Default::default());
+    let request_api = UreqRequestApi::new();
+
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
+        &auth_token,
+        &account_id,
+        "",
+        Default::default(),
+        &request_api,
+    );
 
     let timeframe = Timeframe::OneMin;
 
