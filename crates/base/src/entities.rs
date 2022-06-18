@@ -34,18 +34,12 @@ pub enum Edge {
     Low = -1,
 }
 
-#[derive(Debug, PartialEq, Default)]
-pub struct HistoricalData {
-    pub candles: Vec<Option<BasicCandle>>,
-    pub ticks: Vec<Option<BasicTick>>,
-}
-
 #[derive(Debug, Copy, Clone)]
 pub enum Timeframe {
-    Hour,
-    ThirtyMin,
-    FifteenMin,
-    OneMin,
+    Hour = 60,
+    ThirtyMin = 30,
+    FifteenMin = 15,
+    OneMin = 1,
 }
 
 impl Display for Timeframe {
@@ -60,10 +54,7 @@ impl Display for Timeframe {
 }
 
 #[derive(Debug)]
-pub struct StrategyProperties {
-    pub symbol: String,
-    pub candle_timeframe: Timeframe,
-    pub tick_timeframe: Timeframe,
-    pub end_time: DateTime<Utc>,
-    pub duration: Duration,
+pub struct StrategyTimeframes {
+    pub candle: Timeframe,
+    pub tick: Timeframe,
 }

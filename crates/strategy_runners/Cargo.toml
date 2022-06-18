@@ -8,10 +8,15 @@ edition = "2021"
 [dependencies]
 trading_apis = { path = "../trading_apis" }
 backtesting = { path = "../backtesting" }
+strategies = { path = "../strategies" }
 base = { path = "../base" }
 plotly = "0.7.0"
 chrono = "0.4.19"
 dotenv = "0.15.0"
 anyhow = "1.0.57"
+log4rs = { version = "1.1.1", features = ["background_rotation", "gzip"] }
+log = "0.4.17"
 
+[dev-dependencies]
+float-cmp = "0.9.0"
 

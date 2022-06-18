@@ -1,3 +1,3 @@
 pub mod entities;
-pub mod settings;
 pub mod stores;
+pub mod trading_limiter;

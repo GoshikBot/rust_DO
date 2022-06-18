@@ -1,37 +1,41 @@
-use anyhow::{bail, Context, Result};
-use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, HistoricalData};
-use chrono::NaiveDateTime;
 use std::cmp::Ordering;
 
+use anyhow::{bail, Context, Result};
+use chrono::NaiveDateTime;
+
+use base::entities::candle::BasicCandle;
+use base::entities::BasicTick;
+
+use crate::HistoricalData;
+
+#[derive(Copy, Clone)]
 struct Candle {
     index: usize,
     time: NaiveDateTime,
 }
 
-fn find_tick_with_time(ticks: &[Option<BasicTick>], time: NaiveDateTime) -> Option<usize> {
-    ticks
-        .iter()
-        .enumerate()
-        .find_map(|(i, tick)| match tick.as_ref() {
-            Some(tick) => {
-                if tick.time == time {
-                    Some(i)
-                } else {
-                    None
-                }
+fn find_tick_with_time<'a>(
+    ticks: impl Iterator<Item = &'a Option<BasicTick>>,
+    time: NaiveDateTime,
+) -> Option<usize> {
+    ticks.enumerate().find_map(|(i, tick)| match tick.as_ref() {
+        Some(tick) => {
+            if tick.time == time {
+                Some(i)
+            } else {
+                None
             }
-            None => None,
-        })
+        }
+        None => None,
+    })
 }
 
-/// Searches for the candle with the time greater or equal to the first tick time.
-fn find_candle_around_first_tick(
+/// Searches for the candle with the time greater or equal to the tick time.
+fn find_candle_around_tick<'a>(
     first_tick_time: NaiveDateTime,
-    candles: &[Option<BasicCandle>],
+    candle_iterator: impl Iterator<Item = &'a Option<BasicCandle>>,
 ) -> Option<Candle> {
-    candles
-        .iter()
+    candle_iterator
         .enumerate()
         .find_map(|(i, candle)| match candle.as_ref() {
             Some(candle) => {
@@ -49,9 +53,11 @@ fn find_candle_around_first_tick(
 }
 
 /// Searches for the next not none candle.
-fn find_next_candle(current_index: usize, candles: &[Option<BasicCandle>]) -> Result<Candle> {
+fn find_next_candle<'a>(
+    current_index: usize,
+    candles: impl Iterator<Item = &'a Option<BasicCandle>>,
+) -> Result<Candle> {
     candles
-        .iter()
         .enumerate()
         .skip(current_index + 1)
         .find_map(|(i, candle)| {
@@ -61,154 +67,6 @@ fn find_next_candle(current_index: usize, candles: &[Option<BasicCandle>]) -> Re
             })
         })
         .context("no next not none candle was found")
-}
-
-/// The sync process that can be called after positioning the candle_around_tick after the first tick.
-fn sync_candles_and_ticks_after_positioning(
-    mut historical_data: HistoricalData,
-    mut candle_around_tick_time: NaiveDateTime,
-    mut candle_around_tick_index: usize,
-) -> Result<HistoricalData> {
-    loop {
-        let corresponding_tick_id =
-            find_tick_with_time(&historical_data.ticks, candle_around_tick_time);
-
-        match corresponding_tick_id {
-            None => {
-                Candle {
-                    index: candle_around_tick_index,
-                    time: candle_around_tick_time,
-                } = find_next_candle(candle_around_tick_index, &historical_data.candles)?;
-            }
-            Some(tick_id) => {
-                return Ok(HistoricalData {
-                    candles: historical_data
-                        .candles
-                        .drain(candle_around_tick_index..)
-                        .collect(),
-                    ticks: historical_data.ticks.drain(tick_id..).collect(),
-                });
-            }
-        }
-    }
-}
-
-fn sync_front(mut historical_data: HistoricalData) -> Result<HistoricalData> {
-    let first_candle_time = historical_data
-        .candles
-        .first()
-        .context("no candles")?
-        .as_ref()
-        .context("first candle is None")?
-        .properties
-        .time;
-
-    let first_tick_time = historical_data
-        .ticks
-        .first()
-        .context("no ticks")?
-        .as_ref()
-        .context("first tick is None")?
-        .time;
-
-    match first_tick_time.cmp(&first_candle_time) {
-        Ordering::Greater => {
-            // position the first candle after the first tick before synchronization
-            let Candle { index: candle_around_tick_index, time: candle_around_tick_time } = find_candle_around_first_tick(
-                first_tick_time,
-                &historical_data.candles
-            ).context(
-                format!("no candle around a first tick was found: historical data: {:#?}, first_tick_time: {}",
-                        historical_data, first_tick_time)
-            )?;
-
-            if candle_around_tick_time == first_tick_time {
-                return Ok(HistoricalData {
-                    candles: historical_data
-                        .candles
-                        .drain(candle_around_tick_index..)
-                        .collect(),
-                    ticks: historical_data.ticks,
-                });
-            } else {
-                sync_candles_and_ticks_after_positioning(
-                    historical_data,
-                    candle_around_tick_time,
-                    candle_around_tick_index,
-                )
-            }
-        }
-        Ordering::Less => {
-            // the first candle is already positioned after the first tick before synchronization
-            sync_candles_and_ticks_after_positioning(historical_data, first_candle_time, 0)
-        }
-        Ordering::Equal => Ok(historical_data),
-    }
-}
-
-fn find_tick_right_after_last_candle(
-    ticks: &[Option<BasicTick>],
-    last_candle_time: NaiveDateTime,
-) -> Option<usize> {
-    ticks.iter().enumerate().find_map(|(i, tick)| match tick {
-        Some(tick) => {
-            if tick.time > last_candle_time {
-                Some(i)
-            } else {
-                None
-            }
-        }
-        None => None,
-    })
-}
-
-fn get_candles_before_last_tick(
-    candles: Vec<Option<BasicCandle>>,
-    last_tick_time: NaiveDateTime,
-) -> Vec<Option<BasicCandle>> {
-    candles
-        .into_iter()
-        .rev()
-        .skip_while(|candle| match candle {
-            Some(candle) => candle.properties.time >= last_tick_time,
-            None => true,
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
-}
-
-fn sync_back(mut historical_data: HistoricalData) -> Result<HistoricalData> {
-    let last_candle_time = historical_data
-        .candles
-        .last()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .properties
-        .time;
-    let last_tick_time = historical_data.ticks.last().unwrap().as_ref().unwrap().time;
-
-    return match last_tick_time.cmp(&last_candle_time) {
-        Ordering::Less | Ordering::Equal => Ok(HistoricalData {
-            candles: get_candles_before_last_tick(historical_data.candles, last_tick_time),
-            ticks: historical_data.ticks,
-        }),
-        Ordering::Greater => {
-            let tick_right_after_last_candle =
-                find_tick_right_after_last_candle(&historical_data.ticks, last_candle_time)
-                    .unwrap();
-
-            Ok(HistoricalData {
-                candles: historical_data.candles,
-                ticks: historical_data
-                    .ticks
-                    .drain(..=tick_right_after_last_candle)
-                    .collect(),
-            })
-        }
-    };
 }
 
 fn trim_historical_data(historical_data: HistoricalData) -> HistoricalData {
@@ -236,22 +94,212 @@ fn trim_historical_data(historical_data: HistoricalData) -> HistoricalData {
     }
 }
 
+struct TickCandle {
+    tick_index: usize,
+    candle_index: usize,
+}
+
+struct Intersection {
+    front: TickCandle,
+    back: TickCandle,
+}
+
+fn find_timeframe_equal_times<'a, 'b, C, T>(
+    candle_iterator: C,
+    tick_iterator: T,
+    mut candle_around_tick: Candle,
+) -> Result<TickCandle>
+where
+    C: Iterator<Item = &'a Option<BasicCandle>> + Clone,
+    T: Iterator<Item = &'b Option<BasicTick>> + Clone,
+{
+    loop {
+        let corresponding_tick_index =
+            find_tick_with_time(tick_iterator.clone(), candle_around_tick.time);
+
+        match corresponding_tick_index {
+            None => {
+                candle_around_tick =
+                    find_next_candle(candle_around_tick.index, candle_iterator.clone())?;
+            }
+            Some(tick_index) => {
+                return Ok(TickCandle {
+                    tick_index,
+                    candle_index: candle_around_tick.index,
+                });
+            }
+        }
+    }
+}
+
+enum Edge {
+    Front,
+    Back,
+}
+
+fn reverse_edge_intersection_indexes(
+    ticks_len: usize,
+    candles_len: usize,
+    intersection: TickCandle,
+) -> TickCandle {
+    TickCandle {
+        tick_index: ticks_len - intersection.tick_index - 1,
+        candle_index: candles_len - intersection.candle_index - 1,
+    }
+}
+
+fn find_edge_intersection(historical_data: &HistoricalData, edge: Edge) -> Result<TickCandle> {
+    let first_candle_time = historical_data
+        .candles
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .properties
+        .time;
+    let first_tick_time = historical_data
+        .ticks
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .time;
+
+    return match first_tick_time.cmp(&first_candle_time) {
+        Ordering::Greater => {
+            let candle_around_first_tick = match edge {
+                Edge::Front => {
+                    find_candle_around_tick(first_tick_time, historical_data.candles.iter())
+                }
+                Edge::Back => {
+                    find_candle_around_tick(first_tick_time, historical_data.candles.iter().rev())
+                }
+            }
+            .context("no candle around a first tick was found")?;
+
+            return if candle_around_first_tick.time == first_tick_time {
+                let intersection = TickCandle {
+                    tick_index: 0,
+                    candle_index: candle_around_first_tick.index,
+                };
+
+                match edge {
+                    Edge::Front => Ok(intersection),
+                    Edge::Back => Ok(reverse_edge_intersection_indexes(
+                        historical_data.ticks.len(),
+                        historical_data.candles.len(),
+                        intersection,
+                    )),
+                }
+            } else {
+                match edge {
+                    Edge::Front => find_timeframe_equal_times(
+                        historical_data.candles.iter(),
+                        historical_data.ticks.iter(),
+                        candle_around_first_tick,
+                    ),
+                    Edge::Back => Ok(reverse_edge_intersection_indexes(
+                        historical_data.ticks.len(),
+                        historical_data.candles.len(),
+                        find_timeframe_equal_times(
+                            historical_data.candles.iter().rev(),
+                            historical_data.ticks.iter().rev(),
+                            candle_around_first_tick,
+                        )?,
+                    )),
+                }
+            };
+        }
+        Ordering::Less => {
+            let candle_around_tick = Candle {
+                index: 0,
+                time: first_candle_time,
+            };
+
+            match edge {
+                Edge::Front => find_timeframe_equal_times(
+                    historical_data.candles.iter(),
+                    historical_data.ticks.iter(),
+                    candle_around_tick,
+                ),
+                Edge::Back => Ok(reverse_edge_intersection_indexes(
+                    historical_data.ticks.len(),
+                    historical_data.candles.len(),
+                    find_timeframe_equal_times(
+                        historical_data.candles.iter().rev(),
+                        historical_data.ticks.iter().rev(),
+                        candle_around_tick,
+                    )?,
+                )),
+            }
+        }
+        Ordering::Equal => {
+            let intersection = TickCandle {
+                tick_index: 0,
+                candle_index: 0,
+            };
+
+            match edge {
+                Edge::Front => Ok(intersection),
+                Edge::Back => Ok(reverse_edge_intersection_indexes(
+                    historical_data.ticks.len(),
+                    historical_data.candles.len(),
+                    intersection,
+                )),
+            }
+        }
+    };
+}
+
+fn find_timeframe_intersection(historical_data: &HistoricalData) -> Result<Intersection> {
+    let front = find_edge_intersection(historical_data, Edge::Front)?;
+    let back = find_edge_intersection(historical_data, Edge::Back)?;
+
+    Ok(Intersection { front, back })
+}
+
 /// Reduces the first candle and the first tick to the same time.
-pub fn sync_candles_and_ticks(mut historical_data: HistoricalData) -> Result<HistoricalData> {
+pub fn sync_candles_and_ticks(historical_data: HistoricalData) -> Result<HistoricalData> {
     if historical_data.candles.is_empty() || historical_data.ticks.is_empty() {
         bail!("empty collection of items for synchronization");
     }
 
-    let trimmed_historical_data = trim_historical_data(historical_data);
+    let mut trimmed_historical_data = trim_historical_data(historical_data);
 
-    let front_synchronized_data = sync_front(trimmed_historical_data)?;
-    sync_back(front_synchronized_data)
+    let intersection = find_timeframe_intersection(&trimmed_historical_data)?;
+
+    let first_candle = intersection.front.candle_index;
+    let last_candle = if intersection.back.candle_index > 0 {
+        intersection.back.candle_index - 1
+    } else {
+        bail!("too little data for synchronization");
+    };
+
+    let first_tick = if intersection.front.tick_index < trimmed_historical_data.ticks.len() - 1 {
+        intersection.front.tick_index + 1
+    } else {
+        bail!("too little data for synchronization");
+    };
+
+    let last_tick = intersection.back.tick_index;
+
+    Ok(HistoricalData {
+        candles: trimmed_historical_data
+            .candles
+            .drain(first_candle..=last_candle)
+            .collect(),
+        ticks: trimmed_historical_data
+            .ticks
+            .drain(first_tick..=last_tick)
+            .collect(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use base::entities::CandleBaseProperties;
+
+    use super::*;
 
     #[test]
     fn sync_candles_and_ticks_first_candle_before_first_tick_last_tick_after_last_candle_successfully(
@@ -377,22 +425,8 @@ mod tests {
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
-                }),
             ],
             ticks: vec![
-                Some(BasicTick {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ask: 0.0,
-                    bid: 0.0,
-                }),
                 Some(BasicTick {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
@@ -413,14 +447,6 @@ mod tests {
                 }),
                 Some(BasicTick {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ask: 0.0,
-                    bid: 0.0,
-                }),
-                None,
-                None,
-                Some(BasicTick {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 16:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
@@ -566,12 +592,6 @@ mod tests {
                 edge_prices: Default::default(),
             })],
             ticks: vec![
-                Some(BasicTick {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ask: 0.0,
-                    bid: 0.0,
-                }),
                 Some(BasicTick {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),

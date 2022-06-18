@@ -1,5 +1,6 @@
 .idea
 /historical_data
+/strategy_params
 /logs
 **/*.csv
 

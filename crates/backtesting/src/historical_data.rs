@@ -1,6 +1,7 @@
 use crate::historical_data::serialization::HistoricalDataSerialization;
+use crate::{HistoricalData, StrategyInitConfig};
 use anyhow::{Context, Result};
-use base::entities::{HistoricalData, StrategyProperties};
+use base::entities::StrategyTimeframes;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use trading_apis::MarketDataApi;
@@ -12,7 +13,7 @@ pub mod synchronization;
 /// and serializes the got data for caching purposes.
 pub fn get_historical_data<S, M, P>(
     historical_data_folder: P,
-    strategy_properties: &StrategyProperties,
+    strategy_properties: &StrategyInitConfig,
     market_data_api: &M,
     serialization: &S,
     sync_candles_and_ticks: impl Fn(HistoricalData) -> Result<HistoricalData>,
@@ -22,10 +23,13 @@ where
     M: MarketDataApi,
     P: Into<PathBuf> + Clone,
 {
-    let StrategyProperties {
+    let StrategyInitConfig {
         symbol,
-        candle_timeframe,
-        tick_timeframe,
+        timeframes:
+            StrategyTimeframes {
+                candle: candle_timeframe,
+                tick: tick_timeframe,
+            },
         end_time,
         duration,
     } = strategy_properties;
@@ -69,7 +73,7 @@ where
 mod tests {
     use super::*;
     use base::entities::candle::BasicCandle;
-    use base::entities::{BasicTick, CandleBaseProperties, StrategyProperties, Timeframe};
+    use base::entities::{BasicTick, CandleBaseProperties, Timeframe};
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
     use std::cell::RefCell;
 
@@ -146,7 +150,7 @@ mod tests {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
             _historical_data: &HistoricalData,
-            _strategy_properties: &StrategyProperties,
+            _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
             *self.serialization_is_called.borrow_mut() = true;
@@ -155,7 +159,7 @@ mod tests {
 
         fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _strategy_properties: &StrategyProperties,
+            _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<Option<HistoricalData>> {
             *self.deserialization_is_called.borrow_mut() = true;
@@ -214,7 +218,7 @@ mod tests {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
             _historical_data: &HistoricalData,
-            _strategy_properties: &StrategyProperties,
+            _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
             *self.serialization_is_called.borrow_mut() = true;
@@ -224,7 +228,7 @@ mod tests {
 
         fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _strategy_properties: &StrategyProperties,
+            _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<Option<HistoricalData>> {
             *self.deserialization_is_called.borrow_mut() = true;
@@ -234,10 +238,12 @@ mod tests {
 
     #[test]
     fn get_historical_data_already_exists_successfully_deserialize() {
-        let strategy_properties = StrategyProperties {
+        let strategy_properties = StrategyInitConfig {
             symbol: String::from("GBPUSDm"),
-            candle_timeframe: Timeframe::Hour,
-            tick_timeframe: Timeframe::OneMin,
+            timeframes: StrategyTimeframes {
+                candle: Timeframe::Hour,
+                tick: Timeframe::OneMin,
+            },
             end_time: DateTime::from(
                 DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
             ),
@@ -313,10 +319,12 @@ mod tests {
 
     #[test]
     fn get_historical_data_does_not_exists_successfully_got_and_serialize() {
-        let strategy_properties = StrategyProperties {
+        let strategy_properties = StrategyInitConfig {
             symbol: String::from("GBPUSDm"),
-            candle_timeframe: Timeframe::Hour,
-            tick_timeframe: Timeframe::OneMin,
+            timeframes: StrategyTimeframes {
+                candle: Timeframe::Hour,
+                tick: Timeframe::OneMin,
+            },
             end_time: DateTime::from(
                 DateTime::parse_from_str("17-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
             ),

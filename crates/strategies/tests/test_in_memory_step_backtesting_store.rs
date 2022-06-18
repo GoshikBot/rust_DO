@@ -6,7 +6,7 @@ use base::entities::Level;
 use strategies::step::utils::entities::angle::AngleId;
 use strategies::step::utils::entities::working_levels::CorridorType;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-use strategies::step::utils::stores::step_backtesting_store::StepBacktestingStore;
+use strategies::step::utils::stores::step_realtime_store::StepRealtimeStore;
 
 #[test]
 fn should_remove_only_unused_items() {

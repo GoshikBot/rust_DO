@@ -8,7 +8,7 @@ use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
 #[test]
 #[ignore]
 fn should_successfully_get_current_tick() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -30,7 +30,7 @@ fn should_successfully_get_current_tick() {
 #[test]
 #[ignore]
 fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = String::from("invalid");
     let account_id = String::from("invalid");
@@ -66,7 +66,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
 #[test]
 #[ignore]
 fn should_successfully_get_current_candle() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -90,7 +90,7 @@ fn should_successfully_get_current_candle() {
 #[test]
 #[ignore]
 fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = String::from("invalid");
     let account_id = String::from("invalid");
@@ -127,7 +127,7 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
 #[test]
 #[ignore]
 fn should_successfully_get_hourly_historical_candles() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -190,7 +190,7 @@ fn should_successfully_get_hourly_historical_candles() {
 #[test]
 #[ignore]
 fn should_successfully_get_minute_historical_candles() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();
@@ -253,7 +253,7 @@ fn should_successfully_get_minute_historical_candles() {
 #[test]
 #[ignore]
 fn should_successfully_get_historical_ticks() {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
 
     let auth_token = dotenv::var("AUTH_TOKEN").unwrap();
     let account_id = dotenv::var("DEMO_ACCOUNT_ID").unwrap();

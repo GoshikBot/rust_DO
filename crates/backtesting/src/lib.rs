@@ -1,3 +1,6 @@
+use base::entities::candle::BasicCandle;
+use base::entities::{BasicTick, StrategyTimeframes};
+use chrono::{DateTime, Duration, Utc};
 use polars_lazy::prelude::LazyFrame;
 
 pub mod historical_data;
@@ -85,4 +88,18 @@ impl Default for BacktestingConfig {
 pub struct DataFrames {
     pub ticks_tf: LazyFrame,
     pub candles_tf: LazyFrame,
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub struct HistoricalData {
+    pub candles: Vec<Option<BasicCandle>>,
+    pub ticks: Vec<Option<BasicTick>>,
+}
+
+#[derive(Debug)]
+pub struct StrategyInitConfig {
+    pub symbol: String,
+    pub timeframes: StrategyTimeframes,
+    pub end_time: DateTime<Utc>,
+    pub duration: Duration,
 }

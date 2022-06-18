@@ -1,8 +1,8 @@
+use crate::{HistoricalData, StrategyInitConfig};
 use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleSize, CandleVolatility};
 use base::entities::tick::TickPrice;
 use base::entities::{
-    BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, HistoricalData,
-    StrategyProperties,
+    BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, StrategyTimeframes,
 };
 use chrono::NaiveDateTime;
 use csv::{Reader, Writer};
@@ -42,14 +42,17 @@ struct Tick {
     bid: Option<TickPrice>,
 }
 
-fn get_directory_name_for_data_config(strategy_properties: &StrategyProperties) -> String {
-    let StrategyProperties {
+fn get_directory_name_for_data_config(strategy_config: &StrategyInitConfig) -> String {
+    let StrategyInitConfig {
         symbol,
-        candle_timeframe,
-        tick_timeframe,
+        timeframes:
+            StrategyTimeframes {
+                candle: candle_timeframe,
+                tick: tick_timeframe,
+            },
         end_time,
         duration,
-    } = strategy_properties;
+    } = strategy_config;
 
     format!(
         "{}_{}_{}_{}_{}_({}_weeks)",
@@ -64,11 +67,11 @@ fn get_directory_name_for_data_config(strategy_properties: &StrategyProperties) 
 
 fn get_paths_for_historical_data<P: Into<PathBuf>>(
     directory: P,
-    strategy_properties: &StrategyProperties,
+    strategy_config: &StrategyInitConfig,
 ) -> HistoricalDataPaths {
     let mut directory = directory.into();
 
-    let directory_for_candles_and_ticks = get_directory_name_for_data_config(strategy_properties);
+    let directory_for_candles_and_ticks = get_directory_name_for_data_config(strategy_config);
     directory.push(directory_for_candles_and_ticks);
 
     let mut candles_file_path = directory.clone();
@@ -92,13 +95,13 @@ pub trait HistoricalDataSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
         historical_data: &HistoricalData,
-        strategy_properties: &StrategyProperties,
+        strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()>;
 
     fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
         &self,
-        strategy_properties: &StrategyProperties,
+        strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<Option<HistoricalData>>;
 }
@@ -258,19 +261,19 @@ impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
         historical_data: &HistoricalData,
-        strategy_properties: &StrategyProperties,
+        strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()> {
-        let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
+        let historical_data_paths = get_paths_for_historical_data(directory, strategy_config);
         Self::serialize(historical_data, &historical_data_paths)
     }
 
     fn try_to_deserialize_historical_data<P: Into<PathBuf>>(
         &self,
-        strategy_properties: &StrategyProperties,
+        strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<Option<HistoricalData>> {
-        let historical_data_paths = get_paths_for_historical_data(directory, strategy_properties);
+        let historical_data_paths = get_paths_for_historical_data(directory, strategy_config);
 
         if historical_data_files_exist(&historical_data_paths) {
             let historical_data = Self::deserialize(&historical_data_paths)?;

@@ -1,10 +1,9 @@
 use backtesting::historical_data::serialization::{
     HistoricalDataCsvSerialization, HistoricalDataSerialization,
 };
+use backtesting::{HistoricalData, StrategyInitConfig};
 use base::entities::candle::BasicCandle;
-use base::entities::{
-    BasicTick, CandleBaseProperties, HistoricalData, StrategyProperties, Timeframe,
-};
+use base::entities::{BasicTick, CandleBaseProperties, StrategyTimeframes, Timeframe};
 use chrono::{DateTime, Duration, NaiveDateTime};
 use tempfile::TempDir;
 
@@ -66,10 +65,12 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
         ],
     };
 
-    let strategy_properties = StrategyProperties {
+    let strategy_properties = StrategyInitConfig {
         symbol: String::from("GBPUSDm"),
-        candle_timeframe: Timeframe::Hour,
-        tick_timeframe: Timeframe::ThirtyMin,
+        timeframes: StrategyTimeframes {
+            candle: Timeframe::Hour,
+            tick: Timeframe::ThirtyMin,
+        },
         end_time: DateTime::from(
             DateTime::parse_from_str("17-05-2022 16:30 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
         ),
@@ -86,10 +87,10 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
 
     let expected_candles_file_path = temp_dir
         .path()
-        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)\candles.csv");
+        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)/candles.csv");
     let expected_ticks_file_path = temp_dir
         .path()
-        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)\ticks.csv");
+        .join(r"GBPUSDm_1h_30m_2022-05-17_16-30_20160_(2_weeks)/ticks.csv");
 
     assert!(expected_candles_file_path.exists());
     assert!(expected_ticks_file_path.exists());
