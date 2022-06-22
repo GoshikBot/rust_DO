@@ -16,13 +16,8 @@ fn should_successfully_get_current_tick() {
     let symbol = "GBPUSDm";
     let request_api = UreqRequestApi::new();
 
-    let metaapi = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let metaapi =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     metaapi.get_current_tick(symbol).unwrap();
 }
@@ -42,14 +37,14 @@ fn should_return_an_error_after_defined_retries_of_getting_current_tick() {
     let request_api = UreqRequestApi::new();
 
     let metaapi = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
+        auth_token,
+        account_id,
         "",
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
         },
-        &request_api,
+        request_api,
     );
 
     // check that the method takes at least min amount of time to execute
@@ -76,13 +71,8 @@ fn should_successfully_get_current_candle() {
 
     let request_api = UreqRequestApi::new();
 
-    let metaapi = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let metaapi =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     assert!(metaapi.get_current_candle(symbol, timeframe).is_ok());
 }
@@ -103,14 +93,14 @@ fn should_return_an_error_after_defined_retries_of_getting_current_candle() {
     let request_api = UreqRequestApi::new();
 
     let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
+        auth_token,
+        account_id,
         "",
         RetrySettings {
             number_of_request_retries,
             seconds_to_sleep_before_request_retry,
         },
-        &request_api,
+        request_api,
     );
 
     // check that the method takes at least min amount of time to execute
@@ -137,13 +127,8 @@ fn should_successfully_get_hourly_historical_candles() {
 
     let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-03-01 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -200,13 +185,8 @@ fn should_successfully_get_minute_historical_candles() {
 
     let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     let end_time = DateTime::from(
         DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
@@ -262,13 +242,8 @@ fn should_successfully_get_historical_ticks() {
 
     let request_api = UreqRequestApi::new();
 
-    let metaapi: MetaapiMarketDataApi<UreqRequestApi> = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let metaapi: MetaapiMarketDataApi<UreqRequestApi> =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     let timeframe = Timeframe::OneMin;
 

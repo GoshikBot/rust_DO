@@ -7,14 +7,15 @@ use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use polars::prelude::RollingOptions;
 use polars::series::Series;
 use serde::Deserialize;
+use ureq::serde_json;
 
 use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleOpenClose, CandleVolatility};
 use base::entities::tick::TickPrice;
 use base::entities::{BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, Timeframe};
 use base::helpers::{mean, price_to_points};
-use base::requests::api::HttpRequest;
+use base::requests::api::SyncHttpRequest;
 use base::requests::entities::{
-    Headers, HttpRequestData, HttpRequestType, HttpRequestWithRetriesParams, Queries,
+    Headers, HttpRequestData, HttpRequestMethod, HttpRequestWithRetriesParams, Queries,
 };
 use base::requests::http_request_with_retries;
 
@@ -66,7 +67,7 @@ pub type AuthToken = String;
 pub type AccountId = String;
 pub type Symbol = String;
 pub type ApiUrl = String;
-pub type LoggerTarget = String;
+pub type TargetLogger = String;
 
 struct ApiUrls {
     main: ApiUrl,
@@ -91,40 +92,37 @@ enum TuneCandleConfig<'a> {
     },
 }
 
-pub struct MetaapiMarketDataApi<'a, R>
+pub struct MetaapiMarketDataApi<R>
 where
-    R: HttpRequest,
+    R: SyncHttpRequest,
 {
-    auth_token: &'a str,
-    account_id: &'a str,
+    auth_token: AuthToken,
+    account_id: AccountId,
     api_urls: ApiUrls,
-    target_logger: &'a str,
+    target_logger: TargetLogger,
     retry_settings: RetrySettings,
-    request_api: &'a R,
+    request_api: R,
 }
 
-impl<'a, R> MetaapiMarketDataApi<'a, R>
-where
-    R: HttpRequest,
-{
+impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
     pub fn new(
-        auth_token: &'a str,
-        account_id: &'a str,
-        target_logger: &'a str,
+        auth_token: impl Into<AuthToken>,
+        account_id: impl Into<AccountId>,
+        target_logger: impl Into<TargetLogger>,
         retry_settings: RetrySettings,
-        request_api: &'a R,
-    ) -> MetaapiMarketDataApi<'a, R> {
+        request_api: R,
+    ) -> MetaapiMarketDataApi<R> {
         let main_url = dotenv::var(MAIN_API_URL).unwrap();
         let market_data_url = dotenv::var(MARKET_DATA_API_URL).unwrap();
 
         Self {
-            auth_token,
-            account_id,
+            auth_token: auth_token.into(),
+            account_id: account_id.into(),
             api_urls: ApiUrls {
                 main: main_url,
                 market_data: market_data_url,
             },
-            target_logger,
+            target_logger: target_logger.into(),
             retry_settings,
             request_api,
         }
@@ -144,12 +142,9 @@ where
 
         let limit = number_of_candles_to_determine_volatility.to_string();
 
-        let req_data = HttpRequestData {
-            req_type: HttpRequestType::Get,
-            url: &get_last_n_candles_url,
-            headers: Headers::from([("auth-token", self.auth_token)]),
-            queries: Queries::from([("limit", limit.as_str())]),
-        };
+        let req_data = HttpRequestData::new(HttpRequestMethod::Get, get_last_n_candles_url)
+            .add_header("auth-token", &self.auth_token)
+            .add_query("limit", limit);
 
         let req_params = HttpRequestWithRetriesParams {
             req_entity_name: &format!(
@@ -161,8 +156,9 @@ where
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let last_n_candles: Vec<MetatraderCandleJson> =
-            http_request_with_retries(req_data, req_params, self.request_api)?;
+        let last_n_candles: Vec<MetatraderCandleJson> = serde_json::from_str(
+            &http_request_with_retries(req_data, req_params, &self.request_api)?,
+        )?;
 
         let sizes_of_candles: Vec<f32> = last_n_candles
             .iter()
@@ -175,7 +171,7 @@ where
     fn tune_candle(
         &self,
         candle_json: &MetatraderCandleJson,
-        config: TuneCandleConfig,
+        current_volatility: CandleVolatility,
     ) -> Result<BasicCandle> {
         let candle_edge_prices = CandleEdgePrices {
             open: candle_json.open,
@@ -184,14 +180,7 @@ where
             close: candle_json.close,
         };
 
-        let current_volatility = match config {
-            TuneCandleConfig::WithoutVolatility { symbol, timeframe } => {
-                self.get_current_volatility(symbol, timeframe)?
-            }
-            TuneCandleConfig::WithVolatility(volatility) => volatility,
-        };
-
-        let candle_size = candle_json.high - candle_json.low;
+        let candle_size = price_to_points(candle_json.high - candle_json.low);
 
         let candle_type = CandleType::from(CandleOpenClose {
             open: candle_json.open,
@@ -237,15 +226,10 @@ where
             let start_time = end_time.to_rfc3339();
             let limit_str = limit.to_string();
 
-            let req_data = HttpRequestData {
-                req_type: HttpRequestType::Get,
-                url: &get_last_n_candles_url,
-                headers: Headers::from([("auth-token", self.auth_token)]),
-                queries: Queries::from([
-                    ("startTime", start_time.as_str()),
-                    ("limit", limit_str.as_str()),
-                ]),
-            };
+            let req_data = HttpRequestData::new(HttpRequestMethod::Get, &get_last_n_candles_url)
+                .add_header("auth-token", &self.auth_token)
+                .add_query("limit", limit_str)
+                .add_query("startTime", start_time);
 
             let req_params = HttpRequestWithRetriesParams {
                 req_entity_name: &format!("the block of {} candles", limit),
@@ -254,8 +238,9 @@ where
                 seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
             };
 
-            let mut block_of_candles: VecDeque<MetatraderCandleJson> =
-                http_request_with_retries(req_data, req_params, self.request_api)?;
+            let mut block_of_candles: VecDeque<MetatraderCandleJson> = serde_json::from_str(
+                &http_request_with_retries(req_data, req_params, &self.request_api)?,
+            )?;
 
             block_of_candles.append(&mut all_candles);
             all_candles = block_of_candles;
@@ -340,22 +325,16 @@ where
     }
 }
 
-impl<'a, R> MarketDataApi for MetaapiMarketDataApi<'a, R>
-where
-    R: HttpRequest,
-{
+impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
     fn get_current_tick(&self, symbol: &str) -> Result<BasicTick> {
         let get_current_tick_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-price",
             self.api_urls.main, self.account_id, symbol
         );
 
-        let req_data = HttpRequestData {
-            req_type: HttpRequestType::Get,
-            url: &get_current_tick_url,
-            headers: Headers::from([("auth-token", self.auth_token)]),
-            queries: Queries::from([("keepSubscription", "true")]),
-        };
+        let req_data = HttpRequestData::new(HttpRequestMethod::Get, get_current_tick_url)
+            .add_header("auth-token", &self.auth_token)
+            .add_query("keepSubscription", "true");
 
         let req_params = HttpRequestWithRetriesParams {
             req_entity_name: "the current tick",
@@ -364,8 +343,11 @@ where
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let tick_json: MetatraderTickJson =
-            http_request_with_retries(req_data, req_params, self.request_api)?;
+        let tick_json: MetatraderTickJson = serde_json::from_str(&http_request_with_retries(
+            req_data,
+            req_params,
+            &self.request_api,
+        )?)?;
 
         let time = from_naive_str_to_naive_datetime(&tick_json.broker_time)?;
 
@@ -384,12 +366,9 @@ where
             self.api_urls.main, self.account_id, symbol, timeframe
         );
 
-        let req_data = HttpRequestData {
-            req_type: HttpRequestType::Get,
-            url: &get_current_candle_url,
-            headers: Headers::from([("auth-token", self.auth_token)]),
-            queries: Queries::from([("keepSubscription", "true")]),
-        };
+        let req_data = HttpRequestData::new(HttpRequestMethod::Get, get_current_candle_url)
+            .add_header("auth-token", &self.auth_token)
+            .add_query("keepSubscription", "true");
 
         let req_params = HttpRequestWithRetriesParams {
             req_entity_name: "the current candle",
@@ -398,13 +377,14 @@ where
             seconds_to_sleep: self.retry_settings.seconds_to_sleep_before_request_retry,
         };
 
-        let candle_json: MetatraderCandleJson =
-            http_request_with_retries(req_data, req_params, self.request_api)?;
+        let candle_json: MetatraderCandleJson = serde_json::from_str(&http_request_with_retries(
+            req_data,
+            req_params,
+            &self.request_api,
+        )?)?;
 
-        self.tune_candle(
-            &candle_json,
-            TuneCandleConfig::WithoutVolatility { symbol, timeframe },
-        )
+        let current_volatility = self.get_current_volatility(symbol, timeframe)?;
+        self.tune_candle(&candle_json, current_volatility)
     }
 
     fn get_historical_candles(
@@ -464,12 +444,7 @@ where
             .iter()
             .zip(all_candle_volatilities.into_iter())
             .filter(|(_, volatility)| volatility.is_some())
-            .map(|(candle, volatility)| {
-                self.tune_candle(
-                    candle,
-                    TuneCandleConfig::WithVolatility(volatility.unwrap()),
-                )
-            })
+            .map(|(candle, volatility)| self.tune_candle(candle, volatility.unwrap()))
             .collect::<Result<Vec<_>>>()?;
 
         Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.properties.time)
@@ -504,5 +479,113 @@ where
             .collect::<Result<Vec<_>>>()?;
 
         Self::get_items_with_filled_gaps(all_ticks, Timeframe::OneMin, |tick| tick.time)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::de::DeserializeOwned;
+    use ureq::serde_json;
+
+    struct TestRequestApi;
+
+    impl SyncHttpRequest for TestRequestApi {
+        fn call(&self, _req: HttpRequestData) -> Result<String> {
+            Ok(r#"[
+  {
+    "time": "2022-06-21T10:00:00.000Z",
+    "open": 1.22958,
+    "high": 1.23006,
+    "low": 1.22781,
+    "close": 1.22806,
+    "brokerTime": "2022-06-21 13:00:00.000"
+  },
+  {
+    "time": "2022-06-21T11:00:00.000Z",
+    "open": 1.22805,
+    "high": 1.22863,
+    "low": 1.22507,
+    "close": 1.22685,
+    "brokerTime": "2022-06-21 14:00:00.000"
+  },
+  {
+    "time": "2022-06-21T12:00:00.000Z",
+    "open": 1.22686,
+    "high": 1.22812,
+    "low": 1.22596,
+    "close": 1.22662,
+    "brokerTime": "2022-06-21 15:00:00.000"
+  },
+  {
+    "time": "2022-06-21T13:00:00.000Z",
+    "open": 1.22664,
+    "high": 1.22943,
+    "low": 1.22655,
+    "close": 1.22857,
+    "brokerTime": "2022-06-21 16:00:00.000"
+  }
+]"#
+            .to_string())
+        }
+    }
+
+    #[test]
+    fn get_current_volatility_correct_value() {
+        let auth_token = String::from("smth");
+        let account_id = String::from("smth");
+
+        let symbol = "smth";
+
+        let request_api = TestRequestApi {};
+
+        let metaapi =
+            MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
+
+        let volatility = metaapi
+            .get_current_volatility(symbol, Timeframe::Hour)
+            .unwrap();
+
+        assert_eq!(volatility as i32, 271);
+    }
+
+    #[test]
+    fn tune_candle_properly_tuned_candle() {
+        let auth_token = String::from("smth");
+        let account_id = String::from("smth");
+
+        let request_api = TestRequestApi {};
+
+        let metaapi =
+            MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
+
+        let candle_for_tuning = MetatraderCandleJson {
+            time: "2022-06-21T13:00:00.000Z".to_string(),
+            open: 1.22664,
+            high: 1.22943,
+            low: 1.22655,
+            close: 1.22857,
+            broker_time: "2022-06-21 16:00:00.000".to_string(),
+        };
+
+        let mut tuned_candle = metaapi.tune_candle(&candle_for_tuning, 271.0).unwrap();
+        tuned_candle.properties.size = tuned_candle.properties.size.round();
+
+        let expected_tuned_candle = BasicCandle {
+            properties: CandleBaseProperties {
+                time: from_naive_str_to_naive_datetime(&candle_for_tuning.broker_time).unwrap(),
+                r#type: CandleType::Green,
+                size: 288.0,
+                volatility: 271.0,
+            },
+            edge_prices: CandleEdgePrices {
+                open: 1.22664,
+                high: 1.22943,
+                low: 1.22655,
+                close: 1.22857,
+            },
+        };
+
+        assert_eq!(tuned_candle, expected_tuned_candle);
     }
 }

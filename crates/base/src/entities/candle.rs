@@ -1,4 +1,5 @@
 use chrono::{NaiveDateTime, Utc};
+use float_cmp::{approx_eq, ApproxEq};
 use serde::{Deserialize, Serialize};
 
 pub type CandleId = String;
@@ -31,12 +32,21 @@ impl From<CandleOpenClose> for CandleType {
 pub type CandleSize = f32;
 pub type CandleVolatility = f32;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct CandleBaseProperties {
     pub time: NaiveDateTime,
     pub r#type: CandleType,
     pub size: CandleSize,
     pub volatility: CandleVolatility,
+}
+
+impl PartialEq for CandleBaseProperties {
+    fn eq(&self, other: &Self) -> bool {
+        self.time == other.time
+            && self.r#type == other.r#type
+            && approx_eq!(CandleSize, self.size, other.size)
+            && approx_eq!(CandleVolatility, self.volatility, other.volatility)
+    }
 }
 
 impl Default for CandleBaseProperties {
@@ -52,12 +62,21 @@ impl Default for CandleBaseProperties {
 
 pub type CandleEdgePrice = f32;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct CandleEdgePrices {
     pub open: CandleEdgePrice,
     pub high: CandleEdgePrice,
     pub low: CandleEdgePrice,
     pub close: CandleEdgePrice,
+}
+
+impl PartialEq for CandleEdgePrices {
+    fn eq(&self, other: &Self) -> bool {
+        approx_eq!(CandleEdgePrice, self.open, other.open)
+            && approx_eq!(CandleEdgePrice, self.high, other.high)
+            && approx_eq!(CandleEdgePrice, self.low, other.low)
+            && approx_eq!(CandleEdgePrice, self.close, other.close)
+    }
 }
 
 impl Default for CandleEdgePrices {
@@ -71,7 +90,7 @@ impl Default for CandleEdgePrices {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct BasicCandle {
     pub properties: CandleBaseProperties,
     pub edge_prices: CandleEdgePrices,

@@ -504,12 +504,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(approx_eq!(f32, strategy_performance, 2.6, ulps = 2));
-        assert!(approx_eq!(
-            f32,
-            step_stores.config.balances.real,
-            10_260.0,
-            ulps = 2
-        ));
+        assert!(approx_eq!(f32, strategy_performance, 2.6));
+        assert!(approx_eq!(f32, step_stores.config.balances.real, 10_260.0));
     }
 }

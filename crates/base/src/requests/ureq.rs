@@ -1,5 +1,5 @@
-use crate::requests::api::HttpRequest;
-use crate::requests::entities::{HttpRequestData, HttpRequestType, Queries};
+use crate::requests::api::SyncHttpRequest;
+use crate::requests::entities::{HttpRequestData, HttpRequestMethod, Queries};
 use anyhow::{bail, Result};
 use ureq::serde::de::DeserializeOwned;
 use ureq::Error;
@@ -13,28 +13,34 @@ impl UreqRequestApi {
     }
 }
 
-impl HttpRequest for UreqRequestApi {
-    fn call<T>(&self, req: HttpRequestData) -> Result<T>
-    where
-        T: DeserializeOwned,
-    {
-        let req_fn = match req.req_type {
-            HttpRequestType::Get => ureq::get,
+impl SyncHttpRequest for UreqRequestApi {
+    fn call(&self, req: HttpRequestData) -> Result<String> {
+        let req_fn = match req.method {
+            HttpRequestMethod::Get => ureq::get,
+            HttpRequestMethod::Post => ureq::post,
         };
 
-        let mut request = req_fn(req.url);
-        for (header, value) in &req.headers {
-            request = request.set(header, value);
+        let mut request = req_fn(&req.url);
+        if let Some(headers) = &req.headers {
+            for (header, value) in headers {
+                request = request.set(header, value);
+            }
         }
 
-        for (param, value) in &req.queries {
-            request = request.query(param, value);
+        if let Some(queries) = &req.queries {
+            for (param, value) in queries {
+                request = request.query(param, value);
+            }
         }
 
-        let res = request.call();
+        let res = if let Some(body) = req.body {
+            request.send_json(body)
+        } else {
+            request.call()
+        };
 
         match res {
-            Ok(resp) => Ok(resp.into_json()?),
+            Ok(resp) => Ok(resp.into_string()?),
             Err(e) => match e {
                 Error::Status(code, resp) => {
                     bail!(

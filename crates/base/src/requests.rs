@@ -1,4 +1,4 @@
-use crate::requests::api::HttpRequest;
+use crate::requests::api::SyncHttpRequest;
 use crate::requests::entities::{HttpRequestData, HttpRequestWithRetriesParams};
 use ::ureq::serde::de::DeserializeOwned;
 use anyhow::{bail, Result};
@@ -9,11 +9,11 @@ pub mod api;
 pub mod entities;
 pub mod ureq;
 
-pub fn http_request_with_retries<T: DeserializeOwned>(
+pub fn http_request_with_retries(
     req_data: HttpRequestData,
     req_params: HttpRequestWithRetriesParams,
-    request_api: &impl HttpRequest,
-) -> Result<T> {
+    request_api: &impl SyncHttpRequest,
+) -> Result<String> {
     let mut current_request_try = 1;
 
     loop {
@@ -61,19 +61,11 @@ mod tests {
         number_of_requests: RefCell<u32>,
     }
 
-    impl HttpRequest for HttpErrorRequest {
-        fn call<T>(&self, _req: HttpRequestData) -> Result<T>
-        where
-            T: DeserializeOwned,
-        {
+    impl SyncHttpRequest for HttpErrorRequest {
+        fn call(&self, _req: HttpRequestData) -> Result<String> {
             *self.number_of_requests.borrow_mut() += 1;
             bail!("error")
         }
-    }
-
-    #[derive(Deserialize)]
-    struct Test {
-        test: String,
     }
 
     #[derive(Default)]
@@ -81,13 +73,10 @@ mod tests {
         number_of_requests: RefCell<u32>,
     }
 
-    impl HttpRequest for HttpSuccessfulRequest {
-        fn call<T>(&self, _req: HttpRequestData) -> Result<T>
-        where
-            T: DeserializeOwned,
-        {
+    impl SyncHttpRequest for HttpSuccessfulRequest {
+        fn call(&self, _req: HttpRequestData) -> Result<String> {
             *self.number_of_requests.borrow_mut() += 1;
-            Ok(serde_json::from_str(r#"{"test": "test"}"#)?)
+            Ok(String::from("success"))
         }
     }
 
@@ -100,7 +89,7 @@ mod tests {
         let http_request: HttpErrorRequest = Default::default();
 
         let start = Instant::now();
-        let res: Result<Test> = http_request_with_retries(
+        let res = http_request_with_retries(
             Default::default(),
             HttpRequestWithRetriesParams {
                 number_of_retries,
@@ -135,11 +124,10 @@ mod tests {
     fn should_successfully_request_item() {
         let http_request: HttpSuccessfulRequest = Default::default();
 
-        let res: Result<Test> =
-            http_request_with_retries(Default::default(), Default::default(), &http_request);
+        let res = http_request_with_retries(Default::default(), Default::default(), &http_request);
 
         assert!(res.is_ok());
         assert_eq!(*http_request.number_of_requests.borrow(), 1);
-        assert_eq!(res.unwrap().test, "test");
+        assert_eq!(res.unwrap(), "success");
     }
 }

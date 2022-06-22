@@ -14,7 +14,7 @@ use plotly::{Candlestick, Layout, Plot};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use strategies::step::utils::trading_limiter;
-use trading_apis::metaapi_market_data_api::LoggerTarget;
+use trading_apis::metaapi_market_data_api::TargetLogger;
 use trading_apis::MetaapiMarketDataApi;
 
 use base::params::{StrategyCsvFileParams, StrategyParams};
@@ -68,13 +68,8 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
 
     let request_api = UreqRequestApi::new();
 
-    let market_data_api = MetaapiMarketDataApi::new(
-        &auth_token,
-        &account_id,
-        "",
-        Default::default(),
-        &request_api,
-    );
+    let market_data_api =
+        MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
     let step_historical_data_folder = dotenv::var(STEP_HISTORICAL_DATA_FOLDER_ENV).unwrap();
 
