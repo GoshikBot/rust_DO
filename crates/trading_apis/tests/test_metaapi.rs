@@ -1,6 +1,6 @@
 use base::entities::Timeframe;
 use base::requests::ureq::UreqRequestApi;
-use chrono::{DateTime, Duration};
+use chrono::{DateTime, Duration, Utc};
 use std::time::Instant;
 use trading_apis::metaapi_market_data_api::DAYS_FOR_VOLATILITY;
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
@@ -130,9 +130,7 @@ fn should_successfully_get_hourly_historical_candles() {
     let metaapi: MetaapiMarketDataApi<UreqRequestApi> =
         MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
-    let end_time = DateTime::from(
-        DateTime::parse_from_str("2022-03-01 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
-    );
+    let end_time = Utc::now();
 
     let duration = Duration::weeks(12);
 
@@ -188,9 +186,7 @@ fn should_successfully_get_minute_historical_candles() {
     let metaapi: MetaapiMarketDataApi<UreqRequestApi> =
         MetaapiMarketDataApi::new(auth_token, account_id, "", Default::default(), request_api);
 
-    let end_time = DateTime::from(
-        DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
-    );
+    let end_time = Utc::now();
 
     let duration = Duration::weeks(4);
 
@@ -247,9 +243,7 @@ fn should_successfully_get_historical_ticks() {
 
     let timeframe = Timeframe::OneMin;
 
-    let end_time = DateTime::from(
-        DateTime::parse_from_str("2022-05-17 01:00 +0000", "%Y-%m-%d %H:%M %z").unwrap(),
-    );
+    let end_time = Utc::now();
 
     let duration = Duration::weeks(4);
 

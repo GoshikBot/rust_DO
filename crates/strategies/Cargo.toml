@@ -10,7 +10,7 @@ base = {path = "../base"}
 backtesting = {path = "../backtesting"}
 realtime = {path = "../realtime"}
 chrono = "0.4.19"
-xid = "1.0.0"
+xid = "1.0.2"
 serde = {version = "1.0.136", features = ["derive"]}
 anyhow = "1.0.56"
 

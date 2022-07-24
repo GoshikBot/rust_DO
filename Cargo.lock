@@ -2621,9 +2621,9 @@ checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
 
 [[package]]
 name = "xid"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c78285d6e421ad642c4b3c8b38215836d74f2ba58d9ca575bf52614c9dd92591"
+checksum = "b3e4ae5722978fd05d46021a50a097ac5b9f75d3a46849de1aa1c1ffd657c5e7"
 dependencies = [
  "crc32fast",
  "hostname",

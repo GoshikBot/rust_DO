@@ -210,7 +210,7 @@ mod tests {
     }
 
     fn run_iteration(
-        tick: &BasicTick,
+        _tick: &BasicTick,
         candle: Option<&BasicCandle>,
         signals: StrategySignals,
         stores: &mut StepBacktestingStores,

@@ -76,7 +76,7 @@ impl InMemoryStepBacktestingStore {
     /// For each candle checks whether it is in use. If a candle is not in use,
     /// removes it. We don't want candle list to grow endlessly.
     fn remove_unused_candles(&mut self) {
-        let candle_in_angles = |candle_id: &CandleId| self.angles.contains_key(candle_id);
+        let candle_in_angles = |candle_id: &CandleId| self.angles.values().any(|angle| &angle.candle_id == candle_id);
         let candle_in_corridors = |candle_id: &CandleId| self.corridor_candles.contains(candle_id);
         let is_current_candle = |candle_id: &CandleId| {
             self.strategy_ticks_candles.current_candle.as_ref() == Some(candle_id)
@@ -91,6 +91,7 @@ impl InMemoryStepBacktestingStore {
                 || is_current_candle(candle_id)
                 || is_previous_candle(candle_id)
             {
+                dbg!(&candle_id);
                 return true;
             }
 
@@ -122,10 +123,8 @@ impl InMemoryStepBacktestingStore {
         });
     }
 
-    pub fn create_angle(&mut self, id: AngleId, candle_id: CandleId, r#type: Level) -> Result<()> {
-        if let Some(angle) = self.angles.get(&id) {
-            bail!("an angle with an id {} already exists: {:?}", id, angle);
-        }
+    pub fn create_angle(&mut self, candle_id: CandleId, r#type: Level) -> Result<AngleId> {
+        let id = xid::new().to_string();
 
         let new_angle = Angle {
             id: id.clone(),
@@ -133,9 +132,9 @@ impl InMemoryStepBacktestingStore {
             r#type,
         };
 
-        self.angles.insert(id, new_angle);
+        self.angles.insert(id.clone(), new_angle);
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn get_angle_by_id(&self, id: &str) -> Result<Option<Angle>> {
@@ -327,10 +326,8 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn create_tick(&mut self, id: TickId, tick_base_properties: BasicTick) -> Result<()> {
-        if let Some(tick) = self.ticks.get(&id) {
-            bail!("a tick with an id {} already exists: {:?}", id, tick);
-        }
+    pub fn create_tick(&mut self, tick_base_properties: BasicTick) -> Result<TickId> {
+        let id = xid::new().to_string();
 
         let new_tick = Tick {
             id: id.clone(),
@@ -339,9 +336,9 @@ impl InMemoryStepBacktestingStore {
             time: tick_base_properties.time,
         };
 
-        self.ticks.insert(id, new_tick);
+        self.ticks.insert(id.clone(), new_tick);
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Tick>> {
@@ -354,13 +351,10 @@ impl InMemoryStepBacktestingStore {
 
     pub fn create_candle(
         &mut self,
-        id: CandleId,
         base_properties: CandleBaseProperties,
         edge_prices: CandleEdgePrices,
-    ) -> Result<()> {
-        if let Some(candle) = self.candles.get(&id) {
-            bail!("a candle with an id {} already exists: {:?}", id, candle);
-        }
+    ) ->Result<CandleId> {
+        let id = xid::new().to_string();
 
         let new_candle = Candle {
             id: id.clone(),
@@ -368,9 +362,9 @@ impl InMemoryStepBacktestingStore {
             edge_prices,
         };
 
-        self.candles.insert(id, new_candle);
+        self.candles.insert(id.clone(), new_candle);
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn get_candle_by_id(&self, candle_id: &str) -> Result<Option<Candle>> {
@@ -467,20 +461,14 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn create_working_level(&mut self, id: WLId, base_properties: WorkingLevel) -> Result<()> {
-        if let Some(level) = self.working_levels.get(&id) {
-            bail!(
-                "a working level with an id {} already exists: {:?}",
-                id,
-                level
-            );
-        }
+    pub fn create_working_level(&mut self, base_properties: WorkingLevel) -> Result<WLId> {
+        let id = xid::new().to_string();
 
         self.working_levels.insert(id.clone(), base_properties);
 
-        self.created_working_levels.insert(id);
+        self.created_working_levels.insert(id.clone());
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn get_working_level_by_id(&self, id: &str) -> Result<Option<WorkingLevel>> {
@@ -687,13 +675,10 @@ impl InMemoryStepBacktestingStore {
 
     pub fn create_order(
         &mut self,
-        id: OrderId,
         prices: OrderPrices,
         properties: OrderProperties,
-    ) -> Result<()> {
-        if self.orders.contains_key(&id) {
-            bail!("an order with an id {} already exists", id);
-        }
+    ) -> Result<OrderId> {
+        let id = xid::new().to_string();
 
         let new_order = Order {
             id: id.clone(),
@@ -701,9 +686,9 @@ impl InMemoryStepBacktestingStore {
             properties,
         };
 
-        self.orders.insert(id, new_order);
+        self.orders.insert(id.clone(), new_order);
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn get_order_by_id(&self, id: &str) -> Result<Option<Order>> {
