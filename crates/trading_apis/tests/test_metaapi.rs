@@ -152,7 +152,7 @@ fn should_successfully_get_hourly_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_hours_between_adjacent_candles =
-                    (candle.properties.time - previous_candle.properties.time).num_hours();
+                    (candle.main.time - previous_candle.main.time).num_hours();
 
                 assert_eq!(
                     number_of_nones_in_row,
@@ -208,7 +208,7 @@ fn should_successfully_get_minute_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_minutes_between_adjacent_candles =
-                    (candle.properties.time - previous_candle.properties.time).num_minutes();
+                    (candle.main.time - previous_candle.main.time).num_minutes();
 
                 assert_eq!(
                     number_of_nones_in_row,

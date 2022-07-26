@@ -1,11 +1,11 @@
 pub mod candle;
 pub mod tick;
 
-use crate::entities::candle::BasicCandle;
-pub use candle::{CandleBaseProperties, CandleEdgePrices, CandleType};
+use crate::entities::candle::BasicCandleProperties;
+pub use candle::{CandleEdgePrices, CandleMainProperties, CandleType};
 use chrono::{DateTime, Duration, Utc};
 use std::fmt::{Display, Formatter};
-pub use tick::BasicTick;
+pub use tick::BasicTickProperties;
 
 pub const LOT: i32 = 100_000;
 
@@ -57,4 +57,10 @@ impl Display for Timeframe {
 pub struct StrategyTimeframes {
     pub candle: Timeframe,
     pub tick: Timeframe,
+}
+
+#[derive(Debug, Clone)]
+pub struct Item<I, P> {
+    pub id: I,
+    pub properties: P,
 }

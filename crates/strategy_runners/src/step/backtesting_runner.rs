@@ -1,8 +1,8 @@
 use anyhow::Context;
 use anyhow::Result;
 use backtesting::HistoricalData;
-use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, StrategyTimeframes, Timeframe};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
 use base::params::StrategyParams;
 use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
 use strategies::step::utils::stores::{StepBacktestingBalances, StepBacktestingStores};
@@ -12,13 +12,13 @@ use strategies::step::utils::trading_limiter::TradingLimiter;
 #[derive(Debug)]
 struct Tick<'a> {
     index: usize,
-    value: Option<&'a BasicTick>,
+    value: Option<&'a BasicTickProperties>,
 }
 
 #[derive(Debug)]
 struct Candle<'a> {
     index: usize,
-    value: Option<&'a BasicCandle>,
+    value: Option<&'a BasicCandleProperties>,
 }
 
 fn update_number_of_iterations_to_next_candle(
@@ -55,8 +55,8 @@ where
     P: StrategyParams,
     L: TradingLimiter,
     R: Fn(
-        &BasicTick,
-        Option<&BasicCandle>,
+        BasicTickProperties,
+        Option<BasicCandleProperties>,
         StrategySignals,
         &mut StepBacktestingStores,
         &P,
@@ -104,9 +104,9 @@ where
 
             // run iteration only if a tick exists
             run_iteration(
-                current_tick,
+                current_tick.clone(),
                 if new_candle_appeared {
-                    current_candle.value
+                    current_candle.value.cloned()
                 } else {
                     None
                 },
@@ -174,7 +174,7 @@ where
 mod tests {
     use super::*;
     use base::entities::candle::CandleVolatility;
-    use base::entities::CandleBaseProperties;
+    use base::entities::CandleMainProperties;
     use base::params::PointSettingValue;
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
@@ -192,7 +192,7 @@ mod tests {
     }
 
     impl TradingLimiter for TestTradingLimiter {
-        fn forbid_trading(&self, current_tick: &BasicTick) -> bool {
+        fn forbid_trading(&self, current_tick: &BasicTickProperties) -> bool {
             if current_tick.time.time().hour() as u8 == HOUR_TO_FORBID_TRADING {
                 return true;
             }
@@ -200,7 +200,7 @@ mod tests {
             false
         }
 
-        fn allow_trading(&self, current_tick: &BasicTick) -> bool {
+        fn allow_trading(&self, current_tick: &BasicTickProperties) -> bool {
             if HOURS_TO_FORBID_TRADING.contains(&(current_tick.time.time().hour() as u8)) {
                 return false;
             }
@@ -210,8 +210,8 @@ mod tests {
     }
 
     fn run_iteration(
-        _tick: &BasicTick,
-        candle: Option<&BasicCandle>,
+        _tick: BasicTickProperties,
+        candle: Option<BasicCandleProperties>,
         signals: StrategySignals,
         stores: &mut StepBacktestingStores,
         _params: &impl StrategyParams,
@@ -261,8 +261,8 @@ mod tests {
     fn loop_through_historical_data_proper_params_get_correct_performance() {
         let historical_data = HistoricalData {
             candles: vec![
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 18:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -270,48 +270,48 @@ mod tests {
                     edge_prices: Default::default(),
                 }),
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -319,24 +319,24 @@ mod tests {
                     edge_prices: Default::default(),
                 }),
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -345,135 +345,135 @@ mod tests {
                 }),
             ],
             ticks: vec![
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 18:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 19:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 19:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 20:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 22:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 23:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 00:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 02:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 02:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 03:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 04:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 05:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 06:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,

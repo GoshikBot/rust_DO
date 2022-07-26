@@ -42,22 +42,21 @@ impl Default for OrderStatus {
 
 pub type OrderVolume = f32;
 
-#[derive(Debug, Clone)]
-pub struct Order {
-    pub id: OrderId,
-    pub properties: OrderProperties,
+#[derive(Debug, Clone, Default)]
+pub struct BasicOrderProperties {
+    pub main: OrderMainProperties,
     pub prices: OrderPrices,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct OrderProperties {
+pub struct OrderMainProperties {
     pub r#type: OrderType,
     pub volume: OrderVolume,
     pub status: OrderStatus,
     pub working_level_id: WLId,
 }
 
-impl Default for OrderProperties {
+impl Default for OrderMainProperties {
     fn default() -> Self {
         Self {
             r#type: OrderType::Buy,

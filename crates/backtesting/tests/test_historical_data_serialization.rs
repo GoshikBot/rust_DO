@@ -2,8 +2,8 @@ use backtesting::historical_data::serialization::{
     HistoricalDataCsvSerialization, HistoricalDataSerialization,
 };
 use backtesting::{HistoricalData, StrategyInitConfig};
-use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, CandleBaseProperties, StrategyTimeframes, Timeframe};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{BasicTickProperties, CandleMainProperties, StrategyTimeframes, Timeframe};
 use chrono::{DateTime, Duration, NaiveDateTime};
 use tempfile::TempDir;
 
@@ -11,8 +11,8 @@ use tempfile::TempDir;
 fn serialize_deserialize_historical_data_proper_params_successfully() {
     let historical_data = HistoricalData {
         candles: vec![
-            Some(BasicCandle {
-                properties: CandleBaseProperties {
+            Some(BasicCandleProperties {
+                main: CandleMainProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ..Default::default()
@@ -20,8 +20,8 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
                 edge_prices: Default::default(),
             }),
             None,
-            Some(BasicCandle {
-                properties: CandleBaseProperties {
+            Some(BasicCandleProperties {
+                main: CandleMainProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ..Default::default()
@@ -30,34 +30,34 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
             }),
         ],
         ticks: vec![
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,
             }),
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,
             }),
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,
             }),
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,
             }),
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,
             }),
             None,
             None,
-            Some(BasicTick {
+            Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 16:30", "%d-%m-%Y %H:%M").unwrap(),
                 ask: 0.0,
                 bid: 0.0,

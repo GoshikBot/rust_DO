@@ -33,14 +33,14 @@ pub type CandleSize = f32;
 pub type CandleVolatility = f32;
 
 #[derive(Debug, Clone)]
-pub struct CandleBaseProperties {
+pub struct CandleMainProperties {
     pub time: NaiveDateTime,
     pub r#type: CandleType,
     pub size: CandleSize,
     pub volatility: CandleVolatility,
 }
 
-impl PartialEq for CandleBaseProperties {
+impl PartialEq for CandleMainProperties {
     fn eq(&self, other: &Self) -> bool {
         self.time == other.time
             && self.r#type == other.r#type
@@ -49,7 +49,7 @@ impl PartialEq for CandleBaseProperties {
     }
 }
 
-impl Default for CandleBaseProperties {
+impl Default for CandleMainProperties {
     fn default() -> Self {
         Self {
             time: Utc::now().naive_utc(),
@@ -91,8 +91,8 @@ impl Default for CandleEdgePrices {
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct BasicCandle {
-    pub properties: CandleBaseProperties,
+pub struct BasicCandleProperties {
+    pub main: CandleMainProperties,
     pub edge_prices: CandleEdgePrices,
 }
 

@@ -1,5 +1,5 @@
-use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, StrategyTimeframes};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{BasicTickProperties, StrategyTimeframes};
 use chrono::{DateTime, Duration, Utc};
 use polars_lazy::prelude::LazyFrame;
 
@@ -92,8 +92,8 @@ pub struct DataFrames {
 
 #[derive(Debug, PartialEq, Default)]
 pub struct HistoricalData {
-    pub candles: Vec<Option<BasicCandle>>,
-    pub ticks: Vec<Option<BasicTick>>,
+    pub candles: Vec<Option<BasicCandleProperties>>,
+    pub ticks: Vec<Option<BasicTickProperties>>,
 }
 
 #[derive(Debug)]

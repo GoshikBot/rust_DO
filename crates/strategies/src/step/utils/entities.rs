@@ -1,10 +1,8 @@
 use std::fmt::{Display, Formatter};
 
 pub mod angle;
-pub mod candle;
 pub mod order;
 pub mod params;
-pub mod tick;
 pub mod working_levels;
 
 #[derive(Debug, Clone, Copy)]

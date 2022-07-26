@@ -1,10 +1,10 @@
-use crate::entities::candle::BasicCandle;
-use crate::entities::CandleBaseProperties;
+use crate::entities::candle::BasicCandleProperties;
+use crate::entities::CandleMainProperties;
 use crate::helpers::{points_to_price, price_to_points};
 use crate::params::{PointSettingValue, StrategyParams};
 
 /// Candle can be the corridor leader if its size is less or equal to the current volatility.
-pub fn candle_can_be_corridor_leader(candle_properties: &CandleBaseProperties) -> bool {
+pub fn candle_can_be_corridor_leader(candle_properties: &CandleMainProperties) -> bool {
     if candle_properties.size <= candle_properties.volatility {
         return true;
     }
@@ -14,8 +14,8 @@ pub fn candle_can_be_corridor_leader(candle_properties: &CandleBaseProperties) -
 
 /// Checks if a candle is inside a corridor basing on a leading candle.
 pub fn is_in_corridor(
-    candle: &BasicCandle,
-    leading_candle: &BasicCandle,
+    candle: &BasicCandleProperties,
+    leading_candle: &BasicCandleProperties,
     max_distance_from_corridor_leading_candle_pins_pct: PointSettingValue,
 ) -> bool {
     diff_between_edges(candle.edge_prices.high, Edge::High, leading_candle)
@@ -38,17 +38,15 @@ type Difference = f32;
 fn diff_between_edges(
     price: ComparisonPrice,
     edge: Edge,
-    leading_candle: &BasicCandle,
+    leading_candle: &BasicCandleProperties,
 ) -> Difference {
     match edge {
         Edge::High => {
-            (price - leading_candle.edge_prices.high)
-                / points_to_price(leading_candle.properties.size)
+            (price - leading_candle.edge_prices.high) / points_to_price(leading_candle.main.size)
                 * 100.0
         }
         Edge::Low => {
-            (leading_candle.edge_prices.low - price)
-                / points_to_price(leading_candle.properties.size)
+            (leading_candle.edge_prices.low - price) / points_to_price(leading_candle.main.size)
                 * 100.0
         }
     }
@@ -58,14 +56,14 @@ fn diff_between_edges(
 /// the appropriate leader for the new candle. The corridor will be cropped
 /// to the closest appropriate leader.
 pub fn crop_corridor_to_closest_leader(
-    corridor: &[BasicCandle],
-    new_candle: &BasicCandle,
+    corridor: &[BasicCandleProperties],
+    new_candle: &BasicCandleProperties,
     max_distance_from_corridor_leading_candle_pins_pct: PointSettingValue,
-    candle_can_be_corridor_leader: impl Fn(&CandleBaseProperties) -> bool,
-    is_in_corridor: impl Fn(&BasicCandle, &BasicCandle, PointSettingValue) -> bool,
-) -> Option<Vec<BasicCandle>> {
+    candle_can_be_corridor_leader: impl Fn(&CandleMainProperties) -> bool,
+    is_in_corridor: impl Fn(&BasicCandleProperties, &BasicCandleProperties, PointSettingValue) -> bool,
+) -> Option<Vec<BasicCandleProperties>> {
     for (i, candle) in corridor.iter().enumerate() {
-        if candle_can_be_corridor_leader(&candle.properties)
+        if candle_can_be_corridor_leader(&candle.main)
             && is_in_corridor(
                 new_candle,
                 candle,
@@ -91,7 +89,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn candle_can_be_corridor_leader__true() {
-        let candle_properties = CandleBaseProperties {
+        let candle_properties = CandleMainProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
             size: 150.0,
@@ -104,7 +102,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn candle_can_be_corridor_leader__false() {
-        let candle_properties = CandleBaseProperties {
+        let candle_properties = CandleMainProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
             size: 180.0,
@@ -117,8 +115,8 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_in_range_of_leading_candle__true() {
-        let current_candle = BasicCandle {
-            properties: CandleBaseProperties {
+        let current_candle = BasicCandleProperties {
+            main: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: 399.0,
@@ -132,8 +130,8 @@ mod tests {
             },
         };
 
-        let leading_candle = BasicCandle {
-            properties: CandleBaseProperties {
+        let leading_candle = BasicCandleProperties {
+            main: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: 288.0,
@@ -153,8 +151,8 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_beyond_the_range_of_leading_candle__false() {
-        let current_candle = BasicCandle {
-            properties: CandleBaseProperties {
+        let current_candle = BasicCandleProperties {
+            main: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: 404.0,
@@ -168,8 +166,8 @@ mod tests {
             },
         };
 
-        let leading_candle = BasicCandle {
-            properties: CandleBaseProperties {
+        let leading_candle = BasicCandleProperties {
+            main: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: 288.0,
@@ -191,8 +189,8 @@ mod tests {
     fn crop_corridor_to_closest_leader__third_candle_is_appropriate_leader__new_existing_corridor()
     {
         let current_corridor = [
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.0,
                     high: 0.0,
@@ -200,8 +198,8 @@ mod tests {
                     close: 0.0,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.1,
                     high: 0.1,
@@ -209,8 +207,8 @@ mod tests {
                     close: 0.1,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.2,
                     high: 0.2,
@@ -218,8 +216,8 @@ mod tests {
                     close: 0.2,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.3,
                     high: 0.3,
@@ -227,8 +225,8 @@ mod tests {
                     close: 0.3,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.4,
                     high: 0.4,
@@ -236,8 +234,8 @@ mod tests {
                     close: 0.4,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.5,
                     high: 0.5,
@@ -245,8 +243,8 @@ mod tests {
                     close: 0.5,
                 },
             },
-            BasicCandle {
-                properties: Default::default(),
+            BasicCandleProperties {
+                main: Default::default(),
                 edge_prices: CandleEdgePrices {
                     open: 0.6,
                     high: 0.6,
@@ -256,8 +254,8 @@ mod tests {
             },
         ];
 
-        let new_candle = BasicCandle {
-            properties: Default::default(),
+        let new_candle = BasicCandleProperties {
+            main: Default::default(),
             edge_prices: CandleEdgePrices {
                 open: 0.7,
                 high: 0.7,
@@ -268,15 +266,15 @@ mod tests {
         let max_distance_from_corridor_leading_candle_pins_pct = 20.0;
 
         let number_of_calls_to_candle_can_be_corridor_leader = RefCell::new(0);
-        let candle_can_be_corridor_leader = |_candle_properties: &CandleBaseProperties| {
+        let candle_can_be_corridor_leader = |_candle_properties: &CandleMainProperties| {
             *number_of_calls_to_candle_can_be_corridor_leader.borrow_mut() += 1;
             *number_of_calls_to_candle_can_be_corridor_leader.borrow() > 1
         };
 
         let number_of_calls_to_is_in_corridor = RefCell::new(0);
         let is_in_corridor =
-            |_candle: &BasicCandle,
-             _leading_candle: &BasicCandle,
+            |_candle: &BasicCandleProperties,
+             _leading_candle: &BasicCandleProperties,
              _max_distance_from_corridor_leading_candle_pins_pct: PointSettingValue| {
                 *number_of_calls_to_is_in_corridor.borrow_mut() += 1;
                 *number_of_calls_to_is_in_corridor.borrow() > 1

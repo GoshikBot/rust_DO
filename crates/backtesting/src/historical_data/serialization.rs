@@ -1,8 +1,10 @@
 use crate::{HistoricalData, StrategyInitConfig};
-use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleSize, CandleVolatility};
+use base::entities::candle::{
+    BasicCandleProperties, CandleEdgePrice, CandleSize, CandleVolatility,
+};
 use base::entities::tick::TickPrice;
 use base::entities::{
-    BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, StrategyTimeframes,
+    BasicTickProperties, CandleEdgePrices, CandleMainProperties, CandleType, StrategyTimeframes,
 };
 use chrono::NaiveDateTime;
 use csv::{Reader, Writer};
@@ -157,14 +159,14 @@ impl HistoricalDataCsvSerialization {
                 Some(candle) => Candle {
                     time: Some(
                         candle
-                            .properties
+                            .main
                             .time
                             .format(TIME_PATTERN_FOR_SERIALIZATION)
                             .to_string(),
                     ),
-                    r#type: Some(candle.properties.r#type),
-                    size: Some(candle.properties.size),
-                    volatility: Some(candle.properties.volatility),
+                    r#type: Some(candle.main.r#type),
+                    size: Some(candle.main.size),
+                    volatility: Some(candle.main.volatility),
                     open: Some(candle.edge_prices.open),
                     high: Some(candle.edge_prices.high),
                     low: Some(candle.edge_prices.low),
@@ -200,7 +202,7 @@ impl HistoricalDataCsvSerialization {
             ticks_file_path,
         } = historical_data_paths;
 
-        let mut candles: Vec<Option<BasicCandle>> = Vec::new();
+        let mut candles: Vec<Option<BasicCandleProperties>> = Vec::new();
         let mut candles_reader = Reader::from_path(candles_file_path)?;
 
         for candle in candles_reader.deserialize() {
@@ -215,8 +217,8 @@ impl HistoricalDataCsvSerialization {
                     high: Some(high),
                     low: Some(low),
                     close: Some(close),
-                } => candles.push(Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                } => candles.push(Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
                         r#type,
                         size,
@@ -233,7 +235,7 @@ impl HistoricalDataCsvSerialization {
             }
         }
 
-        let mut ticks: Vec<Option<BasicTick>> = Vec::new();
+        let mut ticks: Vec<Option<BasicTickProperties>> = Vec::new();
         let mut ticks_reader = Reader::from_path(ticks_file_path)?;
 
         for tick in ticks_reader.deserialize() {
@@ -244,7 +246,7 @@ impl HistoricalDataCsvSerialization {
                     time: Some(time),
                     ask: Some(ask),
                     bid: Some(bid),
-                } => ticks.push(Some(BasicTick {
+                } => ticks.push(Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
                     ask,
                     bid,

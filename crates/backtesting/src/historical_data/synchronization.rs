@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDateTime;
 
-use base::entities::candle::BasicCandle;
-use base::entities::BasicTick;
+use base::entities::candle::BasicCandleProperties;
+use base::entities::BasicTickProperties;
 
 use crate::HistoricalData;
 
@@ -15,7 +15,7 @@ struct Candle {
 }
 
 fn find_tick_with_time<'a>(
-    ticks: impl Iterator<Item = &'a Option<BasicTick>>,
+    ticks: impl Iterator<Item = &'a Option<BasicTickProperties>>,
     time: NaiveDateTime,
 ) -> Option<usize> {
     ticks.enumerate().find_map(|(i, tick)| match tick.as_ref() {
@@ -33,16 +33,16 @@ fn find_tick_with_time<'a>(
 /// Searches for the candle with the time greater or equal to the tick time.
 fn find_candle_around_tick<'a>(
     first_tick_time: NaiveDateTime,
-    candle_iterator: impl Iterator<Item = &'a Option<BasicCandle>>,
+    candle_iterator: impl Iterator<Item = &'a Option<BasicCandleProperties>>,
 ) -> Option<Candle> {
     candle_iterator
         .enumerate()
         .find_map(|(i, candle)| match candle.as_ref() {
             Some(candle) => {
-                if candle.properties.time >= first_tick_time {
+                if candle.main.time >= first_tick_time {
                     Some(Candle {
                         index: i,
-                        time: candle.properties.time,
+                        time: candle.main.time,
                     })
                 } else {
                     None
@@ -55,7 +55,7 @@ fn find_candle_around_tick<'a>(
 /// Searches for the next not none candle.
 fn find_next_candle<'a>(
     current_index: usize,
-    candles: impl Iterator<Item = &'a Option<BasicCandle>>,
+    candles: impl Iterator<Item = &'a Option<BasicCandleProperties>>,
 ) -> Result<Candle> {
     candles
         .enumerate()
@@ -63,7 +63,7 @@ fn find_next_candle<'a>(
         .find_map(|(i, candle)| {
             candle.as_ref().map(|candle| Candle {
                 index: i,
-                time: candle.properties.time,
+                time: candle.main.time,
             })
         })
         .context("no next not none candle was found")
@@ -110,8 +110,8 @@ fn find_timeframe_equal_times<'a, 'b, C, T>(
     mut candle_around_tick: Candle,
 ) -> Result<TickCandle>
 where
-    C: Iterator<Item = &'a Option<BasicCandle>> + Clone,
-    T: Iterator<Item = &'b Option<BasicTick>> + Clone,
+    C: Iterator<Item = &'a Option<BasicCandleProperties>> + Clone,
+    T: Iterator<Item = &'b Option<BasicTickProperties>> + Clone,
 {
     loop {
         let corresponding_tick_index =
@@ -155,7 +155,7 @@ fn find_edge_intersection(historical_data: &HistoricalData, edge: Edge) -> Resul
         .unwrap()
         .as_ref()
         .unwrap()
-        .properties
+        .main
         .time;
     let first_tick_time = historical_data
         .ticks
@@ -297,7 +297,7 @@ pub fn sync_candles_and_ticks(historical_data: HistoricalData) -> Result<Histori
 
 #[cfg(test)]
 mod tests {
-    use base::entities::CandleBaseProperties;
+    use base::entities::CandleMainProperties;
 
     use super::*;
 
@@ -308,8 +308,8 @@ mod tests {
             candles: vec![
                 None,
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 10:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -318,24 +318,24 @@ mod tests {
                 }),
                 None,
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -348,44 +348,44 @@ mod tests {
             ticks: vec![
                 None,
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 11:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 12:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -393,7 +393,7 @@ mod tests {
                 }),
                 None,
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 16:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -409,16 +409,16 @@ mod tests {
 
         let expected_synchronized_historical_data = HistoricalData {
             candles: vec![
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -427,25 +427,25 @@ mod tests {
                 }),
             ],
             ticks: vec![
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -467,8 +467,8 @@ mod tests {
             candles: vec![
                 None,
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 10:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -477,32 +477,32 @@ mod tests {
                 }),
                 None,
                 None,
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
                     },
                     edge_prices: Default::default(),
                 }),
-                Some(BasicCandle {
-                    properties: CandleBaseProperties {
+                Some(BasicCandleProperties {
+                    main: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 16:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
                         ..Default::default()
@@ -515,13 +515,13 @@ mod tests {
             ticks: vec![
                 None,
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 08:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 09:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -529,20 +529,20 @@ mod tests {
                 }),
                 None,
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 10:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 11:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 12:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -550,25 +550,25 @@ mod tests {
                 }),
                 None,
                 None,
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
@@ -583,8 +583,8 @@ mod tests {
             sync_candles_and_ticks(historical_data).unwrap_or_else(|e| panic!("{:?}", e));
 
         let expected_synchronized_historical_data = HistoricalData {
-            candles: vec![Some(BasicCandle {
-                properties: CandleBaseProperties {
+            candles: vec![Some(BasicCandleProperties {
+                main: CandleMainProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ..Default::default()
@@ -592,13 +592,13 @@ mod tests {
                 edge_prices: Default::default(),
             })],
             ticks: vec![
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,
                     bid: 0.0,
                 }),
-                Some(BasicTick {
+                Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ask: 0.0,

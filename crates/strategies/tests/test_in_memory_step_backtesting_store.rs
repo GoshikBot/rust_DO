@@ -3,9 +3,13 @@ use std::collections::HashSet;
 use base::entities::candle::CandleId;
 use base::entities::tick::TickId;
 use base::entities::Level;
-use strategies::step::utils::entities::angle::AngleId;
+use strategies::step::utils::entities::angle::{AngleId, BasicAngleProperties};
 use strategies::step::utils::entities::working_levels::CorridorType;
+use strategies::step::utils::stores::angle_store::AngleStore;
+use strategies::step::utils::stores::candle_store::CandleStore;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
+use strategies::step::utils::stores::tick_store::TickStore;
+use strategies::step::utils::stores::working_level_store::WorkingLevelStore;
 
 #[test]
 fn should_remove_only_unused_items() {
@@ -18,18 +22,22 @@ fn should_remove_only_unused_items() {
         ticks.push(tick_id);
     }
 
-    assert!(store.update_current_tick(ticks.get(0).unwrap().clone()).is_ok());
-    assert!(store.update_previous_tick(ticks.get(1).unwrap().clone()).is_ok());
+    assert!(store
+        .update_current_tick(ticks.get(0).unwrap().clone())
+        .is_ok());
+    assert!(store
+        .update_previous_tick(ticks.get(1).unwrap().clone())
+        .is_ok());
 
     let mut candles = Vec::new();
     for _ in 1..=10 {
-        let candle_id = store
-            .create_candle(Default::default(), Default::default())
-            .unwrap();
+        let candle_id = store.create_candle(Default::default()).unwrap();
         candles.push(candle_id);
     }
 
-    assert!(store.update_current_candle(candles.get(0).unwrap().clone()).is_ok());
+    assert!(store
+        .update_current_candle(candles.get(0).unwrap().clone())
+        .is_ok());
     assert!(store
         .update_previous_candle(candles.get(1).unwrap().clone())
         .is_ok());
@@ -56,19 +64,28 @@ fn should_remove_only_unused_items() {
 
     for i in 1..=10 {
         let angle_id = store
-            .create_angle(candles.get(i - 1).unwrap().clone(), Level::Min)
+            .create_angle(BasicAngleProperties {
+                candle_id: candles.get(i - 1).unwrap().clone(),
+                r#type: Level::Min,
+            })
             .unwrap();
         angles.push(angle_id);
     }
 
     assert!(store
-        .update_angle_of_second_level_after_bargaining_tendency_change(angles.get(0).unwrap().clone())
+        .update_angle_of_second_level_after_bargaining_tendency_change(
+            angles.get(0).unwrap().clone()
+        )
         .is_ok());
     assert!(store
         .update_tendency_change_angle(angles.get(1).unwrap().clone())
         .is_ok());
-    assert!(store.update_min_angle(angles.get(2).unwrap().clone()).is_ok());
-    assert!(store.update_max_angle(angles.get(3).unwrap().clone()).is_ok());
+    assert!(store
+        .update_min_angle(angles.get(2).unwrap().clone())
+        .is_ok());
+    assert!(store
+        .update_max_angle(angles.get(3).unwrap().clone())
+        .is_ok());
     assert!(store
         .update_virtual_min_angle(angles.get(4).unwrap().clone())
         .is_ok());
@@ -118,8 +135,12 @@ fn should_return_error_on_moving_working_level_to_active_if_it_is_not_present_in
 
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    assert!(store.move_working_level_to_active(&working_level_id).is_ok());
-    assert!(store.move_working_level_to_active(&working_level_id).is_err());
+    assert!(store
+        .move_working_level_to_active(&working_level_id)
+        .is_ok());
+    assert!(store
+        .move_working_level_to_active(&working_level_id)
+        .is_err());
 }
 
 #[test]
@@ -129,8 +150,12 @@ fn should_return_error_on_moving_working_level_to_removed_if_it_is_not_present_n
 
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    assert!(store.move_working_level_to_removed(&working_level_id).is_ok());
-    assert!(store.move_working_level_to_removed(&working_level_id).is_err());
+    assert!(store
+        .move_working_level_to_removed(&working_level_id)
+        .is_ok());
+    assert!(store
+        .move_working_level_to_removed(&working_level_id)
+        .is_err());
 }
 
 #[test]
@@ -142,8 +167,9 @@ fn should_successfully_remove_working_level() {
     //     .is_ok());
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-
-    assert!(store.move_working_level_to_active(&working_level_id).is_ok());
+    assert!(store
+        .move_working_level_to_active(&working_level_id)
+        .is_ok());
 
     assert!(store
         .update_max_crossing_value_of_working_level(&working_level_id, 10.0)
@@ -152,16 +178,22 @@ fn should_successfully_remove_working_level() {
     // assert!(store
     //     .create_candle(String::from("1"), Default::default(), Default::default())
     //     .is_ok());
-    let candle_id = store
-        .create_candle(Default::default(), Default::default())
-        .unwrap();
+    let candle_id = store.create_candle(Default::default()).unwrap();
 
     assert!(store
-        .add_candle_to_working_level_corridor(&working_level_id, candle_id.clone(), CorridorType::Small)
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            candle_id.clone(),
+            CorridorType::Small
+        )
         .is_ok());
 
     assert!(store
-        .add_candle_to_working_level_corridor(&working_level_id, candle_id.clone(), CorridorType::Big)
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            candle_id.clone(),
+            CorridorType::Big
+        )
         .is_ok());
 
     assert!(store.move_take_profits_of_level(&working_level_id).is_ok());
@@ -169,9 +201,7 @@ fn should_successfully_remove_working_level() {
     // assert!(store
     //     .create_order(String::from("1"), Default::default(), Default::default())
     //     .is_ok());
-    let order_id = store
-        .create_order(Default::default(), Default::default())
-        .unwrap();
+    let order_id = store.create_order(Default::default()).unwrap();
 
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
@@ -200,14 +230,16 @@ fn should_successfully_remove_working_level() {
     assert!(store
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Small)
         .unwrap()
-        .is_none());
+        .is_empty());
 
     assert!(store
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Big)
         .unwrap()
-        .is_none());
+        .is_empty());
 
-    assert!(!store.are_take_profits_of_level_moved(&working_level_id).unwrap());
+    assert!(!store
+        .are_take_profits_of_level_moved(&working_level_id)
+        .unwrap());
 
     assert!(store
         .get_max_crossing_value_of_working_level(&working_level_id)
@@ -217,41 +249,43 @@ fn should_successfully_remove_working_level() {
     assert!(store
         .get_working_level_chain_of_orders(&working_level_id)
         .unwrap()
-        .is_none());
+        .is_empty());
 }
 
 #[test]
 fn should_successfully_add_candle_to_working_level_corridor() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
-    
+
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    let first_candle_id = store
-        .create_candle(Default::default(), Default::default())
-        .unwrap();
-    
-    let second_candle_id = store
-        .create_candle(Default::default(), Default::default())
-        .unwrap();
+    let first_candle_id = store.create_candle(Default::default()).unwrap();
+
+    let second_candle_id = store.create_candle(Default::default()).unwrap();
 
     assert!(store
-        .add_candle_to_working_level_corridor(&working_level_id, first_candle_id.clone(), CorridorType::Small)
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            first_candle_id.clone(),
+            CorridorType::Small
+        )
         .is_ok());
 
     assert!(store
-        .add_candle_to_working_level_corridor(&working_level_id, second_candle_id.clone(), CorridorType::Big)
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            second_candle_id.clone(),
+            CorridorType::Big
+        )
         .is_ok());
 
     assert!(store
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Small)
-        .unwrap()
         .unwrap()
         .iter()
         .any(|candle| candle.id == first_candle_id));
 
     assert!(store
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Big)
-        .unwrap()
         .unwrap()
         .iter()
         .any(|candle| candle.id == second_candle_id));
@@ -263,12 +297,14 @@ fn should_return_error_on_adding_candle_to_working_level_corridor_if_it_is_alrea
 
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    let candle_id = store
-        .create_candle(Default::default(), Default::default())
-        .unwrap();
+    let candle_id = store.create_candle(Default::default()).unwrap();
 
     assert!(store
-        .add_candle_to_working_level_corridor(&working_level_id, candle_id.clone(), CorridorType::Small)
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            candle_id.clone(),
+            CorridorType::Small
+        )
         .is_ok());
     assert!(store
         .add_candle_to_working_level_corridor(&working_level_id, candle_id, CorridorType::Small)
@@ -281,17 +317,14 @@ fn should_successfully_add_order_to_working_level_chain_of_orders() {
 
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    let order_id = store
-        .create_order(Default::default(), Default::default())
-        .unwrap();
-        
+    let order_id = store.create_order(Default::default()).unwrap();
+
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
         .is_ok());
 
     assert!(store
         .get_working_level_chain_of_orders(&working_level_id)
-        .unwrap()
         .unwrap()
         .iter()
         .any(|order| order.id == order_id));
@@ -304,9 +337,7 @@ fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is
 
     let working_level_id = store.create_working_level(Default::default()).unwrap();
 
-    let order_id = store
-        .create_order(Default::default(), Default::default())
-        .unwrap();
+    let order_id = store.create_order(Default::default()).unwrap();
 
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())

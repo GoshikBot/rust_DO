@@ -5,8 +5,8 @@ use backtesting::historical_data::serialization::{
 use backtesting::historical_data::synchronization::sync_candles_and_ticks;
 use backtesting::historical_data::{get_historical_data, serialization, synchronization};
 use backtesting::StrategyInitConfig;
-use base::entities::candle::BasicCandle;
-use base::entities::{BasicTick, StrategyTimeframes, Timeframe};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
 use base::requests::ureq::UreqRequestApi;
 use chrono::{DateTime, Duration, Utc};
 use plotly::layout::Axis;
@@ -24,7 +24,6 @@ use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::in_memory_step_realtime_config_store::InMemoryStepRealtimeConfigStore;
 use strategies::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
-use strategies::step::utils::stores::step_realtime_store::StepRealtimeStore;
 use strategies::step::utils::stores::{
     StepBacktestingBalances, StepBacktestingConfig, StepBacktestingStores,
 };
@@ -107,16 +106,10 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
     Ok(())
 }
 
-fn plot_results(candles: Vec<BasicCandle>) {
+fn plot_results(candles: Vec<BasicCandleProperties>) {
     let x = candles
         .iter()
-        .map(|candle| {
-            candle
-                .properties
-                .time
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        })
+        .map(|candle| candle.main.time.format("%Y-%m-%d %H:%M:%S").to_string())
         .collect::<Vec<_>>();
 
     let open = candles

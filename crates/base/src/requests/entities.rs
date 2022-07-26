@@ -4,7 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, Copy, Clone)]
 pub enum HttpRequestMethod {
     Get,
-    Post
+    Post,
 }
 
 impl Default for HttpRequestMethod {

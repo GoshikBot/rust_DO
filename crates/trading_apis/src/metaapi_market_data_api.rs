@@ -9,9 +9,13 @@ use polars::series::Series;
 use serde::Deserialize;
 use ureq::serde_json;
 
-use base::entities::candle::{BasicCandle, CandleEdgePrice, CandleOpenClose, CandleVolatility};
+use base::entities::candle::{
+    BasicCandleProperties, CandleEdgePrice, CandleOpenClose, CandleVolatility,
+};
 use base::entities::tick::TickPrice;
-use base::entities::{BasicTick, CandleBaseProperties, CandleEdgePrices, CandleType, Timeframe};
+use base::entities::{
+    BasicTickProperties, CandleEdgePrices, CandleMainProperties, CandleType, Timeframe,
+};
 use base::helpers::{mean, price_to_points};
 use base::requests::api::SyncHttpRequest;
 use base::requests::entities::{
@@ -172,7 +176,7 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
         &self,
         candle_json: &MetatraderCandleJson,
         current_volatility: CandleVolatility,
-    ) -> Result<BasicCandle> {
+    ) -> Result<BasicCandleProperties> {
         let candle_edge_prices = CandleEdgePrices {
             open: candle_json.open,
             high: candle_json.high,
@@ -189,15 +193,15 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
 
         let candle_time = from_naive_str_to_naive_datetime(&candle_json.broker_time)?;
 
-        let candle_base_properties = CandleBaseProperties {
+        let candle_base_properties = CandleMainProperties {
             time: candle_time,
             size: candle_size,
             r#type: candle_type,
             volatility: current_volatility,
         };
 
-        Ok(BasicCandle {
-            properties: candle_base_properties,
+        Ok(BasicCandleProperties {
+            main: candle_base_properties,
             edge_prices: candle_edge_prices,
         })
     }
@@ -326,7 +330,7 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
 }
 
 impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
-    fn get_current_tick(&self, symbol: &str) -> Result<BasicTick> {
+    fn get_current_tick(&self, symbol: &str) -> Result<BasicTickProperties> {
         let get_current_tick_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-price",
             self.api_urls.main, self.account_id, symbol
@@ -351,7 +355,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
 
         let time = from_naive_str_to_naive_datetime(&tick_json.broker_time)?;
 
-        let tick = BasicTick {
+        let tick = BasicTickProperties {
             time,
             ask: tick_json.ask,
             bid: tick_json.bid,
@@ -360,7 +364,11 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         Ok(tick)
     }
 
-    fn get_current_candle(&self, symbol: &str, timeframe: Timeframe) -> Result<BasicCandle> {
+    fn get_current_candle(
+        &self,
+        symbol: &str,
+        timeframe: Timeframe,
+    ) -> Result<BasicCandleProperties> {
         let get_current_candle_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-candles/{}",
             self.api_urls.main, self.account_id, symbol, timeframe
@@ -393,7 +401,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
-    ) -> Result<Vec<Option<BasicCandle>>> {
+    ) -> Result<Vec<Option<BasicCandleProperties>>> {
         let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
 
         let (total_amount_of_candles, volatility_window) = match timeframe {
@@ -447,7 +455,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             .map(|(candle, volatility)| self.tune_candle(candle, volatility.unwrap()))
             .collect::<Result<Vec<_>>>()?;
 
-        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.properties.time)
+        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.main.time)
     }
 
     fn get_historical_ticks(
@@ -456,7 +464,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
-    ) -> Result<Vec<Option<BasicTick>>> {
+    ) -> Result<Vec<Option<BasicTickProperties>>> {
         let volatility_window = Duration::days(DAYS_FOR_VOLATILITY as i64).num_minutes();
         let total_amount_of_candles = (duration.num_minutes() - volatility_window + 1) as u64;
 
@@ -470,7 +478,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         let all_ticks = all_candles
             .iter()
             .map(|candle| {
-                Ok(BasicTick {
+                Ok(BasicTickProperties {
                     time: from_naive_str_to_naive_datetime(&candle.broker_time)?,
                     ask: candle.close,
                     bid: candle.close,
@@ -569,10 +577,10 @@ mod tests {
         };
 
         let mut tuned_candle = metaapi.tune_candle(&candle_for_tuning, 271.0).unwrap();
-        tuned_candle.properties.size = tuned_candle.properties.size.round();
+        tuned_candle.main.size = tuned_candle.main.size.round();
 
-        let expected_tuned_candle = BasicCandle {
-            properties: CandleBaseProperties {
+        let expected_tuned_candle = BasicCandleProperties {
+            main: CandleMainProperties {
                 time: from_naive_str_to_naive_datetime(&candle_for_tuning.broker_time).unwrap(),
                 r#type: CandleType::Green,
                 size: 288.0,

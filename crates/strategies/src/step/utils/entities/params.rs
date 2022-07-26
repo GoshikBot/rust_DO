@@ -6,7 +6,7 @@ pub enum StepPointParam {
     LevelExpirationDays,
     MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel,
     MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel,
-    MinAmountOfCandlesInCorridorDefiningEdgeBargaining
+    MinAmountOfCandlesInCorridorDefiningEdgeBargaining,
 }
 
 impl Display for StepPointParam {
@@ -18,13 +18,22 @@ impl Display for StepPointParam {
             StepPointParam::AmountOfOrders => write!(f, "amount_of_orders"),
             StepPointParam::LevelExpirationDays => write!(f, "level_expiration_days"),
             StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel => {
-                write!(f, "min_amount_of_candles_in_small_corridor_before_activation_crossing_of_level")
+                write!(
+                    f,
+                    "min_amount_of_candles_in_small_corridor_before_activation_crossing_of_level"
+                )
             }
             StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel => {
-                write!(f, "min_amount_of_candles_in_big_corridor_before_activation_crossing_of_level")
+                write!(
+                    f,
+                    "min_amount_of_candles_in_big_corridor_before_activation_crossing_of_level"
+                )
             }
             StepPointParam::MinAmountOfCandlesInCorridorDefiningEdgeBargaining => {
-                write!(f, "min_amount_of_candles_in_corridor_defining_edge_bargaining")
+                write!(
+                    f,
+                    "min_amount_of_candles_in_corridor_defining_edge_bargaining"
+                )
             }
         }
     }

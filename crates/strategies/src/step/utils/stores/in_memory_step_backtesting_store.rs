@@ -2,31 +2,30 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Context, Result};
 
-use base::entities::candle::BasicCandle;
-use base::entities::{
-    candle::CandleId, tick::TickId, BasicTick, CandleBaseProperties, CandleEdgePrices, Level,
-};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::Item;
+use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
 
-use crate::step::utils::entities::candle::Candle;
-use crate::step::utils::entities::order::{Order, OrderId, OrderPrices, OrderProperties};
-use crate::step::utils::entities::tick::Tick;
+use crate::step::utils::entities::order::{BasicOrderProperties, OrderId};
 use crate::step::utils::entities::working_levels::{CorridorType, WLMaxCrossingValue};
 use crate::step::utils::entities::{
-    angle::{Angle, AngleId},
-    // strategy_state::{StrategyAngles, StrategyDiffs, StrategyTicksCandles},
-    working_levels::{WLId, WorkingLevel},
-    Diff,
+    angle::{AngleId, BasicAngleProperties},
+    working_levels::{BasicWLProperties, WLId},
 };
-use crate::step::utils::stores::step_realtime_store::StepRealtimeStore;
 use crate::step::utils::stores::{StepStrategyAngles, StepStrategyTicksCandles};
+
+use super::angle_store::AngleStore;
+use super::candle_store::CandleStore;
+use super::tick_store::TickStore;
+use super::working_level_store::WorkingLevelStore;
 
 #[derive(Default)]
 pub struct InMemoryStepBacktestingStore {
-    candles: HashMap<CandleId, Candle>,
-    ticks: HashMap<TickId, Tick>,
-    angles: HashMap<AngleId, Angle>,
+    candles: HashMap<CandleId, Item<CandleId, BasicCandleProperties>>,
+    ticks: HashMap<TickId, Item<TickId, BasicTickProperties>>,
+    angles: HashMap<AngleId, Item<AngleId, BasicAngleProperties>>,
 
-    working_levels: HashMap<WLId, WorkingLevel>,
+    working_levels: HashMap<WLId, Item<WLId, BasicWLProperties>>,
 
     working_level_max_crossing_values: HashMap<WLId, WLMaxCrossingValue>,
     working_levels_with_moved_take_profits: HashSet<WLId>,
@@ -40,96 +39,147 @@ pub struct InMemoryStepBacktestingStore {
     corridor_candles: HashSet<CandleId>,
 
     working_level_chain_of_orders: HashMap<WLId, HashSet<OrderId>>,
-    orders: HashMap<OrderId, Order>,
+    orders: HashMap<OrderId, Item<OrderId, BasicOrderProperties>>,
 
     strategy_angles: StepStrategyAngles,
     strategy_ticks_candles: StepStrategyTicksCandles,
 }
 
-impl InMemoryStepBacktestingStore {
-    pub fn new() -> Self {
-        Default::default()
+impl TickStore for InMemoryStepBacktestingStore {
+    type TickProperties = BasicTickProperties;
+
+    fn create_tick(&mut self, properties: Self::TickProperties) -> Result<TickId> {
+        let id = xid::new().to_string();
+
+        let new_tick = Item {
+            id: id.clone(),
+            properties,
+        };
+
+        self.ticks.insert(id.clone(), new_tick);
+
+        Ok(id)
     }
 
-    fn remove_order(&mut self, id: &str) -> Result<()> {
-        if self.orders.remove(id).is_none() {
-            bail!("can't remove a non-existent order with an id {}", id);
+    fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Item<TickId, Self::TickProperties>>> {
+        Ok(self.ticks.get(tick_id).cloned())
+    }
+
+    fn get_current_tick(&self) -> Result<Option<Item<TickId, Self::TickProperties>>> {
+        let tick_id = self.strategy_ticks_candles.current_tick.as_ref();
+
+        let tick_id = match tick_id {
+            None => return Ok(None),
+            Some(tick_id) => tick_id,
+        };
+
+        self.get_tick_by_id(tick_id)
+    }
+
+    fn update_current_tick(&mut self, tick_id: TickId) -> Result<()> {
+        if !self.ticks.contains_key(&tick_id) {
+            bail!("a tick with an id {} doesn't exist", tick_id);
         }
 
+        self.strategy_ticks_candles.current_tick = Some(tick_id);
         Ok(())
     }
 
-    /// For each tick checks whether it is in use. If a tick is not in use,
-    /// removes it. We don't want tick list to grow endlessly.
-    fn remove_unused_ticks(&mut self) {
-        let tick_is_in_use = |tick_id: &TickId| {
-            [
-                self.strategy_ticks_candles.previous_tick.as_ref(),
-                self.strategy_ticks_candles.current_tick.as_ref(),
-            ]
-            .contains(&Some(tick_id))
+    fn get_previous_tick(&self) -> Result<Option<Item<TickId, Self::TickProperties>>> {
+        let tick_id = self.strategy_ticks_candles.previous_tick.as_ref();
+
+        let tick_id = match tick_id {
+            None => return Ok(None),
+            Some(tick_id) => tick_id,
         };
 
-        self.ticks.retain(|tick_id, _| tick_is_in_use(tick_id));
+        self.get_tick_by_id(tick_id)
     }
 
-    /// For each candle checks whether it is in use. If a candle is not in use,
-    /// removes it. We don't want candle list to grow endlessly.
-    fn remove_unused_candles(&mut self) {
-        let candle_in_angles = |candle_id: &CandleId| self.angles.values().any(|angle| &angle.candle_id == candle_id);
-        let candle_in_corridors = |candle_id: &CandleId| self.corridor_candles.contains(candle_id);
-        let is_current_candle = |candle_id: &CandleId| {
-            self.strategy_ticks_candles.current_candle.as_ref() == Some(candle_id)
-        };
-        let is_previous_candle = |candle_id: &CandleId| {
-            self.strategy_ticks_candles.previous_candle.as_ref() == Some(candle_id)
-        };
+    fn update_previous_tick(&mut self, tick_id: TickId) -> Result<()> {
+        if !self.ticks.contains_key(&tick_id) {
+            bail!("a tick with an id {} doesn't exist", tick_id);
+        }
 
-        self.candles.retain(|candle_id, _| {
-            if candle_in_angles(candle_id)
-                || candle_in_corridors(candle_id)
-                || is_current_candle(candle_id)
-                || is_previous_candle(candle_id)
-            {
-                dbg!(&candle_id);
-                return true;
-            }
+        self.strategy_ticks_candles.previous_tick = Some(tick_id);
 
-            false
-        });
+        Ok(())
     }
+}
 
-    /// For each angle checks whether it is in use. If an angle is not in use,
-    /// removes it. We don't want angle list to grow endlessly.
-    fn remove_unused_angles(&mut self) {
-        self.angles.retain(|angle_id, _| {
-            [
-                self.strategy_angles.max_angle.as_ref(),
-                self.strategy_angles.min_angle.as_ref(),
-                self.strategy_angles.virtual_max_angle.as_ref(),
-                self.strategy_angles.virtual_min_angle.as_ref(),
-                self.strategy_angles.tendency_change_angle.as_ref(),
-                self.strategy_angles
-                    .max_angle_before_bargaining_corridor
-                    .as_ref(),
-                self.strategy_angles
-                    .angle_of_second_level_after_bargaining_tendency_change
-                    .as_ref(),
-                self.strategy_angles
-                    .min_angle_before_bargaining_corridor
-                    .as_ref(),
-            ]
-            .contains(&Some(angle_id))
-        });
-    }
+impl CandleStore for InMemoryStepBacktestingStore {
+    type CandleProperties = BasicCandleProperties;
 
-    pub fn create_angle(&mut self, candle_id: CandleId, r#type: Level) -> Result<AngleId> {
+    fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<CandleId> {
         let id = xid::new().to_string();
 
-        let new_angle = Angle {
+        let new_candle = Item {
             id: id.clone(),
-            candle_id,
-            r#type,
+            properties,
+        };
+
+        self.candles.insert(id.clone(), new_candle);
+
+        Ok(id)
+    }
+
+    fn get_candle_by_id(
+        &self,
+        candle_id: &str,
+    ) -> Result<Option<Item<CandleId, Self::CandleProperties>>> {
+        Ok(self.candles.get(candle_id).cloned())
+    }
+
+    fn get_current_candle(&self) -> Result<Option<Item<CandleId, Self::CandleProperties>>> {
+        let candle_id = self.strategy_ticks_candles.current_candle.as_ref();
+
+        let candle_id = match candle_id {
+            None => return Ok(None),
+            Some(candle_id) => candle_id,
+        };
+
+        self.get_candle_by_id(candle_id)
+    }
+
+    fn update_current_candle(&mut self, candle_id: CandleId) -> Result<()> {
+        if !self.candles.contains_key(&candle_id) {
+            bail!("a candle with an id {} doesn't exist", candle_id);
+        }
+
+        self.strategy_ticks_candles.current_candle = Some(candle_id);
+        Ok(())
+    }
+
+    fn get_previous_candle(&self) -> Result<Option<Item<CandleId, Self::CandleProperties>>> {
+        let candle_id = self.strategy_ticks_candles.previous_candle.as_ref();
+
+        let candle_id = match candle_id {
+            None => return Ok(None),
+            Some(candle_id) => candle_id,
+        };
+
+        self.get_candle_by_id(candle_id)
+    }
+
+    fn update_previous_candle(&mut self, candle_id: CandleId) -> Result<()> {
+        if !self.candles.contains_key(&candle_id) {
+            bail!("a candle with an id {} doesn't exist", candle_id);
+        }
+
+        self.strategy_ticks_candles.previous_candle = Some(candle_id);
+        Ok(())
+    }
+}
+
+impl AngleStore for InMemoryStepBacktestingStore {
+    type AngleProperties = BasicAngleProperties;
+
+    fn create_angle(&mut self, properties: Self::AngleProperties) -> Result<AngleId> {
+        let id = xid::new().to_string();
+
+        let new_angle = Item {
+            id: id.clone(),
+            properties,
         };
 
         self.angles.insert(id.clone(), new_angle);
@@ -137,17 +187,13 @@ impl InMemoryStepBacktestingStore {
         Ok(id)
     }
 
-    pub fn get_angle_by_id(&self, id: &str) -> Result<Option<Angle>> {
+    fn get_angle_by_id(&self, id: &str) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         Ok(self.angles.get(id).cloned())
     }
 
-    pub fn get_all_angles(&self) -> Result<HashSet<AngleId>> {
-        Ok(self.angles.keys().cloned().collect())
-    }
-
-    pub fn get_angle_of_second_level_after_bargaining_tendency_change(
+    fn get_angle_of_second_level_after_bargaining_tendency_change(
         &self,
-    ) -> Result<Option<Angle>> {
+    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self
             .strategy_angles
             .angle_of_second_level_after_bargaining_tendency_change
@@ -161,7 +207,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_angle_of_second_level_after_bargaining_tendency_change(
+    fn update_angle_of_second_level_after_bargaining_tendency_change(
         &mut self,
         new_angle: AngleId,
     ) -> Result<()> {
@@ -174,7 +220,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_tendency_change_angle(&self) -> Result<Option<Angle>> {
+    fn get_tendency_change_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self.strategy_angles.tendency_change_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -185,7 +231,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_tendency_change_angle(&mut self, new_angle: AngleId) -> Result<()> {
+    fn update_tendency_change_angle(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -194,7 +240,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_min_angle(&self) -> Result<Option<Angle>> {
+    fn get_min_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self.strategy_angles.min_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -205,7 +251,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
+    fn update_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -214,7 +260,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_virtual_min_angle(&self) -> Result<Option<Angle>> {
+    fn get_virtual_min_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self.strategy_angles.virtual_min_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -225,7 +271,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_virtual_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
+    fn update_virtual_min_angle(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -234,7 +280,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_max_angle(&self) -> Result<Option<Angle>> {
+    fn get_max_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self.strategy_angles.max_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -245,7 +291,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
+    fn update_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -254,7 +300,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_virtual_max_angle(&self) -> Result<Option<Angle>> {
+    fn get_virtual_max_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self.strategy_angles.virtual_max_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -265,7 +311,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_virtual_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
+    fn update_virtual_max_angle(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -274,7 +320,9 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_min_angle_before_bargaining_corridor(&self) -> Result<Option<Angle>> {
+    fn get_min_angle_before_bargaining_corridor(
+        &self,
+    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self
             .strategy_angles
             .min_angle_before_bargaining_corridor
@@ -288,10 +336,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_min_angle_before_bargaining_corridor(
-        &mut self,
-        new_angle: AngleId,
-    ) -> Result<()> {
+    fn update_min_angle_before_bargaining_corridor(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -300,7 +345,9 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_max_angle_before_bargaining_corridor(&self) -> Result<Option<Angle>> {
+    fn get_max_angle_before_bargaining_corridor(
+        &self,
+    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
         let angle_id = self
             .strategy_angles
             .max_angle_before_bargaining_corridor
@@ -314,10 +361,7 @@ impl InMemoryStepBacktestingStore {
         self.get_angle_by_id(angle_id)
     }
 
-    pub fn update_max_angle_before_bargaining_corridor(
-        &mut self,
-        new_angle: AngleId,
-    ) -> Result<()> {
+    fn update_max_angle_before_bargaining_corridor(&mut self, new_angle: AngleId) -> Result<()> {
         if !self.angles.contains_key(&new_angle) {
             bail!("an angle with an id {} doesn't exist", new_angle);
         }
@@ -325,157 +369,37 @@ impl InMemoryStepBacktestingStore {
         self.strategy_angles.max_angle_before_bargaining_corridor = Some(new_angle);
         Ok(())
     }
+}
 
-    pub fn create_tick(&mut self, tick_base_properties: BasicTick) -> Result<TickId> {
+impl WorkingLevelStore for InMemoryStepBacktestingStore {
+    type WorkingLevelProperties = BasicWLProperties;
+    type CandleProperties = BasicCandleProperties;
+    type OrderProperties = BasicOrderProperties;
+
+    fn create_working_level(&mut self, properties: Self::WorkingLevelProperties) -> Result<WLId> {
         let id = xid::new().to_string();
 
-        let new_tick = Tick {
-            id: id.clone(),
-            ask: tick_base_properties.ask,
-            bid: tick_base_properties.bid,
-            time: tick_base_properties.time,
-        };
-
-        self.ticks.insert(id.clone(), new_tick);
-
-        Ok(id)
-    }
-
-    pub fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Tick>> {
-        Ok(self.ticks.get(tick_id).cloned())
-    }
-
-    pub fn get_all_ticks(&self) -> Result<HashSet<TickId>> {
-        Ok(self.ticks.keys().cloned().collect())
-    }
-
-    pub fn create_candle(
-        &mut self,
-        base_properties: CandleBaseProperties,
-        edge_prices: CandleEdgePrices,
-    ) ->Result<CandleId> {
-        let id = xid::new().to_string();
-
-        let new_candle = Candle {
-            id: id.clone(),
-            base_properties,
-            edge_prices,
-        };
-
-        self.candles.insert(id.clone(), new_candle);
-
-        Ok(id)
-    }
-
-    pub fn get_candle_by_id(&self, candle_id: &str) -> Result<Option<Candle>> {
-        Ok(self.candles.get(candle_id).cloned())
-    }
-
-    pub fn get_all_candles(&self) -> Result<HashSet<CandleId>> {
-        Ok(self.candles.keys().cloned().collect())
-    }
-
-    pub fn get_current_tick(&self) -> Result<Option<Tick>> {
-        let tick_id = self.strategy_ticks_candles.current_tick.as_ref();
-
-        let tick_id = match tick_id {
-            None => return Ok(None),
-            Some(tick_id) => tick_id,
-        };
-
-        self.get_tick_by_id(tick_id)
-    }
-
-    pub fn update_current_tick(&mut self, tick_id: TickId) -> Result<()> {
-        if !self.ticks.contains_key(&tick_id) {
-            bail!("a tick with an id {} doesn't exist", tick_id);
-        }
-
-        self.strategy_ticks_candles.current_tick = Some(tick_id);
-        Ok(())
-    }
-
-    pub fn get_previous_tick(&self) -> Result<Option<Tick>> {
-        let tick_id = self.strategy_ticks_candles.previous_tick.as_ref();
-
-        let tick_id = match tick_id {
-            None => return Ok(None),
-            Some(tick_id) => tick_id,
-        };
-
-        self.get_tick_by_id(tick_id)
-    }
-    pub fn update_previous_tick(&mut self, tick_id: TickId) -> Result<()> {
-        if !self.ticks.contains_key(&tick_id) {
-            bail!("a tick with an id {} doesn't exist", tick_id);
-        }
-
-        self.strategy_ticks_candles.previous_tick = Some(tick_id);
-        Ok(())
-    }
-
-    pub fn get_current_candle(&self) -> Result<Option<Candle>> {
-        let candle_id = self.strategy_ticks_candles.current_candle.as_ref();
-
-        let candle_id = match candle_id {
-            None => return Ok(None),
-            Some(candle_id) => candle_id,
-        };
-
-        self.get_candle_by_id(candle_id)
-    }
-    pub fn update_current_candle(&mut self, candle_id: CandleId) -> Result<()> {
-        if !self.candles.contains_key(&candle_id) {
-            bail!("a candle with an id {} doesn't exist", candle_id);
-        }
-
-        self.strategy_ticks_candles.current_candle = Some(candle_id);
-        Ok(())
-    }
-
-    pub fn get_previous_candle(&self) -> Result<Option<Candle>> {
-        let candle_id = self.strategy_ticks_candles.previous_candle.as_ref();
-
-        let candle_id = match candle_id {
-            None => return Ok(None),
-            Some(candle_id) => candle_id,
-        };
-
-        self.get_candle_by_id(candle_id)
-    }
-    pub fn update_previous_candle(&mut self, candle_id: CandleId) -> Result<()> {
-        if !self.candles.contains_key(&candle_id) {
-            bail!("a candle with an id {} doesn't exist", candle_id);
-        }
-
-        self.strategy_ticks_candles.previous_candle = Some(candle_id);
-        Ok(())
-    }
-
-    pub fn remove_unused_items(&mut self) -> Result<()> {
-        // It's important to remove angles firstly. Otherwise it will block candles removal
-        self.remove_unused_angles();
-        self.remove_unused_candles();
-        self.remove_unused_ticks();
-
-        Ok(())
-    }
-
-    pub fn create_working_level(&mut self, base_properties: WorkingLevel) -> Result<WLId> {
-        let id = xid::new().to_string();
-
-        self.working_levels.insert(id.clone(), base_properties);
+        self.working_levels.insert(
+            id.clone(),
+            Item {
+                id: id.clone(),
+                properties,
+            },
+        );
 
         self.created_working_levels.insert(id.clone());
 
         Ok(id)
     }
 
-    pub fn get_working_level_by_id(&self, id: &str) -> Result<Option<WorkingLevel>> {
+    fn get_working_level_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<Item<WLId, Self::WorkingLevelProperties>>> {
         Ok(self.working_levels.get(id).cloned())
     }
 
-    pub fn move_working_level_to_active(&mut self, id: &str) -> Result<()> {
+    fn move_working_level_to_active(&mut self, id: &str) -> Result<()> {
         if !self.created_working_levels.contains(id) {
             bail!("can't move a working level with an id {} to active levels, because the level is not found in created levels", id);
         }
@@ -486,7 +410,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn move_working_level_to_removed(&mut self, id: &str) -> Result<()> {
+    fn move_working_level_to_removed(&mut self, id: &str) -> Result<()> {
         let existed_in_created = self.created_working_levels.remove(id);
         let existed_in_active = self.active_working_levels.remove(id);
 
@@ -499,7 +423,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn remove_working_level(&mut self, id: &str) -> Result<()> {
+    fn remove_working_level(&mut self, id: &str) -> Result<()> {
         if self.working_levels.remove(id).is_none() {
             bail!("a working level with an id {} doesn't exist", id);
         }
@@ -511,7 +435,7 @@ impl InMemoryStepBacktestingStore {
 
         if let Some(orders) = self.working_level_chain_of_orders.remove(id) {
             for order in orders.iter() {
-                let _ = self.remove_order(order)?;
+                self.remove_order(order)?;
             }
         }
 
@@ -524,40 +448,37 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_created_working_levels(&self) -> Result<Vec<WorkingLevel>> {
-        Ok(self
-            .created_working_levels
+    fn get_created_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+        self.created_working_levels
             .iter()
             .map(|working_level_id| {
                 self.get_working_level_by_id(working_level_id)?
                     .context(format!("no working level with an id {}", working_level_id))
             })
-            .collect::<Result<_, _>>()?)
+            .collect::<Result<_, _>>()
     }
 
-    pub fn get_active_working_levels(&self) -> Result<Vec<WorkingLevel>> {
-        Ok(self
-            .active_working_levels
+    fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+        self.active_working_levels
             .iter()
             .map(|working_level_id| {
                 self.get_working_level_by_id(working_level_id)?
                     .context(format!("no working level with an id {}", working_level_id))
             })
-            .collect::<Result<_, _>>()?)
+            .collect::<Result<_, _>>()
     }
 
-    pub fn get_removed_working_levels(&self) -> Result<Vec<WorkingLevel>> {
-        Ok(self
-            .removed_working_levels
+    fn get_removed_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+        self.removed_working_levels
             .iter()
             .map(|working_level_id| {
                 self.get_working_level_by_id(working_level_id)?
                     .context(format!("no working level with an id {}", working_level_id))
             })
-            .collect::<Result<_, _>>()?)
+            .collect::<Result<_, _>>()
     }
 
-    pub fn add_candle_to_working_level_corridor(
+    fn add_candle_to_working_level_corridor(
         &mut self,
         working_level_id: &str,
         candle_id: CandleId,
@@ -594,18 +515,18 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_candles_of_working_level_corridor(
+    fn get_candles_of_working_level_corridor(
         &self,
         working_level_id: &str,
         corridor_type: CorridorType,
-    ) -> Result<Option<Vec<Candle>>> {
+    ) -> Result<Vec<Item<CandleId, Self::CandleProperties>>> {
         let candles = match corridor_type {
             CorridorType::Small => self.working_level_small_corridors.get(working_level_id),
             CorridorType::Big => self.working_level_big_corridors.get(working_level_id),
         };
 
         let candles = match candles {
-            None => return Ok(None),
+            None => return Ok(Vec::new()),
             Some(candles) => candles
                 .iter()
                 .map(|candle_id| {
@@ -615,10 +536,10 @@ impl InMemoryStepBacktestingStore {
                 .collect::<Result<Vec<_>, _>>(),
         }?;
 
-        Ok(Some(candles))
+        Ok(candles)
     }
 
-    pub fn update_max_crossing_value_of_working_level(
+    fn update_max_crossing_value_of_working_level(
         &mut self,
         working_level_id: &str,
         new_value: WLMaxCrossingValue,
@@ -635,7 +556,7 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_max_crossing_value_of_working_level(
+    fn get_max_crossing_value_of_working_level(
         &self,
         working_level_id: &str,
     ) -> Result<Option<WLMaxCrossingValue>> {
@@ -645,7 +566,7 @@ impl InMemoryStepBacktestingStore {
             .cloned())
     }
 
-    pub fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()> {
+    fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()> {
         if !self.working_levels.contains_key(working_level_id) {
             bail!(
                 "a working level with an id {} doesn't exist",
@@ -667,22 +588,17 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool> {
+    fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool> {
         Ok(self
             .working_levels_with_moved_take_profits
             .contains(working_level_id))
     }
 
-    pub fn create_order(
-        &mut self,
-        prices: OrderPrices,
-        properties: OrderProperties,
-    ) -> Result<OrderId> {
+    fn create_order(&mut self, properties: Self::OrderProperties) -> Result<OrderId> {
         let id = xid::new().to_string();
 
-        let new_order = Order {
+        let new_order = Item {
             id: id.clone(),
-            prices,
             properties,
         };
 
@@ -691,11 +607,19 @@ impl InMemoryStepBacktestingStore {
         Ok(id)
     }
 
-    pub fn get_order_by_id(&self, id: &str) -> Result<Option<Order>> {
+    fn get_order_by_id(&self, id: &str) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
         Ok(self.orders.get(id).cloned())
     }
 
-    pub fn add_order_to_working_level_chain_of_orders(
+    fn remove_order(&mut self, id: &str) -> Result<()> {
+        if self.orders.remove(id).is_none() {
+            bail!("can't remove a non-existent order with an id {}", id);
+        }
+
+        Ok(())
+    }
+
+    fn add_order_to_working_level_chain_of_orders(
         &mut self,
         working_level_id: &str,
         order_id: OrderId,
@@ -724,14 +648,14 @@ impl InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    pub fn get_working_level_chain_of_orders(
+    fn get_working_level_chain_of_orders(
         &self,
         working_level_id: &str,
-    ) -> Result<Option<Vec<Order>>> {
+    ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
         let orders = self.working_level_chain_of_orders.get(working_level_id);
 
         let orders = match orders {
-            None => return Ok(None),
+            None => return Ok(Vec::new()),
             Some(orders) => orders
                 .iter()
                 .map(|order_id| {
@@ -741,6 +665,100 @@ impl InMemoryStepBacktestingStore {
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
-        Ok(Some(orders))
+        Ok(orders)
+    }
+}
+
+impl InMemoryStepBacktestingStore {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn get_all_ticks(&self) -> Result<HashSet<TickId>> {
+        Ok(self.ticks.keys().cloned().collect())
+    }
+
+    pub fn get_all_candles(&self) -> Result<HashSet<CandleId>> {
+        Ok(self.candles.keys().cloned().collect())
+    }
+
+    pub fn get_all_angles(&self) -> Result<HashSet<AngleId>> {
+        Ok(self.angles.keys().cloned().collect())
+    }
+
+    /// For each tick checks whether it is in use. If a tick is not in use,
+    /// removes it. We don't want tick list to grow endlessly.
+    fn remove_unused_ticks(&mut self) {
+        let tick_is_in_use = |tick_id: &TickId| {
+            [
+                self.strategy_ticks_candles.previous_tick.as_ref(),
+                self.strategy_ticks_candles.current_tick.as_ref(),
+            ]
+            .contains(&Some(tick_id))
+        };
+
+        self.ticks.retain(|tick_id, _| tick_is_in_use(tick_id));
+    }
+
+    /// For each candle checks whether it is in use. If a candle is not in use,
+    /// removes it. We don't want candle list to grow endlessly.
+    fn remove_unused_candles(&mut self) {
+        let candle_in_angles = |candle_id: &CandleId| {
+            self.angles
+                .values()
+                .any(|angle| &angle.properties.candle_id == candle_id)
+        };
+        let candle_in_corridors = |candle_id: &CandleId| self.corridor_candles.contains(candle_id);
+        let is_current_candle = |candle_id: &CandleId| {
+            self.strategy_ticks_candles.current_candle.as_ref() == Some(candle_id)
+        };
+        let is_previous_candle = |candle_id: &CandleId| {
+            self.strategy_ticks_candles.previous_candle.as_ref() == Some(candle_id)
+        };
+
+        self.candles.retain(|candle_id, _| {
+            if candle_in_angles(candle_id)
+                || candle_in_corridors(candle_id)
+                || is_current_candle(candle_id)
+                || is_previous_candle(candle_id)
+            {
+                return true;
+            }
+
+            false
+        });
+    }
+
+    /// For each angle checks whether it is in use. If an angle is not in use,
+    /// removes it. We don't want angle list to grow endlessly.
+    fn remove_unused_angles(&mut self) {
+        self.angles.retain(|angle_id, _| {
+            [
+                self.strategy_angles.max_angle.as_ref(),
+                self.strategy_angles.min_angle.as_ref(),
+                self.strategy_angles.virtual_max_angle.as_ref(),
+                self.strategy_angles.virtual_min_angle.as_ref(),
+                self.strategy_angles.tendency_change_angle.as_ref(),
+                self.strategy_angles
+                    .max_angle_before_bargaining_corridor
+                    .as_ref(),
+                self.strategy_angles
+                    .angle_of_second_level_after_bargaining_tendency_change
+                    .as_ref(),
+                self.strategy_angles
+                    .min_angle_before_bargaining_corridor
+                    .as_ref(),
+            ]
+            .contains(&Some(angle_id))
+        });
+    }
+
+    pub fn remove_unused_items(&mut self) -> Result<()> {
+        // It's important to remove angles firstly. Otherwise it will block candles removal
+        self.remove_unused_angles();
+        self.remove_unused_candles();
+        self.remove_unused_ticks();
+
+        Ok(())
     }
 }
