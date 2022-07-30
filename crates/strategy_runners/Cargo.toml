@@ -1,0 +1,24 @@
+[package]
+name = "strategy_runners"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+trading_apis = { path = "../trading_apis" }
+backtesting = { path = "../backtesting" }
+strategies = { path = "../strategies" }
+base = { path = "../base" }
+plotly = "0.7.0"
+chrono = "0.4.19"
+dotenv = "0.15.0"
+anyhow = "1.0.57"
+log4rs = { version = "1.1.1", features = ["background_rotation", "gzip"] }
+log = "0.4.17"
+rust_decimal = "1.25.0"
+rust_decimal_macros = "1.25.0"
+
+[dev-dependencies]
+float-cmp = "0.9.0"
+
