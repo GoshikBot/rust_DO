@@ -271,6 +271,7 @@ mod tests {
         remove_active_working_levels_with_closed_orders(&mut store).unwrap();
 
         let removed_working_levels = store.get_removed_working_levels().unwrap();
+
         assert_eq!(removed_working_levels.len(), 2);
         assert!(removed_working_levels
             .iter()
