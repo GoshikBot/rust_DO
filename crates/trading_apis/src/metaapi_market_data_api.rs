@@ -12,11 +12,11 @@ use serde::Deserialize;
 use ureq::serde_json;
 
 use base::entities::candle::{
-    BasicCandleProperties, CandleEdgePrice, CandleOpenClose, CandleVolatility,
+    BasicCandleProperties, CandleOpenClose, CandlePrice, CandleVolatility,
 };
 use base::entities::tick::TickPrice;
 use base::entities::{
-    BasicTickProperties, CandleEdgePrices, CandleMainProperties, CandleType, Timeframe,
+    BasicTickProperties, CandleMainProperties, CandlePrices, CandleType, Timeframe,
 };
 use base::helpers::{mean, price_to_points};
 use base::requests::api::SyncHttpRequest;
@@ -58,10 +58,10 @@ struct MetatraderTickJson {
 struct MetatraderCandleJson {
     time: MetatraderTime,
     broker_time: MetatraderTime,
-    open: CandleEdgePrice,
-    high: CandleEdgePrice,
-    low: CandleEdgePrice,
-    close: CandleEdgePrice,
+    open: CandlePrice,
+    high: CandlePrice,
+    low: CandlePrice,
+    close: CandlePrice,
 }
 
 pub struct RetrySettings {
@@ -219,7 +219,7 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
         candle_json: &MetatraderCandleJson,
         current_volatility: CandleVolatility,
     ) -> Result<BasicCandleProperties> {
-        let candle_edge_prices = CandleEdgePrices {
+        let candle_edge_prices = CandlePrices {
             open: candle_json.open,
             high: candle_json.high,
             low: candle_json.low,
@@ -243,7 +243,7 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
         };
 
         Ok(BasicCandleProperties {
-            main: candle_base_properties,
+            main_props: candle_base_properties,
             edge_prices: candle_edge_prices,
         })
     }
@@ -469,29 +469,6 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             end_time,
         )?;
 
-        // let all_candle_sizes: Series = all_candles
-        //     .iter()
-        //     .map(|candle| {
-        //         price_to_points(candle.high - candle.low)
-        //             .to_string()
-        //             .parse::<f32>()
-        //             .unwrap()
-        //     })
-        //     .collect();
-        //
-        // let all_candle_volatilities = all_candle_sizes
-        //     .rolling_mean(RollingOptions {
-        //         window_size: volatility_window,
-        //         min_periods: volatility_window,
-        //         weights: None,
-        //         center: false,
-        //     })
-        //     .context("error on rolling candle volatilities")?;
-        //
-        // let all_candle_volatilities = all_candle_volatilities
-        //     .f32()
-        //     .context("error on casting rolling volatilities to f32 ChunkedArray")?;
-
         let all_candle_volatilities = self.get_all_volatilities(&all_candles, volatility_window)?;
 
         let all_candles = all_candles
@@ -511,7 +488,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.main.time)
+        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.main_props.time)
     }
 
     fn get_historical_ticks(
@@ -630,16 +607,16 @@ mod tests {
         };
 
         let mut tuned_candle = metaapi.tune_candle(&candle_for_tuning, 271).unwrap();
-        tuned_candle.main.size = tuned_candle.main.size.round();
+        tuned_candle.main_props.size = tuned_candle.main_props.size.round();
 
         let expected_tuned_candle = BasicCandleProperties {
-            main: CandleMainProperties {
+            main_props: CandleMainProperties {
                 time: from_naive_str_to_naive_datetime(&candle_for_tuning.broker_time).unwrap(),
                 r#type: CandleType::Green,
                 size: dec!(288),
                 volatility: 271,
             },
-            edge_prices: CandleEdgePrices {
+            edge_prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),

@@ -5,10 +5,11 @@ use rust_decimal_macros::dec;
 
 pub type TickPrice = Decimal;
 pub type TickId = String;
+pub type TickTime = NaiveDateTime;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BasicTickProperties {
-    pub time: NaiveDateTime,
+    pub time: TickTime,
     pub ask: TickPrice,
     pub bid: TickPrice,
 }

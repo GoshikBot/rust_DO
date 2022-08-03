@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 pub type CandleId = String;
 
 pub struct CandleOpenClose {
-    pub open: CandleEdgePrice,
-    pub close: CandleEdgePrice,
+    pub open: CandlePrice,
+    pub close: CandlePrice,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy)]
@@ -33,10 +33,11 @@ impl From<CandleOpenClose> for CandleType {
 
 pub type CandleSize = Decimal;
 pub type CandleVolatility = u32;
+pub type CandleTime = NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CandleMainProperties {
-    pub time: NaiveDateTime,
+    pub time: CandleTime,
     pub r#type: CandleType,
     pub size: CandleSize,
     pub volatility: CandleVolatility,
@@ -53,17 +54,17 @@ impl Default for CandleMainProperties {
     }
 }
 
-pub type CandleEdgePrice = Decimal;
+pub type CandlePrice = Decimal;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CandleEdgePrices {
-    pub open: CandleEdgePrice,
-    pub high: CandleEdgePrice,
-    pub low: CandleEdgePrice,
-    pub close: CandleEdgePrice,
+pub struct CandlePrices {
+    pub open: CandlePrice,
+    pub high: CandlePrice,
+    pub low: CandlePrice,
+    pub close: CandlePrice,
 }
 
-impl Default for CandleEdgePrices {
+impl Default for CandlePrices {
     fn default() -> Self {
         Self {
             open: dec!(1.30945),
@@ -74,10 +75,10 @@ impl Default for CandleEdgePrices {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, Eq, PartialEq, Clone)]
 pub struct BasicCandleProperties {
-    pub main: CandleMainProperties,
-    pub edge_prices: CandleEdgePrices,
+    pub main_props: CandleMainProperties,
+    pub edge_prices: CandlePrices,
 }
 
 #[cfg(test)]

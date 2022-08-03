@@ -2,11 +2,11 @@ use crate::step::utils::entities::Diff;
 use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
 use crate::step::utils::stores::StepDiffs;
 use anyhow::Result;
-use base::entities::MovementType;
+use base::entities::Tendency;
 
 #[derive(Default)]
 pub struct InMemoryStepRealtimeConfigStore {
-    tendency: MovementType,
+    tendency: Tendency,
     tendency_changed_on_crossing_bargaining_corridor: bool,
     second_level_after_bargaining_tendency_change_is_created: bool,
     skip_creating_new_working_level: bool,
@@ -20,11 +20,11 @@ impl InMemoryStepRealtimeConfigStore {
 }
 
 impl StepRealtimeConfigStore for InMemoryStepRealtimeConfigStore {
-    fn get_tendency(&self) -> Result<MovementType> {
+    fn get_tendency(&self) -> Result<Tendency> {
         Ok(self.tendency)
     }
 
-    fn update_tendency(&mut self, new_tendency: MovementType) -> Result<()> {
+    fn update_tendency(&mut self, new_tendency: Tendency) -> Result<()> {
         self.tendency = new_tendency;
 
         Ok(())

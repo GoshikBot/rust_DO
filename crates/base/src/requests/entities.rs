@@ -83,5 +83,3 @@ pub struct HttpRequestWithRetriesParams<'a> {
     pub number_of_retries: NumberOfRetries,
     pub seconds_to_sleep: SecondsToSleep,
 }
-
-pub const TARGET_LOGGER: &str = "TARGET_LOGGER";

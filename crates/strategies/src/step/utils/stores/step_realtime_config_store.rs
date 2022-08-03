@@ -1,11 +1,11 @@
-use base::entities::MovementType;
+use base::entities::Tendency;
 
 use crate::step::utils::entities::Diff;
 use anyhow::Result;
 
 pub trait StepRealtimeConfigStore {
-    fn get_tendency(&self) -> Result<MovementType>;
-    fn update_tendency(&mut self, new_tendency: MovementType) -> Result<()>;
+    fn get_tendency(&self) -> Result<Tendency>;
+    fn update_tendency(&mut self, new_tendency: Tendency) -> Result<()>;
 
     fn tendency_changed_on_crossing_bargaining_corridor(&self) -> Result<bool>;
     fn update_tendency_changed_on_crossing_bargaining_corridor(

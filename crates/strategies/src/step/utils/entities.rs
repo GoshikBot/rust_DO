@@ -1,7 +1,8 @@
-use std::fmt::{Display, Formatter};
 use rust_decimal::Decimal;
+use std::fmt::{Display, Formatter};
 
 pub mod angle;
+pub mod candle;
 pub mod order;
 pub mod params;
 pub mod working_levels;

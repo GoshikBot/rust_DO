@@ -69,4 +69,6 @@ pub trait WorkingLevelStore {
         &self,
         working_level_id: &str,
     ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>>;
+
+    fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>>;
 }

@@ -6,13 +6,16 @@ use backtesting::historical_data::synchronization::sync_candles_and_ticks;
 use backtesting::historical_data::{get_historical_data, serialization, synchronization};
 use backtesting::StrategyInitConfig;
 use base::entities::candle::BasicCandleProperties;
-use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
+use base::entities::{
+    BasicTickProperties, StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV,
+};
 use base::requests::ureq::UreqRequestApi;
 use chrono::{DateTime, Duration, Utc};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use strategies::step::utils::trading_limiter;
 use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls, TargetLogger};
 use trading_apis::MetaapiMarketDataApi;
@@ -31,25 +34,30 @@ use strategies::step::utils::trading_limiter::TradingLimiterBacktesting;
 use strategy_runners::step::backtesting_runner;
 use strategy_runners::step::backtesting_runner::StepStrategyRunningConfig;
 
-const AUTH_TOKEN: &str = "AUTH_TOKEN";
-const DEMO_ACCOUNT_ID: &str = "DEMO_ACCOUNT_ID";
+const AUTH_TOKEN_ENV: &str = "AUTH_TOKEN";
+const DEMO_ACCOUNT_ID_ENV: &str = "DEMO_ACCOUNT_ID";
+const MAIN_API_URL_ENV: &str = "MAIN_API_URL";
+const MARKET_DATA_API_URL_ENV: &str = "MARKET_DATA_API_URL";
 
 const STEP_HISTORICAL_DATA_FOLDER_ENV: &str = "STEP_HISTORICAL_DATA_FOLDER";
-const STEP_PARAMS_CSV_FILE: &str = "STEP_PARAMS_CSV_FILE";
+const STEP_PARAMS_CSV_FILE_ENV: &str = "STEP_PARAMS_CSV_FILE";
 
 fn main() -> Result<()> {
     dotenv::from_filename("common.env").unwrap();
     dotenv::from_filename("step.env").unwrap();
-    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
+
+    let candle_timeframe =
+        Timeframe::from_str(&dotenv::var(CANDLE_TIMEFRAME_ENV).unwrap()).unwrap();
+    let tick_timeframe = Timeframe::from_str(&dotenv::var(TICK_TIMEFRAME_ENV).unwrap()).unwrap();
 
     backtest_step_strategy(StrategyInitConfig {
         symbol: String::from("GBPUSDm"),
         timeframes: StrategyTimeframes {
-            candle: Timeframe::Hour,
-            tick: Timeframe::OneMin,
+            candle: candle_timeframe,
+            tick: tick_timeframe,
         },
         end_time: DateTime::from(
-            DateTime::parse_from_str("27-05-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+            DateTime::parse_from_str("01-08-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
         ),
         duration: Duration::weeks(11),
     })?;
@@ -64,18 +72,17 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
     }
 
     let api_data = ApiData {
-        auth_token: dotenv::var("AUTH_TOKEN").unwrap(),
-        account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
+        auth_token: dotenv::var(AUTH_TOKEN_ENV).unwrap(),
+        account_id: dotenv::var(DEMO_ACCOUNT_ID_ENV).unwrap(),
         urls: ApiUrls {
-            main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            main: dotenv::var(MAIN_API_URL_ENV).unwrap(),
+            market_data: dotenv::var(MARKET_DATA_API_URL_ENV).unwrap(),
+        },
     };
 
     let request_api = UreqRequestApi::new();
 
-    let market_data_api =
-        MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
+    let market_data_api = MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
 
     let step_historical_data_folder = dotenv::var(STEP_HISTORICAL_DATA_FOLDER_ENV).unwrap();
 
@@ -89,9 +96,13 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
         sync_candles_and_ticks,
     )?;
 
-    let mut step_stores: StepBacktestingStores = Default::default();
+    let mut step_stores = StepBacktestingStores {
+        main: Default::default(),
+        config: StepBacktestingConfig::default(historical_data.candles.len()),
+        statistics: Default::default(),
+    };
 
-    let step_params_csv_file = dotenv::var(STEP_PARAMS_CSV_FILE).unwrap();
+    let step_params_csv_file = dotenv::var(STEP_PARAMS_CSV_FILE_ENV).unwrap();
     let step_params: StrategyCsvFileParams<StepPointParam, StepRatioParam> =
         StrategyCsvFileParams::new(step_params_csv_file)?;
 
@@ -113,27 +124,31 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
     Ok(())
 }
 
-fn plot_results(candles: Vec<BasicCandleProperties>) {
+fn plot_results(candles: Vec<Option<BasicCandleProperties>>) {
     let x = candles
         .iter()
-        .map(|candle| candle.main.time.format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|candle| {
+            candle
+                .clone()
+                .map(|c| c.main_props.time.format("%Y-%m-%d %H:%M:%S").to_string())
+        })
         .collect::<Vec<_>>();
 
     let open = candles
         .iter()
-        .map(|candle| candle.edge_prices.open)
+        .map(|candle| candle.clone().map(|c| c.edge_prices.open))
         .collect::<Vec<_>>();
     let high = candles
         .iter()
-        .map(|candle| candle.edge_prices.high)
+        .map(|candle| candle.clone().map(|c| c.edge_prices.high))
         .collect::<Vec<_>>();
     let low = candles
         .iter()
-        .map(|candle| candle.edge_prices.low)
+        .map(|candle| candle.clone().map(|c| c.edge_prices.low))
         .collect::<Vec<_>>();
     let close = candles
         .iter()
-        .map(|candle| candle.edge_prices.close)
+        .map(|candle| candle.clone().map(|c| c.edge_prices.close))
         .collect::<Vec<_>>();
 
     let trace1 = Candlestick::new(x, open, high, low, close);
@@ -145,7 +160,5 @@ fn plot_results(candles: Vec<BasicCandleProperties>) {
 
     plot.set_layout(layout);
 
-    plot.show();
-
-    plot.to_inline_html(Some("simple_candlestick_chart"));
+    plot.to_html("/home/nikmas/candlestick_chart.html");
 }

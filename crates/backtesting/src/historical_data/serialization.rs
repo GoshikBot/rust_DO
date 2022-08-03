@@ -1,10 +1,8 @@
 use crate::{HistoricalData, StrategyInitConfig};
-use base::entities::candle::{
-    BasicCandleProperties, CandleEdgePrice, CandleSize, CandleVolatility,
-};
+use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleSize, CandleVolatility};
 use base::entities::tick::TickPrice;
 use base::entities::{
-    BasicTickProperties, CandleEdgePrices, CandleMainProperties, CandleType, StrategyTimeframes,
+    BasicTickProperties, CandleMainProperties, CandlePrices, CandleType, StrategyTimeframes,
 };
 use chrono::NaiveDateTime;
 use csv::{Reader, Writer};
@@ -31,10 +29,10 @@ struct Candle {
     r#type: Option<CandleType>,
     size: Option<CandleSize>,
     volatility: Option<CandleVolatility>,
-    open: Option<CandleEdgePrice>,
-    high: Option<CandleEdgePrice>,
-    low: Option<CandleEdgePrice>,
-    close: Option<CandleEdgePrice>,
+    open: Option<CandlePrice>,
+    high: Option<CandlePrice>,
+    low: Option<CandlePrice>,
+    close: Option<CandlePrice>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -159,14 +157,14 @@ impl HistoricalDataCsvSerialization {
                 Some(candle) => Candle {
                     time: Some(
                         candle
-                            .main
+                            .main_props
                             .time
                             .format(TIME_PATTERN_FOR_SERIALIZATION)
                             .to_string(),
                     ),
-                    r#type: Some(candle.main.r#type),
-                    size: Some(candle.main.size),
-                    volatility: Some(candle.main.volatility),
+                    r#type: Some(candle.main_props.r#type),
+                    size: Some(candle.main_props.size),
+                    volatility: Some(candle.main_props.volatility),
                     open: Some(candle.edge_prices.open),
                     high: Some(candle.edge_prices.high),
                     low: Some(candle.edge_prices.low),
@@ -218,13 +216,13 @@ impl HistoricalDataCsvSerialization {
                     low: Some(low),
                     close: Some(close),
                 } => candles.push(Some(BasicCandleProperties {
-                    main: CandleMainProperties {
+                    main_props: CandleMainProperties {
                         time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
                         r#type,
                         size,
                         volatility,
                     },
-                    edge_prices: CandleEdgePrices {
+                    edge_prices: CandlePrices {
                         open,
                         high,
                         low,

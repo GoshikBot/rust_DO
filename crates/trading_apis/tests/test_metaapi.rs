@@ -15,15 +15,14 @@ fn should_successfully_get_current_tick() {
         account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
         urls: ApiUrls {
             main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap(),
+        },
     };
 
     let symbol = "GBPUSDm";
     let request_api = UreqRequestApi::new();
 
-    let metaapi =
-        MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
+    let metaapi = MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
 
     metaapi.get_current_tick(symbol).unwrap();
 }
@@ -69,8 +68,8 @@ fn should_successfully_get_current_candle() {
         account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
         urls: ApiUrls {
             main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap(),
+        },
     };
 
     let symbol = "GBPUSDm";
@@ -78,8 +77,7 @@ fn should_successfully_get_current_candle() {
 
     let request_api = UreqRequestApi::new();
 
-    let metaapi =
-        MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
+    let metaapi = MetaapiMarketDataApi::new(api_data, Default::default(), request_api);
 
     assert!(metaapi.get_current_candle(symbol, timeframe).is_ok());
 }
@@ -126,8 +124,8 @@ fn should_successfully_get_hourly_historical_candles() {
         account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
         urls: ApiUrls {
             main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap(),
+        },
     };
 
     let symbol = "GBPUSDm";
@@ -160,7 +158,7 @@ fn should_successfully_get_hourly_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_hours_between_adjacent_candles =
-                    (candle.main.time - previous_candle.main.time).num_hours();
+                    (candle.main_props.time - previous_candle.main_props.time).num_hours();
 
                 assert_eq!(
                     number_of_nones_in_row,
@@ -188,8 +186,8 @@ fn should_successfully_get_minute_historical_candles() {
         account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
         urls: ApiUrls {
             main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap(),
+        },
     };
 
     let symbol = "GBPUSDm";
@@ -222,7 +220,7 @@ fn should_successfully_get_minute_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_minutes_between_adjacent_candles =
-                    (candle.main.time - previous_candle.main.time).num_minutes();
+                    (candle.main_props.time - previous_candle.main_props.time).num_minutes();
 
                 assert_eq!(
                     number_of_nones_in_row,
@@ -250,8 +248,8 @@ fn should_successfully_get_historical_ticks() {
         account_id: dotenv::var("DEMO_ACCOUNT_ID").unwrap(),
         urls: ApiUrls {
             main: dotenv::var("MAIN_API_URL").unwrap(),
-            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap()
-        }
+            market_data: dotenv::var("MARKET_DATA_API_URL").unwrap(),
+        },
     };
 
     let symbol = "GBPUSDm";

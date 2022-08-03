@@ -71,8 +71,8 @@ impl TradingLimiter for TradingLimiterRealtime {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-    use std::collections::HashSet;
     use rust_decimal_macros::dec;
+    use std::collections::HashSet;
 
     #[test]
     fn forbid_trading_hour_to_forbid_trading_return_true() {

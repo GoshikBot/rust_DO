@@ -65,10 +65,10 @@ fn should_remove_only_unused_items() {
 
     for i in 1..=10 {
         let angle_id = store
-            .create_angle(BasicAngleProperties {
-                candle_id: candles.get(i - 1).unwrap().clone(),
-                r#type: Level::Min,
-            })
+            .create_angle(
+                BasicAngleProperties { r#type: Level::Min },
+                candles.get(i - 1).unwrap().clone(),
+            )
             .unwrap();
         angles.push(angle_id);
     }

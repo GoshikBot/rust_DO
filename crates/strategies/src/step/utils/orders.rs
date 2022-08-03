@@ -1,10 +1,15 @@
+use crate::step::utils::entities::order::OrderStatus;
+use crate::step::utils::stores::working_level_store::WorkingLevelStore;
+use crate::step::utils::stores::StepBacktestingConfig;
 use anyhow::{bail, Result};
-use base::entities::{PRICE_DECIMAL_PLACES, VOLUME_DECIMAL_PLACES};
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{
+    BasicTickProperties, PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES,
+};
 use base::{
     entities::{candle::CandleVolatility, Item, LOT},
     helpers::points_to_price,
     params::StrategyParams,
-    requests::entities::TARGET_LOGGER,
 };
 use rust_decimal::{prelude::FromPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -124,7 +129,7 @@ fn get_max_loss_per_chain_of_orders_in_price(
         / dec!(100);
 
     log::debug!(
-        target: &dotenv::var(TARGET_LOGGER).unwrap(),
+        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
         "max loss per chain of orders in price is {}; current balance — {}",
         max_loss_per_chain_of_orders_pct, current_balance
     );
@@ -151,13 +156,30 @@ fn get_volume_per_order(
             * Decimal::from(LOT));
 
     log::debug!(
-        target: &dotenv::var(TARGET_LOGGER).unwrap(),
+        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
         "volume per order — {}",
         volume_per_order
     );
 
     Ok(volume_per_order.round_dp(VOLUME_DECIMAL_PLACES))
 }
+
+// pub fn update_orders_backtesting(
+//     current_tick: &BasicTickProperties,
+//     current_candle: &BasicCandleProperties,
+//     config: &mut StepBacktestingConfig,
+//     working_level_store: &mut impl WorkingLevelStore<
+//         WorkingLevelProperties = BasicWLProperties,
+//         CandleProperties = BasicCandleProperties,
+//         OrderProperties = BasicOrderProperties,
+//     >,
+// ) -> Result<()> {
+//     for order in working_level_store.get_all_orders()? {
+//         if order.props.main.status == OrderStatus::Opened && current {}
+//     }
+//
+//     todo!()
+// }
 
 #[cfg(test)]
 mod tests {

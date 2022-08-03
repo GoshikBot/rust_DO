@@ -13,7 +13,7 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
     let historical_data = HistoricalData {
         candles: vec![
             Some(BasicCandleProperties {
-                main: CandleMainProperties {
+                main_props: CandleMainProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ..Default::default()
@@ -22,7 +22,7 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
             }),
             None,
             Some(BasicCandleProperties {
-                main: CandleMainProperties {
+                main_props: CandleMainProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
                     ..Default::default()

@@ -1,5 +1,6 @@
+use crate::entities::TARGET_LOGGER_ENV;
 use crate::requests::api::SyncHttpRequest;
-use crate::requests::entities::{HttpRequestData, HttpRequestWithRetriesParams, TARGET_LOGGER};
+use crate::requests::entities::{HttpRequestData, HttpRequestWithRetriesParams};
 use ::ureq::serde::de::DeserializeOwned;
 use anyhow::{bail, Result};
 use std::{thread, time};
@@ -24,7 +25,7 @@ pub fn http_request_with_retries(
             }
             Err(e) => {
                 log::error!(
-                    target: &dotenv::var(TARGET_LOGGER).unwrap(),
+                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                     "an error occurred on a {} try to request {}: {:?}",
                     current_request_try, req_params.req_entity_name, e
                 );

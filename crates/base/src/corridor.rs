@@ -45,11 +45,13 @@ fn diff_between_edges(
 ) -> Difference {
     match edge {
         Edge::High => {
-            (price - leading_candle.edge_prices.high) / points_to_price(leading_candle.main.size)
+            (price - leading_candle.edge_prices.high)
+                / points_to_price(leading_candle.main_props.size)
                 * dec!(100)
         }
         Edge::Low => {
-            (leading_candle.edge_prices.low - price) / points_to_price(leading_candle.main.size)
+            (leading_candle.edge_prices.low - price)
+                / points_to_price(leading_candle.main_props.size)
                 * dec!(100.0)
         }
     }
@@ -66,7 +68,7 @@ pub fn crop_corridor_to_closest_leader(
     is_in_corridor: impl Fn(&BasicCandleProperties, &BasicCandleProperties, ParamValue) -> bool,
 ) -> Option<Vec<BasicCandleProperties>> {
     for (i, candle) in corridor.iter().enumerate() {
-        if candle_can_be_corridor_leader(&candle.main)
+        if candle_can_be_corridor_leader(&candle.main_props)
             && is_in_corridor(
                 new_candle,
                 candle,
@@ -85,7 +87,7 @@ pub fn crop_corridor_to_closest_leader(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{CandleEdgePrices, CandleType};
+    use crate::entities::{CandlePrices, CandleType};
     use chrono::Utc;
     use std::cell::RefCell;
 
@@ -119,13 +121,13 @@ mod tests {
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_in_range_of_leading_candle__true() {
         let current_candle = BasicCandleProperties {
-            main: CandleMainProperties {
+            main_props: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: dec!(399),
                 volatility: 271,
             },
-            edge_prices: CandleEdgePrices {
+            edge_prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22999),
                 low: dec!(1.22600),
@@ -134,13 +136,13 @@ mod tests {
         };
 
         let leading_candle = BasicCandleProperties {
-            main: CandleMainProperties {
+            main_props: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: dec!(288.0),
                 volatility: 271,
             },
-            edge_prices: CandleEdgePrices {
+            edge_prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),
@@ -155,13 +157,13 @@ mod tests {
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_beyond_the_range_of_leading_candle__false() {
         let current_candle = BasicCandleProperties {
-            main: CandleMainProperties {
+            main_props: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: dec!(404.0),
                 volatility: 271,
             },
-            edge_prices: CandleEdgePrices {
+            edge_prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.23001),
                 low: dec!(1.22597),
@@ -170,13 +172,13 @@ mod tests {
         };
 
         let leading_candle = BasicCandleProperties {
-            main: CandleMainProperties {
+            main_props: CandleMainProperties {
                 time: Utc::now().naive_utc(),
                 r#type: CandleType::Green,
                 size: dec!(288.0),
                 volatility: 271,
             },
-            edge_prices: CandleEdgePrices {
+            edge_prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),
@@ -193,8 +195,8 @@ mod tests {
     {
         let current_corridor = [
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.0),
                     high: dec!(0.0),
                     low: dec!(0.0),
@@ -202,8 +204,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.1),
                     high: dec!(0.1),
                     low: dec!(0.1),
@@ -211,8 +213,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.2),
                     high: dec!(0.2),
                     low: dec!(0.2),
@@ -220,8 +222,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.3),
                     high: dec!(0.3),
                     low: dec!(0.3),
@@ -229,8 +231,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.4),
                     high: dec!(0.4),
                     low: dec!(0.4),
@@ -238,8 +240,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.5),
                     high: dec!(0.5),
                     low: dec!(0.5),
@@ -247,8 +249,8 @@ mod tests {
                 },
             },
             BasicCandleProperties {
-                main: Default::default(),
-                edge_prices: CandleEdgePrices {
+                main_props: Default::default(),
+                edge_prices: CandlePrices {
                     open: dec!(0.6),
                     high: dec!(0.6),
                     low: dec!(0.6),
@@ -258,8 +260,8 @@ mod tests {
         ];
 
         let new_candle = BasicCandleProperties {
-            main: Default::default(),
-            edge_prices: CandleEdgePrices {
+            main_props: Default::default(),
+            edge_prices: CandlePrices {
                 open: dec!(0.7),
                 high: dec!(0.7),
                 low: dec!(0.7),

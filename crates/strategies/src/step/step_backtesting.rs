@@ -1,4 +1,5 @@
 use crate::step::utils::entities::StrategySignals;
+use crate::step::utils::level_utils::remove_active_working_levels_with_closed_orders;
 use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
 use crate::step::utils::stores::StepBacktestingStores;
 use anyhow::Result;
@@ -41,23 +42,31 @@ pub fn run_iteration(
             let chain_of_orders = get_new_chain_of_orders(
                 crossed_level,
                 params,
-                stores.main.get_current_candle()?.unwrap().props.main.volatility,
-                stores.config.balances.real
+                stores
+                    .main
+                    .get_current_candle()?
+                    .unwrap()
+                    .props
+                    .base
+                    .main_props
+                    .volatility,
+                stores.config.balances.real,
             )?;
 
             for order in chain_of_orders {
                 let order_id = stores.main.create_order(order)?;
-                stores.main.add_order_to_working_level_chain_of_orders(
-                    &crossed_level.id,
-                    order_id,
-                )?;
+                stores
+                    .main
+                    .add_order_to_working_level_chain_of_orders(&crossed_level.id, order_id)?;
             }
 
-            stores.main.move_working_level_to_active(&crossed_level.id)?;
+            stores
+                .main
+                .move_working_level_to_active(&crossed_level.id)?;
         }
     }
 
-
+    remove_active_working_levels_with_closed_orders(&mut stores.main)?;
 
     Ok(())
 }

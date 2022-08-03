@@ -1,10 +1,12 @@
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
+use crate::step::utils::backtesting_charts::{AmountOfCandles, StepBacktestingChartTraces};
 use crate::step::utils::entities::angle::AngleId;
 use crate::step::utils::entities::Diff;
 use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
-use base::entities::{candle::CandleId, tick::TickId, Level, MovementType};
+use base::entities::{candle::CandleId, tick::TickId, Level, Tendency};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use std::collections::HashMap;
 
 pub mod angle_store;
 pub mod candle_store;
@@ -18,7 +20,6 @@ const DEFAULT_INITIAL_BALANCE_BACKTESTING: StepBalance = dec!(10_000);
 const DEFAULT_LEVERAGE_BACKTESTING: Leverage = dec!(0.01);
 const DEFAULT_SPREAD_BACKTESTING: Spread = dec!(0.00010);
 
-#[derive(Default)]
 pub struct StepBacktestingStores {
     pub main: InMemoryStepBacktestingStore,
     pub config: StepBacktestingConfig,
@@ -82,7 +83,7 @@ pub type Leverage = Decimal;
 pub type Spread = Decimal;
 
 pub struct StepBacktestingConfig {
-    pub tendency: MovementType,
+    pub tendency: Tendency,
     pub tendency_changed_on_crossing_bargaining_corridor: bool,
     pub second_level_after_bargaining_tendency_change_is_created: bool,
     pub skip_creating_new_working_level: bool,
@@ -93,12 +94,12 @@ pub struct StepBacktestingConfig {
     pub leverage: Leverage,
     pub spread: Spread,
     pub use_spread: bool,
-    pub indexes: StepBacktestingIndexes,
+    pub traces: StepBacktestingChartTraces,
 }
 
-impl Default for StepBacktestingConfig {
-    fn default() -> Self {
-        StepBacktestingConfig {
+impl StepBacktestingConfig {
+    pub fn default(total_amount_of_candles: AmountOfCandles) -> Self {
+        Self {
             tendency: Default::default(),
             tendency_changed_on_crossing_bargaining_corridor: false,
             second_level_after_bargaining_tendency_change_is_created: false,
@@ -110,22 +111,14 @@ impl Default for StepBacktestingConfig {
             leverage: DEFAULT_LEVERAGE_BACKTESTING,
             spread: DEFAULT_SPREAD_BACKTESTING,
             use_spread: true,
-            indexes: Default::default(),
+            traces: StepBacktestingChartTraces::new(total_amount_of_candles),
         }
     }
 }
 
-#[derive(Default)]
-pub struct StepBacktestingIndexes {
-    pub working_level_index: BacktestingIndex,
-    pub stop_loss_index: BacktestingIndex,
-    pub take_profit_index: BacktestingIndex,
-    pub tf_entity_index: BacktestingIndex,
-}
-
 pub type BacktestingStatisticNumber = u32;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StepBacktestingStatistics {
     pub number_of_working_levels: BacktestingStatisticNumber,
     pub number_of_tendency_changes: BacktestingStatisticNumber,

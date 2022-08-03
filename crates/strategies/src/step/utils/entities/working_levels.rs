@@ -1,3 +1,4 @@
+use crate::step::utils::backtesting_charts::ChartIndex;
 use crate::step::utils::entities::order::OrderType;
 use chrono::{NaiveDateTime, Utc};
 use rust_decimal::Decimal;
@@ -11,6 +12,18 @@ pub struct BasicWLProperties {
     pub price: WLPrice,
     pub r#type: OrderType,
     pub time: NaiveDateTime,
+}
+
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+pub struct BacktestingWLProperties {
+    base: BasicWLProperties,
+    chart_index: ChartIndex,
+}
+
+impl From<BacktestingWLProperties> for BasicWLProperties {
+    fn from(properties: BacktestingWLProperties) -> Self {
+        properties.base
+    }
 }
 
 impl Default for BasicWLProperties {

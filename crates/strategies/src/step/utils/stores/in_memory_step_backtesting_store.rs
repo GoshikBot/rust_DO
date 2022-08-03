@@ -6,8 +6,12 @@ use base::entities::candle::BasicCandleProperties;
 use base::entities::Item;
 use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
 
+use crate::step::utils::entities::angle::AngleFullProperties;
+use crate::step::utils::entities::candle::BacktestingCandleProperties;
 use crate::step::utils::entities::order::{BasicOrderProperties, OrderId, OrderStatus};
-use crate::step::utils::entities::working_levels::{CorridorType, WLMaxCrossingValue};
+use crate::step::utils::entities::working_levels::{
+    BacktestingWLProperties, CorridorType, WLMaxCrossingValue,
+};
 use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
     working_levels::{BasicWLProperties, WLId},
@@ -19,13 +23,19 @@ use super::candle_store::CandleStore;
 use super::tick_store::TickStore;
 use super::working_level_store::WorkingLevelStore;
 
+#[derive(Clone)]
+struct AngleProperties {
+    main_props: BasicAngleProperties,
+    candle_id: CandleId,
+}
+
 #[derive(Default)]
 pub struct InMemoryStepBacktestingStore {
-    candles: HashMap<CandleId, Item<CandleId, BasicCandleProperties>>,
+    candles: HashMap<CandleId, Item<CandleId, BacktestingCandleProperties>>,
     ticks: HashMap<TickId, Item<TickId, BasicTickProperties>>,
-    angles: HashMap<AngleId, Item<AngleId, BasicAngleProperties>>,
+    angles: HashMap<AngleId, Item<AngleId, AngleProperties>>,
 
-    working_levels: HashMap<WLId, Item<WLId, BasicWLProperties>>,
+    working_levels: HashMap<WLId, Item<WLId, BacktestingWLProperties>>,
 
     working_level_max_crossing_values: HashMap<WLId, WLMaxCrossingValue>,
     working_levels_with_moved_take_profits: HashSet<WLId>,
@@ -108,7 +118,7 @@ impl TickStore for InMemoryStepBacktestingStore {
 }
 
 impl CandleStore for InMemoryStepBacktestingStore {
-    type CandleProperties = BasicCandleProperties;
+    type CandleProperties = BacktestingCandleProperties;
 
     fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<CandleId> {
         let id = xid::new().to_string();
@@ -173,13 +183,21 @@ impl CandleStore for InMemoryStepBacktestingStore {
 
 impl AngleStore for InMemoryStepBacktestingStore {
     type AngleProperties = BasicAngleProperties;
+    type CandleProperties = BacktestingCandleProperties;
 
-    fn create_angle(&mut self, properties: Self::AngleProperties) -> Result<AngleId> {
+    fn create_angle(
+        &mut self,
+        props: Self::AngleProperties,
+        candle_id: CandleId,
+    ) -> Result<AngleId> {
         let id = xid::new().to_string();
 
         let new_angle = Item {
             id: id.clone(),
-            props: properties,
+            props: AngleProperties {
+                main_props: props,
+                candle_id,
+            },
         };
 
         self.angles.insert(id.clone(), new_angle);
@@ -187,13 +205,33 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(id)
     }
 
-    fn get_angle_by_id(&self, id: &str) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
-        Ok(self.angles.get(id).cloned())
+    fn get_angle_by_id(
+        &self,
+        id: &str,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
+        let angle = self.angles.get(id).cloned();
+        match angle {
+            None => Ok(None),
+            Some(angle) => {
+                let candle = self.get_candle_by_id(&angle.props.candle_id)?.unwrap();
+                Ok(Some(Item {
+                    id: angle.id.clone(),
+                    props: AngleFullProperties {
+                        main_props: angle.props.main_props,
+                        candle,
+                    },
+                }))
+            }
+        }
     }
 
     fn get_angle_of_second_level_after_bargaining_tendency_change(
         &self,
-    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self
             .strategy_angles
             .angle_of_second_level_after_bargaining_tendency_change
@@ -220,7 +258,11 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_tendency_change_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    fn get_tendency_change_angle(
+        &self,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self.strategy_angles.tendency_change_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -240,7 +282,11 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_min_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    fn get_min_angle(
+        &self,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self.strategy_angles.min_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -260,7 +306,11 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_virtual_min_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    fn get_virtual_min_angle(
+        &self,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self.strategy_angles.virtual_min_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -280,7 +330,11 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_max_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    fn get_max_angle(
+        &self,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self.strategy_angles.max_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -300,7 +354,11 @@ impl AngleStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn get_virtual_max_angle(&self) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    fn get_virtual_max_angle(
+        &self,
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self.strategy_angles.virtual_max_angle.as_ref();
 
         let angle_id = match angle_id {
@@ -322,7 +380,9 @@ impl AngleStore for InMemoryStepBacktestingStore {
 
     fn get_min_angle_before_bargaining_corridor(
         &self,
-    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self
             .strategy_angles
             .min_angle_before_bargaining_corridor
@@ -347,7 +407,9 @@ impl AngleStore for InMemoryStepBacktestingStore {
 
     fn get_max_angle_before_bargaining_corridor(
         &self,
-    ) -> Result<Option<Item<AngleId, Self::AngleProperties>>> {
+    ) -> Result<
+        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+    > {
         let angle_id = self
             .strategy_angles
             .max_angle_before_bargaining_corridor
@@ -372,8 +434,8 @@ impl AngleStore for InMemoryStepBacktestingStore {
 }
 
 impl WorkingLevelStore for InMemoryStepBacktestingStore {
-    type WorkingLevelProperties = BasicWLProperties;
-    type CandleProperties = BasicCandleProperties;
+    type WorkingLevelProperties = BacktestingWLProperties;
+    type CandleProperties = BacktestingCandleProperties;
     type OrderProperties = BasicOrderProperties;
 
     fn create_working_level(&mut self, properties: Self::WorkingLevelProperties) -> Result<WLId> {
@@ -670,6 +732,10 @@ impl WorkingLevelStore for InMemoryStepBacktestingStore {
         };
 
         Ok(orders)
+    }
+
+    fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
+        Ok(self.orders.values().cloned().collect())
     }
 }
 
