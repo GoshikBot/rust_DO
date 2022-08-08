@@ -2,12 +2,11 @@ use anyhow::Context;
 use anyhow::Result;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::entities::candle::BasicCandleProperties;
-use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
+use base::entities::{BasicTickProperties, StrategyTimeframes};
 use base::params::StrategyParams;
 use rust_decimal_macros::dec;
 use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
 use strategies::step::utils::stores::StepBacktestingStores;
-use strategies::step::utils::trading_limiter;
 use strategies::step::utils::trading_limiter::TradingLimiter;
 
 #[derive(Debug)]
@@ -175,7 +174,7 @@ where
 mod tests {
     use super::*;
     use base::entities::candle::CandleVolatility;
-    use base::entities::CandleMainProperties;
+    use base::entities::Timeframe;
     use base::params::ParamValue;
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
@@ -265,86 +264,56 @@ mod tests {
         let historical_data = HistoricalData {
             candles: vec![
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 18:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 18:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
             ],
             ticks: vec![

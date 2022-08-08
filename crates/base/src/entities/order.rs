@@ -1,9 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::entities::Item;
-use anyhow::Result;
-
 pub type OrderId = String;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -46,25 +43,21 @@ impl Default for OrderStatus {
 
 pub type OrderVolume = Decimal;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct BasicOrderProperties {
-    pub main_props: BasicOrderMainProperties,
-    pub prices: BasicOrderPrices,
-}
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct BasicOrderMainProperties {
+pub struct BasicOrderProperties {
     pub r#type: OrderType,
     pub volume: OrderVolume,
     pub status: OrderStatus,
+    pub prices: BasicOrderPrices,
 }
 
-impl Default for BasicOrderMainProperties {
+impl Default for BasicOrderProperties {
     fn default() -> Self {
         Self {
             r#type: OrderType::Buy,
             volume: dec!(0.03),
             status: Default::default(),
+            prices: Default::default(),
         }
     }
 }

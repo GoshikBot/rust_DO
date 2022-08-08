@@ -1,7 +1,6 @@
 use crate::requests::api::SyncHttpRequest;
-use crate::requests::entities::{HttpRequestData, HttpRequestMethod, Queries};
+use crate::requests::entities::{HttpRequestData, HttpRequestMethod};
 use anyhow::{bail, Result};
-use ureq::serde::de::DeserializeOwned;
 use ureq::Error;
 
 #[derive(Default)]

@@ -1,7 +1,6 @@
 use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
-use base::entities::candle::BasicCandleProperties;
 use base::entities::order::{OrderStatus, OrderType};
 use base::entities::tick::TickPrice;
 use base::entities::Item;
@@ -39,7 +38,7 @@ where
 fn working_level_has_closed_orders_in_chain(chain_of_orders: &[StepOrderProperties]) -> bool {
     chain_of_orders
         .iter()
-        .any(|order| order.main_props.base.status == OrderStatus::Closed)
+        .any(|order| order.base.status == OrderStatus::Closed)
 }
 
 /// Moves active working levels to removed if they have closed orders in their chains.
@@ -66,9 +65,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::step::utils::entities::order::StepOrderMainProperties;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-    use base::entities::order::{BasicOrderMainProperties, OrderStatus};
+    use base::entities::order::{BasicOrderProperties, OrderStatus};
     use base::stores::order_store::BasicOrderStore;
     use chrono::Utc;
     use rust_decimal_macros::dec;
@@ -187,11 +185,8 @@ mod tests {
 
                 store
                     .create_order(StepOrderProperties {
-                        main_props: StepOrderMainProperties {
-                            base: BasicOrderMainProperties {
-                                status,
-                                ..Default::default()
-                            },
+                        base: BasicOrderProperties {
+                            status,
                             ..Default::default()
                         },
                         ..Default::default()
@@ -211,11 +206,8 @@ mod tests {
 
                 store
                     .create_order(StepOrderProperties {
-                        main_props: StepOrderMainProperties {
-                            base: BasicOrderMainProperties {
-                                status,
-                                ..Default::default()
-                            },
+                        base: BasicOrderProperties {
+                            status,
                             ..Default::default()
                         },
                         ..Default::default()
@@ -226,12 +218,12 @@ mod tests {
 
         let first_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|i| store.create_order(Default::default()).unwrap())
+            .map(|_| store.create_order(Default::default()).unwrap())
             .collect();
 
         let second_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|i| store.create_order(Default::default()).unwrap())
+            .map(|_| store.create_order(Default::default()).unwrap())
             .collect();
 
         for order_id in first_chain_of_orders_with_closed_orders {

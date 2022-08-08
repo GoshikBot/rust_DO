@@ -2,12 +2,8 @@ use crate::step::utils::backtesting_charts::{AmountOfCandles, StepBacktestingCha
 use crate::step::utils::entities::angle::AngleId;
 use crate::step::utils::entities::Diff;
 use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
 use backtesting::BacktestingTradingEngineConfig;
-use base::entities::{candle::CandleId, tick::TickId, Level, Tendency};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
-use std::collections::HashMap;
+use base::entities::{candle::CandleId, tick::TickId, Tendency};
 
 pub mod angle_store;
 pub mod in_memory_step_backtesting_store;

@@ -1,32 +1,21 @@
-use anyhow::{Context, Result};
-use backtesting::historical_data::serialization::{
-    HistoricalDataCsvSerialization, HistoricalDataSerialization,
-};
+use anyhow::Result;
+use backtesting::historical_data::get_historical_data;
+use backtesting::historical_data::serialization::HistoricalDataCsvSerialization;
 use backtesting::historical_data::synchronization::sync_candles_and_ticks;
-use backtesting::historical_data::{get_historical_data, serialization, synchronization};
 use backtesting::StrategyInitConfig;
 use base::entities::candle::BasicCandleProperties;
-use base::entities::{
-    BasicTickProperties, StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV,
-};
+use base::entities::{StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV};
 use base::requests::ureq::UreqRequestApi;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration};
 use plotly::layout::Axis;
 use plotly::{Candlestick, Layout, Plot};
-use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use strategies::step::utils::trading_limiter;
-use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls, TargetLogger};
+use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls};
 use trading_apis::MetaapiMarketDataApi;
 
-use base::params::{StrategyCsvFileParams, StrategyParams};
+use base::params::StrategyCsvFileParams;
 use strategies::step::step_backtesting;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
-use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
-use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-use strategies::step::utils::stores::in_memory_step_realtime_config_store::InMemoryStepRealtimeConfigStore;
-use strategies::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
 use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiterBacktesting;
 use strategy_runners::step::backtesting_runner;
@@ -122,31 +111,31 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
     Ok(())
 }
 
-fn plot_results(candles: Vec<Option<BasicCandleProperties>>) {
+fn _plot_results(candles: Vec<Option<BasicCandleProperties>>) {
     let x = candles
         .iter()
         .map(|candle| {
             candle
                 .clone()
-                .map(|c| c.main_props.time.format("%Y-%m-%d %H:%M:%S").to_string())
+                .map(|c| c.time.format("%Y-%m-%d %H:%M:%S").to_string())
         })
         .collect::<Vec<_>>();
 
     let open = candles
         .iter()
-        .map(|candle| candle.clone().map(|c| c.edge_prices.open))
+        .map(|candle| candle.clone().map(|c| c.prices.open))
         .collect::<Vec<_>>();
     let high = candles
         .iter()
-        .map(|candle| candle.clone().map(|c| c.edge_prices.high))
+        .map(|candle| candle.clone().map(|c| c.prices.high))
         .collect::<Vec<_>>();
     let low = candles
         .iter()
-        .map(|candle| candle.clone().map(|c| c.edge_prices.low))
+        .map(|candle| candle.clone().map(|c| c.prices.low))
         .collect::<Vec<_>>();
     let close = candles
         .iter()
-        .map(|candle| candle.clone().map(|c| c.edge_prices.close))
+        .map(|candle| candle.clone().map(|c| c.prices.close))
         .collect::<Vec<_>>();
 
     let trace1 = Candlestick::new(x, open, high, low, close);

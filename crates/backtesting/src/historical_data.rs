@@ -2,7 +2,6 @@ use crate::historical_data::serialization::HistoricalDataSerialization;
 use crate::{HistoricalData, StrategyInitConfig};
 use anyhow::{Context, Result};
 use base::entities::StrategyTimeframes;
-use std::fmt::Debug;
 use std::path::PathBuf;
 use trading_apis::MarketDataApi;
 
@@ -73,7 +72,7 @@ where
 mod tests {
     use super::*;
     use base::entities::candle::BasicCandleProperties;
-    use base::entities::{BasicTickProperties, CandleMainProperties, Timeframe};
+    use base::entities::{BasicTickProperties, Timeframe};
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
     use rust_decimal_macros::dec;
     use std::cell::RefCell;
@@ -102,21 +101,15 @@ mod tests {
         ) -> Result<Vec<Option<BasicCandleProperties>>> {
             Ok(vec![
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("19-05-2022 19:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("19-05-2022 19:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
             ])
         }
@@ -172,27 +165,15 @@ mod tests {
             Ok(Some(HistoricalData {
                 candles: vec![
                     Some(BasicCandleProperties {
-                        main_props: CandleMainProperties {
-                            time: NaiveDateTime::parse_from_str(
-                                "17-05-2022 13:00",
-                                "%d-%m-%Y %H:%M",
-                            )
+                        time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
-                            ..Default::default()
-                        },
-                        edge_prices: Default::default(),
+                        ..Default::default()
                     }),
                     None,
                     Some(BasicCandleProperties {
-                        main_props: CandleMainProperties {
-                            time: NaiveDateTime::parse_from_str(
-                                "17-05-2022 15:00",
-                                "%d-%m-%Y %H:%M",
-                            )
+                        time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
-                            ..Default::default()
-                        },
-                        edge_prices: Default::default(),
+                        ..Default::default()
                     }),
                 ],
                 ticks: vec![
@@ -263,21 +244,15 @@ mod tests {
         let expected_historical_data = HistoricalData {
             candles: vec![
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
             ],
             ticks: vec![
@@ -344,21 +319,15 @@ mod tests {
         let expected_historical_data = HistoricalData {
             candles: vec![
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str("19-05-2022 19:00", "%d-%m-%Y %H:%M")
-                            .unwrap(),
-                        ..Default::default()
-                    },
-                    edge_prices: Default::default(),
+                    time: NaiveDateTime::parse_from_str("19-05-2022 19:00", "%d-%m-%Y %H:%M")
+                        .unwrap(),
+                    ..Default::default()
                 }),
             ],
             ticks: vec![

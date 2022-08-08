@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Context, Result};
 
-use base::entities::candle::BasicCandleProperties;
 use base::entities::order::{OrderId, OrderStatus};
 use base::entities::Item;
 use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
@@ -10,7 +9,7 @@ use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
 
-use crate::step::utils::entities::angle::AngleFullProperties;
+use crate::step::utils::entities::angle::FullAngleProperties;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::entities::working_levels::{
@@ -18,7 +17,7 @@ use crate::step::utils::entities::working_levels::{
 };
 use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
-    working_levels::{BasicWLProperties, WLId},
+    working_levels::WLId,
 };
 use crate::step::utils::stores::{StepStrategyAngles, StepStrategyTicksCandles};
 
@@ -284,7 +283,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
         &self,
         id: &str,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle = self.angles.get(id).cloned();
         match angle {
@@ -293,8 +292,8 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
                 let candle = self.get_candle_by_id(&angle.props.candle_id)?.unwrap();
                 Ok(Some(Item {
                     id: angle.id.clone(),
-                    props: AngleFullProperties {
-                        main_props: angle.props.main_props,
+                    props: FullAngleProperties {
+                        base: angle.props.main_props,
                         candle,
                     },
                 }))
@@ -305,7 +304,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_angle_of_second_level_after_bargaining_tendency_change(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self
             .strategy_angles
@@ -346,7 +345,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_tendency_change_angle(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self.strategy_angles.tendency_change_angle.as_ref();
 
@@ -377,7 +376,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_min_angle(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self.strategy_angles.min_angle.as_ref();
 
@@ -408,7 +407,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_virtual_min_angle(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self.strategy_angles.virtual_min_angle.as_ref();
 
@@ -439,7 +438,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_max_angle(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self.strategy_angles.max_angle.as_ref();
 
@@ -470,7 +469,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_virtual_max_angle(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self.strategy_angles.virtual_max_angle.as_ref();
 
@@ -501,7 +500,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_min_angle_before_bargaining_corridor(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self
             .strategy_angles
@@ -535,7 +534,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
     fn get_max_angle_before_bargaining_corridor(
         &self,
     ) -> Result<
-        Option<Item<AngleId, AngleFullProperties<Self::AngleProperties, Self::CandleProperties>>>,
+        Option<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>,
     > {
         let angle_id = self
             .strategy_angles
@@ -595,7 +594,7 @@ impl BasicOrderStore for InMemoryStepBacktestingStore {
         match self.orders.get_mut(order_id) {
             None => bail!("can't update a non-existent order with an id {}", order_id),
             Some(order) => {
-                order.props.main_props.base.status = new_status;
+                order.props.base.status = new_status;
             }
         }
 
@@ -651,13 +650,7 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
         }
 
         for order in self.get_working_level_chain_of_orders(id)? {
-            self.orders
-                .get_mut(&order.id)
-                .unwrap()
-                .props
-                .main_props
-                .base
-                .status = OrderStatus::Closed;
+            self.orders.get_mut(&order.id).unwrap().props.base.status = OrderStatus::Closed;
         }
 
         self.removed_working_levels.insert(id.to_string());

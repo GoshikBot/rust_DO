@@ -1,24 +1,17 @@
-use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
-use crate::step::utils::stores::StepBacktestingConfig;
 use anyhow::{bail, Result};
 use backtesting::Balance;
-use base::entities::candle::BasicCandleProperties;
-use base::entities::order::{
-    BasicOrderMainProperties, BasicOrderPrices, OrderStatus, OrderType, OrderVolume,
-};
-use base::entities::{
-    BasicTickProperties, PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES,
-};
+use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderType, OrderVolume};
+use base::entities::{PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES};
 use base::{
     entities::{candle::CandleVolatility, Item, LOT},
     helpers::points_to_price,
     params::StrategyParams,
 };
-use rust_decimal::{prelude::FromPrimitive, Decimal};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use super::entities::{
-    order::{StepOrderMainProperties, StepOrderProperties},
+    order::StepOrderProperties,
     params::{StepPointParam, StepRatioParam},
     working_levels::{BasicWLProperties, WLId},
 };
@@ -86,19 +79,17 @@ where
 
     for _ in 0..amount_of_orders {
         chain_of_orders.push(StepOrderProperties {
-            main_props: StepOrderMainProperties {
-                base: BasicOrderMainProperties {
-                    r#type: level.props.r#type,
-                    volume: volume_per_order,
-                    status: Default::default(),
+            base: BasicOrderProperties {
+                r#type: level.props.r#type,
+                volume: volume_per_order,
+                status: Default::default(),
+                prices: BasicOrderPrices {
+                    open: price_for_current_order,
+                    stop_loss,
+                    take_profit,
                 },
-                working_level_id: level.id.clone(),
             },
-            prices: BasicOrderPrices {
-                open: price_for_current_order,
-                stop_loss,
-                take_profit,
-            },
+            working_level_id: level.id.clone(),
         });
 
         match level.props.r#type {
@@ -167,11 +158,7 @@ fn get_volume_per_order(
 //     current_tick: &BasicTickProperties,
 //     current_candle: &BasicCandleProperties,
 //     config: &mut StepBacktestingConfig,
-//     working_level_store: &mut impl WorkingLevelStore<
-//         WorkingLevelProperties = BasicWLProperties,
-//         CandleProperties = BasicCandleProperties,
-//         OrderProperties = StepOrderProperties,
-//     >,
+//     order_store: &impl BasicOrderStore<OrderProperties = >,
 // ) -> Result<()> {
 //     for order in working_level_store.get_all_orders()? {
 //         if order.props.main_props.status == OrderStatus::Opened && current {}
@@ -256,79 +243,69 @@ mod tests {
 
         let expected_chain_of_orders = vec![
             StepOrderProperties {
-                main_props: StepOrderMainProperties {
-                    base: BasicOrderMainProperties {
-                        r#type: OrderType::Buy,
-                        volume: dec!(0.03),
-                        status: Default::default(),
+                base: BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.29874),
+                        stop_loss: dec!(1.29352),
+                        take_profit: dec!(1.3),
                     },
-                    working_level_id: String::from("1"),
                 },
-                prices: BasicOrderPrices {
-                    open: dec!(1.29874),
-                    stop_loss: dec!(1.29352),
-                    take_profit: dec!(1.3),
-                },
+                working_level_id: String::from("1"),
             },
             StepOrderProperties {
-                main_props: StepOrderMainProperties {
-                    base: BasicOrderMainProperties {
-                        r#type: OrderType::Buy,
-                        volume: dec!(0.03),
-                        status: Default::default(),
+                base: BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.29770),
+                        stop_loss: dec!(1.29352),
+                        take_profit: dec!(1.3),
                     },
-                    working_level_id: String::from("1"),
                 },
-                prices: BasicOrderPrices {
-                    open: dec!(1.29770),
-                    stop_loss: dec!(1.29352),
-                    take_profit: dec!(1.3),
-                },
+                working_level_id: String::from("1"),
             },
             StepOrderProperties {
-                main_props: StepOrderMainProperties {
-                    base: BasicOrderMainProperties {
-                        r#type: OrderType::Buy,
-                        volume: dec!(0.03),
-                        status: Default::default(),
+                base: BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.29666),
+                        stop_loss: dec!(1.29352),
+                        take_profit: dec!(1.3),
                     },
-                    working_level_id: String::from("1"),
                 },
-                prices: BasicOrderPrices {
-                    open: dec!(1.29666),
-                    stop_loss: dec!(1.29352),
-                    take_profit: dec!(1.3),
-                },
+                working_level_id: String::from("1"),
             },
             StepOrderProperties {
-                main_props: StepOrderMainProperties {
-                    base: BasicOrderMainProperties {
-                        r#type: OrderType::Buy,
-                        volume: dec!(0.03),
-                        status: Default::default(),
+                base: BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.29562),
+                        stop_loss: dec!(1.29352),
+                        take_profit: dec!(1.3),
                     },
-                    working_level_id: String::from("1"),
                 },
-                prices: BasicOrderPrices {
-                    open: dec!(1.29562),
-                    stop_loss: dec!(1.29352),
-                    take_profit: dec!(1.3),
-                },
+                working_level_id: String::from("1"),
             },
             StepOrderProperties {
-                main_props: StepOrderMainProperties {
-                    base: BasicOrderMainProperties {
-                        r#type: OrderType::Buy,
-                        volume: dec!(0.03),
-                        status: Default::default(),
+                base: BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.29458),
+                        stop_loss: dec!(1.29352),
+                        take_profit: dec!(1.3),
                     },
-                    working_level_id: String::from("1"),
                 },
-                prices: BasicOrderPrices {
-                    open: dec!(1.29458),
-                    stop_loss: dec!(1.29352),
-                    take_profit: dec!(1.3),
-                },
+                working_level_id: String::from("1"),
             },
         ];
 

@@ -188,7 +188,7 @@ fn should_successfully_move_working_level_to_removed() {
         .get_working_level_chain_of_orders(&working_level_id)
         .unwrap()
     {
-        assert_eq!(order.props.main_props.base.status, OrderStatus::Closed);
+        assert_eq!(order.props.base.status, OrderStatus::Closed);
     }
 }
 
@@ -219,7 +219,7 @@ fn should_successfully_remove_working_level() {
     assert!(store
         .add_candle_to_working_level_corridor(
             &working_level_id,
-            candle_id.clone(),
+            candle_id,
             CorridorType::Big
         )
         .is_ok());
@@ -229,7 +229,7 @@ fn should_successfully_remove_working_level() {
     let order_id = store.create_order(Default::default()).unwrap();
 
     assert!(store
-        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
+        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
         .is_ok());
 
     assert!(store.remove_working_level(&working_level_id).is_ok());
@@ -238,19 +238,19 @@ fn should_successfully_remove_working_level() {
         .get_created_working_levels()
         .unwrap()
         .iter()
-        .any(|level| &level.id == &working_level_id));
+        .any(|level| level.id == working_level_id));
 
     assert!(!store
         .get_active_working_levels()
         .unwrap()
         .iter()
-        .any(|level| &level.id == &working_level_id));
+        .any(|level| level.id == working_level_id));
 
     assert!(!store
         .get_removed_working_levels()
         .unwrap()
         .iter()
-        .any(|level| &level.id == &working_level_id));
+        .any(|level| level.id == working_level_id));
 
     assert!(store
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Small)

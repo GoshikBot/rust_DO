@@ -2,12 +2,11 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::entities::candle::BasicCandleProperties;
-use crate::entities::CandleMainProperties;
-use crate::helpers::{points_to_price, price_to_points};
-use crate::params::{ParamValue, StrategyParams};
+use crate::helpers::points_to_price;
+use crate::params::ParamValue;
 
 /// Candle can be the corridor leader if its size is less or equal to the current volatility.
-pub fn candle_can_be_corridor_leader(candle_properties: &CandleMainProperties) -> bool {
+pub fn candle_can_be_corridor_leader(candle_properties: &BasicCandleProperties) -> bool {
     if candle_properties.size <= candle_properties.volatility.into() {
         return true;
     }
@@ -21,9 +20,9 @@ pub fn is_in_corridor(
     leading_candle: &BasicCandleProperties,
     max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
 ) -> bool {
-    diff_between_edges(candle.edge_prices.high, Edge::High, leading_candle)
+    diff_between_edges(candle.prices.high, Edge::High, leading_candle)
         <= max_distance_from_corridor_leading_candle_pins_pct
-        && diff_between_edges(candle.edge_prices.low, Edge::Low, leading_candle)
+        && diff_between_edges(candle.prices.low, Edge::Low, leading_candle)
             <= max_distance_from_corridor_leading_candle_pins_pct
 }
 
@@ -45,14 +44,10 @@ fn diff_between_edges(
 ) -> Difference {
     match edge {
         Edge::High => {
-            (price - leading_candle.edge_prices.high)
-                / points_to_price(leading_candle.main_props.size)
-                * dec!(100)
+            (price - leading_candle.prices.high) / points_to_price(leading_candle.size) * dec!(100)
         }
         Edge::Low => {
-            (leading_candle.edge_prices.low - price)
-                / points_to_price(leading_candle.main_props.size)
-                * dec!(100.0)
+            (leading_candle.prices.low - price) / points_to_price(leading_candle.size) * dec!(100.0)
         }
     }
 }
@@ -64,11 +59,11 @@ pub fn crop_corridor_to_closest_leader(
     corridor: &[BasicCandleProperties],
     new_candle: &BasicCandleProperties,
     max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
-    candle_can_be_corridor_leader: impl Fn(&CandleMainProperties) -> bool,
+    candle_can_be_corridor_leader: impl Fn(&BasicCandleProperties) -> bool,
     is_in_corridor: impl Fn(&BasicCandleProperties, &BasicCandleProperties, ParamValue) -> bool,
 ) -> Option<Vec<BasicCandleProperties>> {
     for (i, candle) in corridor.iter().enumerate() {
-        if candle_can_be_corridor_leader(&candle.main_props)
+        if candle_can_be_corridor_leader(candle)
             && is_in_corridor(
                 new_candle,
                 candle,
@@ -94,11 +89,12 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn candle_can_be_corridor_leader__true() {
-        let candle_properties = CandleMainProperties {
+        let candle_properties = BasicCandleProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
             size: dec!(150),
             volatility: 160,
+            ..Default::default()
         };
 
         assert!(candle_can_be_corridor_leader(&candle_properties));
@@ -107,11 +103,12 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn candle_can_be_corridor_leader__false() {
-        let candle_properties = CandleMainProperties {
+        let candle_properties = BasicCandleProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
             size: dec!(180),
             volatility: 160,
+            ..Default::default()
         };
 
         assert!(!candle_can_be_corridor_leader(&candle_properties));
@@ -121,13 +118,11 @@ mod tests {
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_in_range_of_leading_candle__true() {
         let current_candle = BasicCandleProperties {
-            main_props: CandleMainProperties {
-                time: Utc::now().naive_utc(),
-                r#type: CandleType::Green,
-                size: dec!(399),
-                volatility: 271,
-            },
-            edge_prices: CandlePrices {
+            time: Utc::now().naive_utc(),
+            r#type: CandleType::Green,
+            size: dec!(399),
+            volatility: 271,
+            prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22999),
                 low: dec!(1.22600),
@@ -136,13 +131,11 @@ mod tests {
         };
 
         let leading_candle = BasicCandleProperties {
-            main_props: CandleMainProperties {
-                time: Utc::now().naive_utc(),
-                r#type: CandleType::Green,
-                size: dec!(288.0),
-                volatility: 271,
-            },
-            edge_prices: CandlePrices {
+            time: Utc::now().naive_utc(),
+            r#type: CandleType::Green,
+            size: dec!(288.0),
+            volatility: 271,
+            prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),
@@ -157,13 +150,11 @@ mod tests {
     #[allow(non_snake_case)]
     fn is_in_corridor__candle_is_beyond_the_range_of_leading_candle__false() {
         let current_candle = BasicCandleProperties {
-            main_props: CandleMainProperties {
-                time: Utc::now().naive_utc(),
-                r#type: CandleType::Green,
-                size: dec!(404.0),
-                volatility: 271,
-            },
-            edge_prices: CandlePrices {
+            time: Utc::now().naive_utc(),
+            r#type: CandleType::Green,
+            size: dec!(404.0),
+            volatility: 271,
+            prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.23001),
                 low: dec!(1.22597),
@@ -172,13 +163,11 @@ mod tests {
         };
 
         let leading_candle = BasicCandleProperties {
-            main_props: CandleMainProperties {
-                time: Utc::now().naive_utc(),
-                r#type: CandleType::Green,
-                size: dec!(288.0),
-                volatility: 271,
-            },
-            edge_prices: CandlePrices {
+            time: Utc::now().naive_utc(),
+            r#type: CandleType::Green,
+            size: dec!(288.0),
+            volatility: 271,
+            prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),
@@ -195,83 +184,83 @@ mod tests {
     {
         let current_corridor = [
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.0),
                     high: dec!(0.0),
                     low: dec!(0.0),
                     close: dec!(0.0),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.1),
                     high: dec!(0.1),
                     low: dec!(0.1),
                     close: dec!(0.1),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.2),
                     high: dec!(0.2),
                     low: dec!(0.2),
                     close: dec!(0.2),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.3),
                     high: dec!(0.3),
                     low: dec!(0.3),
                     close: dec!(0.3),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.4),
                     high: dec!(0.4),
                     low: dec!(0.4),
                     close: dec!(0.4),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.5),
                     high: dec!(0.5),
                     low: dec!(0.5),
                     close: dec!(0.5),
                 },
+                ..Default::default()
             },
             BasicCandleProperties {
-                main_props: Default::default(),
-                edge_prices: CandlePrices {
+                prices: CandlePrices {
                     open: dec!(0.6),
                     high: dec!(0.6),
                     low: dec!(0.6),
                     close: dec!(0.6),
                 },
+                ..Default::default()
             },
         ];
 
         let new_candle = BasicCandleProperties {
-            main_props: Default::default(),
-            edge_prices: CandlePrices {
+            prices: CandlePrices {
                 open: dec!(0.7),
                 high: dec!(0.7),
                 low: dec!(0.7),
                 close: dec!(0.7),
             },
+            ..Default::default()
         };
         let max_distance_from_corridor_leading_candle_pins_pct = dec!(20);
 
         let number_of_calls_to_candle_can_be_corridor_leader = RefCell::new(0);
-        let candle_can_be_corridor_leader = |_candle_properties: &CandleMainProperties| {
+        let candle_can_be_corridor_leader = |_candle_properties: &BasicCandleProperties| {
             *number_of_calls_to_candle_can_be_corridor_leader.borrow_mut() += 1;
             *number_of_calls_to_candle_can_be_corridor_leader.borrow() > 1
         };

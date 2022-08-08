@@ -1,7 +1,6 @@
 use crate::entities::TARGET_LOGGER_ENV;
 use crate::requests::api::SyncHttpRequest;
 use crate::requests::entities::{HttpRequestData, HttpRequestWithRetriesParams};
-use ::ureq::serde::de::DeserializeOwned;
 use anyhow::{bail, Result};
 use std::{thread, time};
 
@@ -51,8 +50,6 @@ pub fn http_request_with_retries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Deserialize;
-    use serde_json;
     use std::cell::RefCell;
     use std::time::Instant;
 

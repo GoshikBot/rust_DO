@@ -3,7 +3,7 @@ use backtesting::historical_data::serialization::{
 };
 use backtesting::{HistoricalData, StrategyInitConfig};
 use base::entities::candle::BasicCandleProperties;
-use base::entities::{BasicTickProperties, CandleMainProperties, StrategyTimeframes, Timeframe};
+use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
 use chrono::{DateTime, Duration, NaiveDateTime};
 use rust_decimal_macros::dec;
 use tempfile::TempDir;
@@ -13,21 +13,13 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
     let historical_data = HistoricalData {
         candles: vec![
             Some(BasicCandleProperties {
-                main_props: CandleMainProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
-                },
-                edge_prices: Default::default(),
+                time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M").unwrap(),
+                ..Default::default()
             }),
             None,
             Some(BasicCandleProperties {
-                main_props: CandleMainProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
-                },
-                edge_prices: Default::default(),
+                time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M").unwrap(),
+                ..Default::default()
             }),
         ],
         ticks: vec![

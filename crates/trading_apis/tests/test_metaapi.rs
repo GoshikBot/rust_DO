@@ -1,6 +1,6 @@
 use base::entities::Timeframe;
 use base::requests::ureq::UreqRequestApi;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use std::time::Instant;
 use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls, DAYS_FOR_VOLATILITY};
 use trading_apis::{MarketDataApi, MetaapiMarketDataApi, RetrySettings};
@@ -158,7 +158,7 @@ fn should_successfully_get_hourly_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_hours_between_adjacent_candles =
-                    (candle.main_props.time - previous_candle.main_props.time).num_hours();
+                    (candle.time - previous_candle.time).num_hours();
 
                 assert_eq!(
                     number_of_nones_in_row,
@@ -220,7 +220,7 @@ fn should_successfully_get_minute_historical_candles() {
         match candle {
             Some(candle) => {
                 let number_of_minutes_between_adjacent_candles =
-                    (candle.main_props.time - previous_candle.main_props.time).num_minutes();
+                    (candle.time - previous_candle.time).num_minutes();
 
                 assert_eq!(
                     number_of_nones_in_row,

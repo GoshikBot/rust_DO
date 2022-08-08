@@ -20,7 +20,7 @@ where
 {
     let order_props = order.props.into();
 
-    if order_props.main_props.status != OrderStatus::Pending {
+    if order_props.status != OrderStatus::Pending {
         anyhow::bail!("order status is not pending: {:?}", order_props);
     }
 
@@ -29,9 +29,9 @@ where
         OpenPositionBy::CurrentTickPrice(current_tick_price) => current_tick_price,
     };
 
-    match order_props.main_props.r#type {
-        OrderType::Buy => buy_instrument(price, order_props.main_props.volume, trading_config),
-        OrderType::Sell => sell_instrument(price, order_props.main_props.volume, trading_config),
+    match order_props.r#type {
+        OrderType::Buy => buy_instrument(price, order_props.volume, trading_config),
+        OrderType::Sell => sell_instrument(price, order_props.volume, trading_config),
     }
 
     order_store.update_order_status(&order.id, OrderStatus::Opened)
@@ -48,7 +48,7 @@ where
 {
     let order_props = order.props.into();
 
-    if order_props.main_props.status != OrderStatus::Opened {
+    if order_props.status != OrderStatus::Opened {
         anyhow::bail!("order status is not opened: {:?}", order_props);
     }
 
@@ -58,9 +58,9 @@ where
         ClosePositionBy::CurrentTickPrice(current_tick_price) => current_tick_price,
     };
 
-    match order_props.main_props.r#type {
-        OrderType::Buy => sell_instrument(price, order_props.main_props.volume, trading_config),
-        OrderType::Sell => buy_instrument(price, order_props.main_props.volume, trading_config),
+    match order_props.r#type {
+        OrderType::Buy => sell_instrument(price, order_props.volume, trading_config),
+        OrderType::Sell => buy_instrument(price, order_props.volume, trading_config),
     }
 
     order_store.update_order_status(&order.id, OrderStatus::Closed)?;
@@ -68,7 +68,7 @@ where
     let order_statuses: Vec<_> = order_store
         .get_all_orders()?
         .into_iter()
-        .map(|order| order.props.into().main_props.status)
+        .map(|order| order.props.into().status)
         .collect();
 
     if no_opened_orders(&order_statuses) {
@@ -142,7 +142,7 @@ fn sell_instrument(
 mod tests {
     use super::*;
     use crate::BacktestingBalances;
-    use base::entities::order::{BasicOrderMainProperties, BasicOrderPrices};
+    use base::entities::order::BasicOrderPrices;
     use std::collections::HashMap;
 
     #[derive(Default)]
@@ -191,7 +191,7 @@ mod tests {
 
         fn get_order_by_id(
             &self,
-            id: &str,
+            _id: &str,
         ) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
             unimplemented!()
         }
@@ -201,12 +201,7 @@ mod tests {
         }
 
         fn update_order_status(&mut self, order_id: &str, new_status: OrderStatus) -> Result<()> {
-            self.orders
-                .get_mut(order_id)
-                .unwrap()
-                .props
-                .main_props
-                .status = new_status;
+            self.orders.get_mut(order_id).unwrap().props.status = new_status;
 
             Ok(())
         }
@@ -221,10 +216,7 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    status: OrderStatus::Opened,
-                    ..Default::default()
-                },
+                status: OrderStatus::Opened,
                 ..Default::default()
             },
         );
@@ -232,10 +224,7 @@ mod tests {
         order_store.create_order(
             String::from("2"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    status: OrderStatus::Closed,
-                    ..Default::default()
-                },
+                status: OrderStatus::Closed,
                 ..Default::default()
             },
         );
@@ -270,15 +259,13 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    ..Default::default()
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
                 prices: BasicOrderPrices {
                     open: dec!(1.38124),
                     ..Default::default()
                 },
+                ..Default::default()
             },
         );
 
@@ -292,7 +279,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Opened);
+        assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(5856.13));
         assert_eq!(trading_config.units, 3000);
         assert_eq!(trading_config.trades, 1);
@@ -308,11 +295,8 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    ..Default::default()
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
                 ..Default::default()
             },
         );
@@ -329,7 +313,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Opened);
+        assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(6382.27));
         assert_eq!(trading_config.units, 3000);
         assert_eq!(trading_config.trades, 1);
@@ -349,11 +333,8 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    ..Default::default()
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
                 ..Default::default()
             },
         );
@@ -370,7 +351,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Opened);
+        assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(6382.42));
         assert_eq!(trading_config.units, 3000);
         assert_eq!(trading_config.trades, 1);
@@ -385,15 +366,13 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    ..Default::default()
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
                 prices: BasicOrderPrices {
                     open: dec!(1.38124),
                     ..Default::default()
                 },
+                ..Default::default()
             },
         );
 
@@ -407,7 +386,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Opened);
+        assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
         assert_eq!(trading_config.units, -3000);
         assert_eq!(trading_config.trades, 1);
@@ -423,11 +402,8 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    ..Default::default()
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
                 ..Default::default()
             },
         );
@@ -444,7 +420,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Opened);
+        assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(13_617.43));
         assert_eq!(trading_config.units, -3000);
         assert_eq!(trading_config.trades, 1);
@@ -459,10 +435,7 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    status: OrderStatus::Pending,
-                    ..Default::default()
-                },
+                status: OrderStatus::Pending,
                 ..Default::default()
             },
         );
@@ -470,10 +443,7 @@ mod tests {
         order_store.create_order(
             String::from("2"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    status: OrderStatus::Closed,
-                    ..Default::default()
-                },
+                status: OrderStatus::Closed,
                 ..Default::default()
             },
         );
@@ -512,11 +482,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     stop_loss: dec!(1.38124),
                     ..Default::default()
@@ -544,11 +512,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     take_profit: dec!(1.38124),
                     ..Default::default()
@@ -566,7 +532,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
         assert_eq!(trading_config.balances.real, dec!(14_143.57));
         assert_eq!(trading_config.units, -3000);
@@ -582,11 +548,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     stop_loss: dec!(1.38124),
                     ..Default::default()
@@ -604,7 +568,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
         assert_eq!(trading_config.balances.real, dec!(14_143.57));
         assert_eq!(trading_config.units, -3000);
@@ -624,11 +588,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     take_profit: dec!(1.38124),
                     ..Default::default()
@@ -646,7 +608,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.72));
         assert_eq!(trading_config.balances.real, dec!(14_143.72));
         assert_eq!(trading_config.units, -3000);
@@ -663,11 +625,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 ..Default::default()
             },
         );
@@ -682,7 +642,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
         assert_eq!(trading_config.balances.real, dec!(14_143.57));
         assert_eq!(trading_config.units, -3000);
@@ -698,11 +658,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     take_profit: dec!(1.38124),
                     ..Default::default()
@@ -720,7 +678,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
         assert_eq!(trading_config.balances.real, dec!(5_856.13));
         assert_eq!(trading_config.units, 3000);
@@ -736,11 +694,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 prices: BasicOrderPrices {
                     stop_loss: dec!(1.38124),
                     ..Default::default()
@@ -758,7 +714,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
         assert_eq!(trading_config.balances.real, dec!(5_856.13));
         assert_eq!(trading_config.units, 3000);
@@ -775,11 +731,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 ..Default::default()
             },
         );
@@ -794,7 +748,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
         assert_eq!(trading_config.balances.real, dec!(5_856.13));
         assert_eq!(trading_config.units, 3000);
@@ -810,11 +764,9 @@ mod tests {
         order_store.create_order(
             String::from("1"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Sell,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Sell,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 ..Default::default()
             },
         );
@@ -822,11 +774,9 @@ mod tests {
         order_store.create_order(
             String::from("2"),
             BasicOrderProperties {
-                main_props: BasicOrderMainProperties {
-                    r#type: OrderType::Buy,
-                    volume: dec!(0.03),
-                    status: OrderStatus::Opened,
-                },
+                r#type: OrderType::Buy,
+                volume: dec!(0.03),
+                status: OrderStatus::Opened,
                 ..Default::default()
             },
         );
@@ -841,7 +791,7 @@ mod tests {
 
         let updated_order = order_store.get_order_by_id("1").unwrap();
 
-        assert_eq!(updated_order.props.main_props.status, OrderStatus::Closed);
+        assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
         assert_eq!(trading_config.balances.real, dec!(10_000));
         assert_eq!(trading_config.units, 3000);

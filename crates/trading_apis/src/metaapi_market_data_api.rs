@@ -1,35 +1,23 @@
-use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use polars::prelude::RollingOptions;
 use polars::series::Series;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use ureq::serde_json;
 
-use base::entities::candle::{
-    BasicCandleProperties, CandleOpenClose, CandlePrice, CandleVolatility,
-};
+use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleVolatility};
 use base::entities::tick::TickPrice;
-use base::entities::{
-    BasicTickProperties, CandleMainProperties, CandlePrices, CandleType, Timeframe,
-};
+use base::entities::{BasicTickProperties, CandlePrices, CandleType, Timeframe};
 use base::helpers::{mean, price_to_points};
 use base::requests::api::SyncHttpRequest;
-use base::requests::entities::{
-    Headers, HttpRequestData, HttpRequestMethod, HttpRequestWithRetriesParams, Queries,
-};
+use base::requests::entities::{HttpRequestData, HttpRequestMethod, HttpRequestWithRetriesParams};
 use base::requests::http_request_with_retries;
 
 use crate::helpers::{from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime};
 use crate::MarketDataApi;
-
-const MAIN_API_URL: &str = "MAIN_API_URL";
-const MARKET_DATA_API_URL: &str = "MARKET_DATA_API_URL";
 
 pub const HOURS_IN_DAY: u8 = 24;
 pub const DAYS_FOR_VOLATILITY: u8 = 7;
@@ -96,14 +84,6 @@ impl Default for RetrySettings {
                 DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY,
         }
     }
-}
-
-enum TuneCandleConfig<'a> {
-    WithVolatility(CandleVolatility),
-    WithoutVolatility {
-        symbol: &'a str,
-        timeframe: Timeframe,
-    },
 }
 
 pub struct MetaapiMarketDataApi<R>
@@ -228,23 +208,16 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
 
         let candle_size = price_to_points(candle_json.high - candle_json.low);
 
-        let candle_type = CandleType::from(CandleOpenClose {
-            open: candle_json.open,
-            close: candle_json.close,
-        });
+        let candle_type = CandleType::from(&candle_edge_prices);
 
         let candle_time = from_naive_str_to_naive_datetime(&candle_json.broker_time)?;
 
-        let candle_base_properties = CandleMainProperties {
+        Ok(BasicCandleProperties {
             time: candle_time,
             size: candle_size,
             r#type: candle_type,
             volatility: current_volatility,
-        };
-
-        Ok(BasicCandleProperties {
-            main_props: candle_base_properties,
-            edge_prices: candle_edge_prices,
+            prices: candle_edge_prices,
         })
     }
 
@@ -488,7 +461,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.main_props.time)
+        Self::get_items_with_filled_gaps(all_candles, timeframe, |candle| candle.time)
     }
 
     fn get_historical_ticks(
@@ -527,8 +500,6 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    use serde::de::DeserializeOwned;
-    use ureq::serde_json;
 
     struct TestRequestApi;
 
@@ -607,16 +578,14 @@ mod tests {
         };
 
         let mut tuned_candle = metaapi.tune_candle(&candle_for_tuning, 271).unwrap();
-        tuned_candle.main_props.size = tuned_candle.main_props.size.round();
+        tuned_candle.size = tuned_candle.size.round();
 
         let expected_tuned_candle = BasicCandleProperties {
-            main_props: CandleMainProperties {
-                time: from_naive_str_to_naive_datetime(&candle_for_tuning.broker_time).unwrap(),
-                r#type: CandleType::Green,
-                size: dec!(288),
-                volatility: 271,
-            },
-            edge_prices: CandlePrices {
+            time: from_naive_str_to_naive_datetime(&candle_for_tuning.broker_time).unwrap(),
+            r#type: CandleType::Green,
+            size: dec!(288),
+            volatility: 271,
+            prices: CandlePrices {
                 open: dec!(1.22664),
                 high: dec!(1.22943),
                 low: dec!(1.22655),

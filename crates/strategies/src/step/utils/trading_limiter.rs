@@ -3,7 +3,7 @@ use chrono::{NaiveDateTime, Timelike};
 use std::ops::Range;
 
 const HOUR_TO_FORBID_TRADING: u8 = 23;
-const HOURS_TO_START_CHECKING_TO_ALLOW_TRADING_REALTIME: Range<u8> = 0..23;
+const _HOURS_TO_START_CHECKING_TO_ALLOW_TRADING_REALTIME: Range<u8> = 0..23;
 
 const HOURS_TO_FORBID_TRADING_BACKTESTING: [u8; 3] = [23, 0, 1];
 
@@ -62,7 +62,7 @@ impl TradingLimiter for TradingLimiterRealtime {
 
     /// For realtime we mark the hour to forbid trading and denote hours
     /// to start checking for the satisfactory spread to allow trading again.
-    fn allow_trading(&self, current_tick: &BasicTickProperties) -> bool {
+    fn allow_trading(&self, _current_tick: &BasicTickProperties) -> bool {
         todo!()
     }
 }

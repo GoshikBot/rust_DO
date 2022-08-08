@@ -2,10 +2,8 @@ pub mod candle;
 pub mod order;
 pub mod tick;
 
-use crate::entities::candle::BasicCandleProperties;
 use anyhow::{bail, Result};
-pub use candle::{CandleMainProperties, CandlePrices, CandleType};
-use chrono::{DateTime, Duration, Utc};
+pub use candle::{CandlePrices, CandleType};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 pub use tick::BasicTickProperties;

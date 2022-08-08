@@ -1,9 +1,7 @@
 use crate::{HistoricalData, StrategyInitConfig};
 use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleSize, CandleVolatility};
 use base::entities::tick::TickPrice;
-use base::entities::{
-    BasicTickProperties, CandleMainProperties, CandlePrices, CandleType, StrategyTimeframes,
-};
+use base::entities::{BasicTickProperties, CandlePrices, CandleType, StrategyTimeframes};
 use chrono::NaiveDateTime;
 use csv::{Reader, Writer};
 use serde::{Deserialize, Serialize};
@@ -157,18 +155,17 @@ impl HistoricalDataCsvSerialization {
                 Some(candle) => Candle {
                     time: Some(
                         candle
-                            .main_props
                             .time
                             .format(TIME_PATTERN_FOR_SERIALIZATION)
                             .to_string(),
                     ),
-                    r#type: Some(candle.main_props.r#type),
-                    size: Some(candle.main_props.size),
-                    volatility: Some(candle.main_props.volatility),
-                    open: Some(candle.edge_prices.open),
-                    high: Some(candle.edge_prices.high),
-                    low: Some(candle.edge_prices.low),
-                    close: Some(candle.edge_prices.close),
+                    r#type: Some(candle.r#type),
+                    size: Some(candle.size),
+                    volatility: Some(candle.volatility),
+                    open: Some(candle.prices.open),
+                    high: Some(candle.prices.high),
+                    low: Some(candle.prices.low),
+                    close: Some(candle.prices.close),
                 },
                 None => Default::default(),
             };
@@ -216,13 +213,11 @@ impl HistoricalDataCsvSerialization {
                     low: Some(low),
                     close: Some(close),
                 } => candles.push(Some(BasicCandleProperties {
-                    main_props: CandleMainProperties {
-                        time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
-                        r#type,
-                        size,
-                        volatility,
-                    },
-                    edge_prices: CandlePrices {
+                    time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
+                    r#type,
+                    size,
+                    volatility,
+                    prices: CandlePrices {
                         open,
                         high,
                         low,

@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use std::fmt::{Display, Formatter};
 
 pub mod angle;
 pub mod candle;

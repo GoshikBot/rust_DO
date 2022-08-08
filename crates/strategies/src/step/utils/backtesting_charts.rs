@@ -1,8 +1,8 @@
-use crate::step::utils::entities::angle::{AngleFullProperties, BasicAngleProperties};
+use crate::step::utils::entities::angle::{BasicAngleProperties, FullAngleProperties};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use backtesting::Balance;
 use base::entities::candle::CandlePrice;
-use base::entities::{Level, Tendency, Timeframe};
+use base::entities::{Level, Tendency};
 use rust_decimal::Decimal;
 
 pub type ChartIndex = usize;
@@ -14,7 +14,7 @@ pub enum ChartTraceEntity {
 
     WorkingLevel {
         last_broken_angle:
-            AngleFullProperties<BasicAngleProperties, StepBacktestingCandleProperties>,
+            FullAngleProperties<BasicAngleProperties, StepBacktestingCandleProperties>,
     },
     StopLoss {
         working_level_chart_index: ChartIndex,
@@ -146,10 +146,10 @@ pub fn add_entity_to_chart_traces(
             chart_traces.get_balance_trace_mut()[current_tick_candle_index] = Some(current_balance);
         }
         ChartTraceEntity::WorkingLevel { last_broken_angle } => {
-            let price = if last_broken_angle.main_props.r#type == Level::Max {
-                last_broken_angle.candle.props.base.edge_prices.high
+            let price = if last_broken_angle.base.r#type == Level::Max {
+                last_broken_angle.candle.props.base.prices.high
             } else {
-                last_broken_angle.candle.props.base.edge_prices.low
+                last_broken_angle.candle.props.base.prices.low
             };
 
             let working_level_trace = chart_traces.create_new_working_level_trace();
@@ -352,8 +352,8 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let last_broken_angle = AngleFullProperties {
-            main_props: Default::default(),
+        let last_broken_angle = FullAngleProperties {
+            base: Default::default(),
             candle: Item {
                 id: String::from("1"),
                 props: StepBacktestingCandleProperties {
@@ -387,8 +387,8 @@ mod tests {
             ]
         );
 
-        let new_last_broken_angle = AngleFullProperties {
-            main_props: BasicAngleProperties { r#type: Level::Max },
+        let new_last_broken_angle = FullAngleProperties {
+            base: BasicAngleProperties { r#type: Level::Max },
             candle: Item {
                 id: String::from("2"),
                 props: StepBacktestingCandleProperties {

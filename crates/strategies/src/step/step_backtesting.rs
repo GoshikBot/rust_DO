@@ -1,18 +1,16 @@
 use crate::step::utils::entities::StrategySignals;
 use crate::step::utils::level_utils::remove_active_working_levels_with_closed_orders;
-use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
 use crate::step::utils::stores::StepBacktestingStores;
 use anyhow::Result;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::BasicTickProperties;
-use base::params::{StrategyCsvFileParams, StrategyParams};
+use base::params::StrategyCsvFileParams;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
 use super::utils::level_utils::get_crossed_level;
 use super::utils::orders::get_new_chain_of_orders;
-use super::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use super::utils::stores::tick_store::StepTickStore;
 use super::utils::stores::working_level_store::StepWorkingLevelStore;
 use super::utils::update_ticks;
@@ -20,8 +18,8 @@ use super::utils::update_ticks;
 /// Main iteration of the step strategy.
 pub fn run_iteration(
     tick: BasicTickProperties,
-    candle: Option<BasicCandleProperties>,
-    signals: StrategySignals,
+    _candle: Option<BasicCandleProperties>,
+    _signals: StrategySignals,
     stores: &mut StepBacktestingStores,
     params: &StrategyCsvFileParams<StepPointParam, StepRatioParam>,
 ) -> Result<()> {
@@ -49,7 +47,6 @@ pub fn run_iteration(
                     .unwrap()
                     .props
                     .base
-                    .main_props
                     .volatility,
                 stores.config.trading_engine.balances.real,
             )?;

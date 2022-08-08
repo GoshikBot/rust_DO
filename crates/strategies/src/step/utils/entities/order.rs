@@ -1,23 +1,17 @@
-use base::entities::order::{BasicOrderMainProperties, BasicOrderPrices};
+use base::entities::order::BasicOrderProperties;
 
 use crate::step::utils::entities::working_levels::WLId;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct StepOrderProperties {
-    pub main_props: StepOrderMainProperties,
-    pub prices: BasicOrderPrices,
-}
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct StepOrderMainProperties {
-    pub base: BasicOrderMainProperties,
+pub struct StepOrderProperties {
+    pub base: BasicOrderProperties,
     pub working_level_id: WLId,
 }
 
-impl Default for StepOrderMainProperties {
+impl Default for StepOrderProperties {
     fn default() -> Self {
         Self {
-            base: Default::default(),
+            base: BasicOrderProperties::default(),
             working_level_id: String::from("1"),
         }
     }

@@ -13,7 +13,7 @@ impl Default for BasicAngleProperties {
     }
 }
 
-pub struct AngleFullProperties<P, C> {
-    pub main_props: P,
+pub struct FullAngleProperties<P, C> {
+    pub base: P,
     pub candle: Item<CandleId, C>,
 }
