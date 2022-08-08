@@ -1,5 +1,5 @@
 use crate::step::utils::backtesting_charts::ChartIndex;
-use crate::step::utils::entities::order::OrderType;
+use base::entities::order::OrderType;
 use chrono::{NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;

@@ -1,4 +1,5 @@
 pub mod candle;
+pub mod order;
 pub mod tick;
 
 use crate::entities::candle::BasicCandleProperties;

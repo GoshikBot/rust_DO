@@ -1,4 +1,4 @@
-use self::stores::tick_store::TickStore;
+use self::stores::tick_store::StepTickStore;
 use anyhow::Result;
 
 pub mod backtesting_charts;
@@ -8,7 +8,10 @@ pub mod orders;
 pub mod stores;
 pub mod trading_limiter;
 
-pub fn update_ticks<T>(new_tick: T, store: &mut impl TickStore<TickProperties = T>) -> Result<()> {
+pub fn update_ticks<T>(
+    new_tick: T,
+    store: &mut impl StepTickStore<TickProperties = T>,
+) -> Result<()> {
     let new_tick_id = store.create_tick(new_tick)?;
 
     if let Some(current_tick) = store.get_current_tick()? {
@@ -23,6 +26,7 @@ pub fn update_ticks<T>(new_tick: T, store: &mut impl TickStore<TickProperties = 
 #[cfg(test)]
 mod tests {
     use base::entities::BasicTickProperties;
+    use base::stores::tick_store::BasicTickStore;
     use chrono::Utc;
     use rust_decimal_macros::dec;
 

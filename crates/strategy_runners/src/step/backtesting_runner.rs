@@ -1,12 +1,12 @@
 use anyhow::Context;
 use anyhow::Result;
-use backtesting::HistoricalData;
+use backtesting::{BacktestingBalances, HistoricalData};
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{BasicTickProperties, StrategyTimeframes, Timeframe};
 use base::params::StrategyParams;
 use rust_decimal_macros::dec;
 use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
-use strategies::step::utils::stores::{StepBacktestingBalances, StepBacktestingStores};
+use strategies::step::utils::stores::StepBacktestingStores;
 use strategies::step::utils::trading_limiter;
 use strategies::step::utils::trading_limiter::TradingLimiter;
 
@@ -33,7 +33,7 @@ fn update_number_of_iterations_to_next_candle(
     }
 }
 
-fn strategy_performance(balances: &StepBacktestingBalances) -> StrategyPerformance {
+fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
     (balances.real - balances.initial) / balances.initial * dec!(100)
 }
 
@@ -167,7 +167,7 @@ where
     }
 
     Ok(strategy_performance(
-        &strategy_config.stores.config.balances,
+        &strategy_config.stores.config.trading_engine.balances,
     ))
 }
 
@@ -220,14 +220,14 @@ mod tests {
         _params: &impl StrategyParams,
     ) -> Result<()> {
         if signals.cancel_all_orders {
-            stores.config.balances.real -= dec!(50.0);
+            stores.config.trading_engine.balances.real -= dec!(50.0);
         }
 
         if !signals.no_trading_mode {
-            stores.config.balances.real += dec!(10.0);
+            stores.config.trading_engine.balances.real += dec!(10.0);
 
             if candle.is_some() {
-                stores.config.balances.real += dec!(20.0);
+                stores.config.trading_engine.balances.real += dec!(20.0);
             }
         }
 
@@ -513,6 +513,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(strategy_performance, dec!(2.6));
-        assert_eq!(step_stores.config.balances.real, dec!(10_260));
+        assert_eq!(
+            step_stores.config.trading_engine.balances.real,
+            dec!(10_260)
+        );
     }
 }

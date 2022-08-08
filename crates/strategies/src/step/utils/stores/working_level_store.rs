@@ -1,13 +1,10 @@
 use anyhow::Result;
+use base::entities::order::OrderId;
 use base::entities::{candle::CandleId, Item};
 
-use crate::step::utils::entities::order::OrderStatus;
-use crate::step::utils::entities::{
-    order::OrderId,
-    working_levels::{CorridorType, WLId, WLMaxCrossingValue},
-};
+use crate::step::utils::entities::working_levels::{CorridorType, WLId, WLMaxCrossingValue};
 
-pub trait WorkingLevelStore {
+pub trait StepWorkingLevelStore {
     type WorkingLevelProperties;
     type CandleProperties;
     type OrderProperties;
@@ -54,11 +51,6 @@ pub trait WorkingLevelStore {
 
     fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool>;
 
-    fn create_order(&mut self, properties: Self::OrderProperties) -> Result<OrderId>;
-
-    fn get_order_by_id(&self, id: &str) -> Result<Option<Item<OrderId, Self::OrderProperties>>>;
-    fn remove_order(&mut self, id: &str) -> Result<()>;
-
     fn add_order_to_working_level_chain_of_orders(
         &mut self,
         working_level_id: &str,
@@ -69,6 +61,4 @@ pub trait WorkingLevelStore {
         &self,
         working_level_id: &str,
     ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>>;
-
-    fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>>;
 }

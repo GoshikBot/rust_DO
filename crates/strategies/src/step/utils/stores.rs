@@ -3,22 +3,18 @@ use crate::step::utils::entities::angle::AngleId;
 use crate::step::utils::entities::Diff;
 use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use crate::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
+use backtesting::BacktestingTradingEngineConfig;
 use base::entities::{candle::CandleId, tick::TickId, Level, Tendency};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 pub mod angle_store;
-pub mod candle_store;
 pub mod in_memory_step_backtesting_store;
 pub mod in_memory_step_realtime_config_store;
 pub mod step_realtime_config_store;
 pub mod tick_store;
 pub mod working_level_store;
-
-const DEFAULT_INITIAL_BALANCE_BACKTESTING: StepBalance = dec!(10_000);
-const DEFAULT_LEVERAGE_BACKTESTING: Leverage = dec!(0.01);
-const DEFAULT_SPREAD_BACKTESTING: Spread = dec!(0.00010);
 
 pub struct StepBacktestingStores {
     pub main: InMemoryStepBacktestingStore,
@@ -58,42 +54,13 @@ pub struct StepDiffs {
     pub previous: Option<Diff>,
 }
 
-pub type StepBalance = Decimal;
-
-pub struct StepBacktestingBalances {
-    pub initial: StepBalance,
-    pub processing: StepBalance,
-    pub real: StepBalance,
-}
-
-impl Default for StepBacktestingBalances {
-    fn default() -> Self {
-        StepBacktestingBalances {
-            initial: DEFAULT_INITIAL_BALANCE_BACKTESTING,
-            processing: DEFAULT_INITIAL_BALANCE_BACKTESTING,
-            real: DEFAULT_INITIAL_BALANCE_BACKTESTING,
-        }
-    }
-}
-
-pub type Units = i32;
-pub type Trades = i32;
-
-pub type Leverage = Decimal;
-pub type Spread = Decimal;
-
 pub struct StepBacktestingConfig {
     pub tendency: Tendency,
     pub tendency_changed_on_crossing_bargaining_corridor: bool,
     pub second_level_after_bargaining_tendency_change_is_created: bool,
     pub skip_creating_new_working_level: bool,
     pub diffs: StepDiffs,
-    pub balances: StepBacktestingBalances,
-    pub units: Units,
-    pub trades: Trades,
-    pub leverage: Leverage,
-    pub spread: Spread,
-    pub use_spread: bool,
+    pub trading_engine: BacktestingTradingEngineConfig,
     pub traces: StepBacktestingChartTraces,
 }
 
@@ -105,12 +72,7 @@ impl StepBacktestingConfig {
             second_level_after_bargaining_tendency_change_is_created: false,
             skip_creating_new_working_level: false,
             diffs: Default::default(),
-            balances: Default::default(),
-            units: 0,
-            trades: 0,
-            leverage: DEFAULT_LEVERAGE_BACKTESTING,
-            spread: DEFAULT_SPREAD_BACKTESTING,
-            use_spread: true,
+            trading_engine: Default::default(),
             traces: StepBacktestingChartTraces::new(total_amount_of_candles),
         }
     }

@@ -1,14 +1,12 @@
-use crate::step::utils::entities::order::{BasicOrderProperties, OrderStatus};
-use crate::step::utils::stores::working_level_store::WorkingLevelStore;
+use crate::step::utils::entities::order::StepOrderProperties;
+use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
 use base::entities::candle::BasicCandleProperties;
+use base::entities::order::{OrderStatus, OrderType};
 use base::entities::tick::TickPrice;
 use base::entities::Item;
 
-use super::entities::{
-    order::OrderType,
-    working_levels::{BasicWLProperties, WLId},
-};
+use super::entities::working_levels::{BasicWLProperties, WLId};
 
 /// Checks whether one of the working levels has got crossed and returns such a level.
 pub fn get_crossed_level<W>(
@@ -38,18 +36,18 @@ where
     None
 }
 
-fn working_level_has_closed_orders_in_chain(chain_of_orders: &[BasicOrderProperties]) -> bool {
+fn working_level_has_closed_orders_in_chain(chain_of_orders: &[StepOrderProperties]) -> bool {
     chain_of_orders
         .iter()
-        .any(|order| order.main.status == OrderStatus::Closed)
+        .any(|order| order.main_props.base.status == OrderStatus::Closed)
 }
 
 /// Moves active working levels to removed if they have closed orders in their chains.
 pub fn remove_active_working_levels_with_closed_orders<O>(
-    working_level_store: &mut impl WorkingLevelStore<OrderProperties = O>,
+    working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
 ) -> Result<()>
 where
-    O: Into<BasicOrderProperties>,
+    O: Into<StepOrderProperties>,
 {
     for level in working_level_store.get_active_working_levels()? {
         let level_chain_of_orders: Vec<_> = working_level_store
@@ -68,8 +66,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::step::utils::entities::order::BasicOrderMainProperties;
+    use crate::step::utils::entities::order::StepOrderMainProperties;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
+    use base::entities::order::{BasicOrderMainProperties, OrderStatus};
+    use base::stores::order_store::BasicOrderStore;
     use chrono::Utc;
     use rust_decimal_macros::dec;
 
@@ -186,9 +186,12 @@ mod tests {
                 };
 
                 store
-                    .create_order(BasicOrderProperties {
-                        main: BasicOrderMainProperties {
-                            status,
+                    .create_order(StepOrderProperties {
+                        main_props: StepOrderMainProperties {
+                            base: BasicOrderMainProperties {
+                                status,
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
@@ -207,9 +210,12 @@ mod tests {
                 };
 
                 store
-                    .create_order(BasicOrderProperties {
-                        main: BasicOrderMainProperties {
-                            status,
+                    .create_order(StepOrderProperties {
+                        main_props: StepOrderMainProperties {
+                            base: BasicOrderMainProperties {
+                                status,
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()

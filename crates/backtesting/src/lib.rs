@@ -1,93 +1,84 @@
 use base::entities::candle::BasicCandleProperties;
+use base::entities::tick::TickPrice;
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use chrono::{DateTime, Duration, Utc};
-use polars_lazy::prelude::LazyFrame;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 pub mod historical_data;
+pub mod trading_engine;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum BacktestingOrderStatus {
-    Pending = 0,
-    Opened = 1,
-    Closed = -1,
-}
-
-pub type CurrentPrice = f32;
+const DEFAULT_INITIAL_BALANCE_BACKTESTING: Balance = dec!(10_000);
+const DEFAULT_LEVERAGE_BACKTESTING: Leverage = dec!(0.01);
+const DEFAULT_SPREAD_BACKTESTING: Spread = dec!(0.00010);
 
 #[derive(Debug)]
-pub enum PlaceOrderBy {
+pub enum OpenPositionBy {
     OpenPrice,
-    CurrentPrice(CurrentPrice),
+    CurrentTickPrice(TickPrice),
 }
 
 #[derive(Debug)]
 pub enum ClosePositionBy {
     TakeProfit,
     StopLoss,
-    CurrentPrice(CurrentPrice),
+    CurrentTickPrice(TickPrice),
 }
 
-#[derive(Debug)]
-pub enum Mode {
-    Optimization,
-    Debug,
+pub type Balance = Decimal;
+
+pub struct BacktestingBalances {
+    pub initial: Balance,
+    pub processing: Balance,
+    pub real: Balance,
 }
 
-pub type DFDate = &'static str;
-pub type DFMarginFromStart = u32;
-
-pub struct DataFrameConstraints {
-    pub start: DFDate,
-    pub end: DFDate,
-    pub margin_from_start: DFMarginFromStart,
+impl BacktestingBalances {
+    pub fn new(initial_balance: Balance) -> Self {
+        Self {
+            initial: initial_balance,
+            processing: initial_balance,
+            real: initial_balance,
+        }
+    }
 }
 
-pub type Balance = f32;
+impl Default for BacktestingBalances {
+    fn default() -> Self {
+        Self {
+            initial: DEFAULT_INITIAL_BALANCE_BACKTESTING,
+            processing: DEFAULT_INITIAL_BALANCE_BACKTESTING,
+            real: DEFAULT_INITIAL_BALANCE_BACKTESTING,
+        }
+    }
+}
+
 pub type Units = i32;
-pub type Trades = u32;
+pub type Trades = i32;
 
-pub struct BacktestingLowLevelData {
-    pub initial_balance: Balance,
-    pub processing_balance: Balance,
-    pub real_balance: Balance,
+pub type Leverage = Decimal;
+pub type Spread = Decimal;
+
+pub struct BacktestingTradingEngineConfig {
+    pub balances: BacktestingBalances,
     pub units: Units,
     pub trades: Trades,
+    pub leverage: Leverage,
+    pub spread: Spread,
+    pub use_spread: bool,
 }
 
-impl Default for BacktestingLowLevelData {
+impl Default for BacktestingTradingEngineConfig {
     fn default() -> Self {
         Self {
-            initial_balance: 10_000.0,
-            processing_balance: 10_000.0,
-            real_balance: 10_000.0,
+            balances: BacktestingBalances::default(),
             units: 0,
             trades: 0,
-        }
-    }
-}
-
-pub type Leverage = f32;
-pub type Spread = f32;
-
-pub struct BacktestingConfig {
-    pub leverage: Leverage,
-    pub use_spread: bool,
-    pub spread: Spread,
-}
-
-impl Default for BacktestingConfig {
-    fn default() -> Self {
-        Self {
-            leverage: 0.01,
+            leverage: DEFAULT_LEVERAGE_BACKTESTING,
+            spread: DEFAULT_SPREAD_BACKTESTING,
             use_spread: true,
-            spread: 0.00010,
         }
     }
-}
-
-pub struct DataFrames {
-    pub ticks_tf: LazyFrame,
-    pub candles_tf: LazyFrame,
 }
 
 #[derive(Debug, PartialEq, Default)]

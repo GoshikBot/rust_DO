@@ -1,9 +1,8 @@
-use std::collections::HashSet;
-
+use crate::entities::candle::CandleId;
+use crate::entities::Item;
 use anyhow::Result;
-use base::entities::{candle::CandleId, Item};
 
-pub trait CandleStore {
+pub trait BasicCandleStore {
     type CandleProperties;
 
     fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<CandleId>;

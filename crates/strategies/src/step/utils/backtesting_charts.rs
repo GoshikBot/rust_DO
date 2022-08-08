@@ -1,6 +1,6 @@
 use crate::step::utils::entities::angle::{AngleFullProperties, BasicAngleProperties};
-use crate::step::utils::entities::candle::BacktestingCandleProperties;
-use crate::step::utils::stores::StepBalance;
+use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+use backtesting::Balance;
 use base::entities::candle::CandlePrice;
 use base::entities::{Level, Tendency, Timeframe};
 use rust_decimal::Decimal;
@@ -10,10 +10,11 @@ pub type ChartIndex = usize;
 pub enum ChartTraceEntity {
     LeadingPrice(CandlePrice),
     Tendency(Tendency),
-    Balance(StepBalance),
+    Balance(Balance),
 
     WorkingLevel {
-        last_broken_angle: AngleFullProperties<BasicAngleProperties, BacktestingCandleProperties>,
+        last_broken_angle:
+            AngleFullProperties<BasicAngleProperties, StepBacktestingCandleProperties>,
     },
     StopLoss {
         working_level_chart_index: ChartIndex,
@@ -122,7 +123,7 @@ impl StepBacktestingChartTraces {
 pub fn add_entity_to_chart_traces(
     entity: ChartTraceEntity,
     chart_traces: &mut StepBacktestingChartTraces,
-    current_candle: &BacktestingCandleProperties,
+    current_candle: &StepBacktestingCandleProperties,
 ) {
     // the current tick time position is always the next candle index
     let current_tick_candle_index =
@@ -204,7 +205,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
             base: Default::default(),
         };
@@ -222,7 +223,7 @@ mod tests {
             &[None, None, None, Some(leading_price), None]
         );
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };
@@ -253,7 +254,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
             base: Default::default(),
         };
@@ -277,7 +278,7 @@ mod tests {
             ]
         );
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };
@@ -308,7 +309,7 @@ mod tests {
     {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
             base: Default::default(),
         };
@@ -326,7 +327,7 @@ mod tests {
             &[None, None, None, Some(balance), None]
         );
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };
@@ -355,14 +356,14 @@ mod tests {
             main_props: Default::default(),
             candle: Item {
                 id: String::from("1"),
-                props: BacktestingCandleProperties {
+                props: StepBacktestingCandleProperties {
                     base: Default::default(),
                     chart_index: 1,
                 },
             },
         };
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
             base: Default::default(),
         };
@@ -390,14 +391,14 @@ mod tests {
             main_props: BasicAngleProperties { r#type: Level::Max },
             candle: Item {
                 id: String::from("2"),
-                props: BacktestingCandleProperties {
+                props: StepBacktestingCandleProperties {
                     base: Default::default(),
                     chart_index: 2,
                 },
             },
         };
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };
@@ -430,7 +431,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
             base: Default::default(),
         };
@@ -457,7 +458,7 @@ mod tests {
             ]
         );
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };
@@ -491,7 +492,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = BacktestingCandleProperties {
+        let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
             base: Default::default(),
         };
@@ -518,7 +519,7 @@ mod tests {
             ]
         );
 
-        let new_current_candle = BacktestingCandleProperties {
+        let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
             base: Default::default(),
         };

@@ -27,9 +27,7 @@ use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::in_memory_step_realtime_config_store::InMemoryStepRealtimeConfigStore;
 use strategies::step::utils::stores::step_realtime_config_store::StepRealtimeConfigStore;
-use strategies::step::utils::stores::{
-    StepBacktestingBalances, StepBacktestingConfig, StepBacktestingStores,
-};
+use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiterBacktesting;
 use strategy_runners::step::backtesting_runner;
 use strategy_runners::step::backtesting_runner::StepStrategyRunningConfig;

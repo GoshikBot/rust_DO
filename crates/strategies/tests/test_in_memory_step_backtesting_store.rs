@@ -1,16 +1,18 @@
 use std::collections::HashSet;
 
 use base::entities::candle::CandleId;
+use base::entities::order::OrderStatus;
 use base::entities::tick::TickId;
 use base::entities::Level;
+use base::stores::candle_store::BasicCandleStore;
+use base::stores::order_store::BasicOrderStore;
+use base::stores::tick_store::BasicTickStore;
 use strategies::step::utils::entities::angle::{AngleId, BasicAngleProperties};
-use strategies::step::utils::entities::order::OrderStatus;
 use strategies::step::utils::entities::working_levels::CorridorType;
-use strategies::step::utils::stores::angle_store::AngleStore;
-use strategies::step::utils::stores::candle_store::CandleStore;
+use strategies::step::utils::stores::angle_store::StepAngleStore;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-use strategies::step::utils::stores::tick_store::TickStore;
-use strategies::step::utils::stores::working_level_store::WorkingLevelStore;
+use strategies::step::utils::stores::tick_store::StepTickStore;
+use strategies::step::utils::stores::working_level_store::StepWorkingLevelStore;
 
 #[test]
 fn should_remove_only_unused_items() {
@@ -186,7 +188,7 @@ fn should_successfully_move_working_level_to_removed() {
         .get_working_level_chain_of_orders(&working_level_id)
         .unwrap()
     {
-        assert_eq!(order.props.main.status, OrderStatus::Closed);
+        assert_eq!(order.props.main_props.base.status, OrderStatus::Closed);
     }
 }
 

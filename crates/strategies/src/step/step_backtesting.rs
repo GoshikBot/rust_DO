@@ -6,14 +6,15 @@ use anyhow::Result;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::BasicTickProperties;
 use base::params::{StrategyCsvFileParams, StrategyParams};
+use base::stores::candle_store::BasicCandleStore;
+use base::stores::order_store::BasicOrderStore;
 
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
 use super::utils::level_utils::get_crossed_level;
 use super::utils::orders::get_new_chain_of_orders;
-use super::utils::stores::candle_store::CandleStore;
 use super::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-use super::utils::stores::tick_store::TickStore;
-use super::utils::stores::working_level_store::WorkingLevelStore;
+use super::utils::stores::tick_store::StepTickStore;
+use super::utils::stores::working_level_store::StepWorkingLevelStore;
 use super::utils::update_ticks;
 
 /// Main iteration of the step strategy.
@@ -50,7 +51,7 @@ pub fn run_iteration(
                     .base
                     .main_props
                     .volatility,
-                stores.config.balances.real,
+                stores.config.trading_engine.balances.real,
             )?;
 
             for order in chain_of_orders {

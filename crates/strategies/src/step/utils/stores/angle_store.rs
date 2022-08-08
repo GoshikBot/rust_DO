@@ -3,7 +3,7 @@ use base::entities::{candle::CandleId, Item, Level};
 
 use crate::step::utils::entities::angle::{AngleFullProperties, AngleId};
 
-pub trait AngleStore {
+pub trait StepAngleStore {
     type AngleProperties;
     type CandleProperties;
 
