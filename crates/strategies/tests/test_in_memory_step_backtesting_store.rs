@@ -217,11 +217,7 @@ fn should_successfully_remove_working_level() {
         .is_ok());
 
     assert!(store
-        .add_candle_to_working_level_corridor(
-            &working_level_id,
-            candle_id,
-            CorridorType::Big
-        )
+        .add_candle_to_working_level_corridor(&working_level_id, candle_id, CorridorType::Big)
         .is_ok());
 
     assert!(store.move_take_profits_of_level(&working_level_id).is_ok());

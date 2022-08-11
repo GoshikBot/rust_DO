@@ -3,8 +3,10 @@ use crate::requests::entities::{HttpRequestData, HttpRequestMethod};
 use anyhow::Result;
 use serde_json::json;
 
-pub trait Notifier {
-    fn send_message(&self, message: &str) -> Result<()>;
+pub type Message = String;
+
+pub trait NotificationQueue {
+    fn send_message(&self, message: Message) -> Result<()>;
 }
 
 pub struct TelegramNotifier<R: SyncHttpRequest> {
@@ -21,10 +23,8 @@ impl<R: SyncHttpRequest> TelegramNotifier<R> {
             request_api,
         }
     }
-}
 
-impl<R: SyncHttpRequest> Notifier for TelegramNotifier<R> {
-    fn send_message(&self, message: &str) -> Result<()> {
+    pub fn send_message(&self, message: &str) -> Result<()> {
         let req = HttpRequestData::new(
             HttpRequestMethod::Post,
             &format!(

@@ -2,7 +2,7 @@ pub mod candle;
 pub mod order;
 pub mod tick;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 pub use candle::{CandlePrices, CandleType};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -55,7 +55,7 @@ impl FromStr for Timeframe {
             "15m" => Ok(Self::FifteenMin),
             "30m" => Ok(Self::ThirtyMin),
             "1h" => Ok(Self::Hour),
-            _ => bail!("Invalid timeframe: {}", input),
+            _ => anyhow::bail!("Invalid timeframe: {}", input),
         }
     }
 }

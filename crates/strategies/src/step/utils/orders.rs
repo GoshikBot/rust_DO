@@ -1,7 +1,20 @@
+use crate::step::utils::backtesting_charts::{AddEntityToChartTraces, ChartTraceEntity};
+use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+use crate::step::utils::entities::working_levels::{BacktestingWLProperties, CorridorType};
+use crate::step::utils::entities::{Mode, MODE_ENV};
+use crate::step::utils::level_conditions::LevelConditions;
+use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
+use crate::step::utils::stores::{StepBacktestingConfig, StepBacktestingStatistics};
 use anyhow::{bail, Result};
-use backtesting::Balance;
-use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderType, OrderVolume};
-use base::entities::{PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES};
+use backtesting::trading_engine::TradingEngine;
+use backtesting::{Balance, ClosePositionBy, OpenPositionBy};
+use base::entities::order::{
+    BasicOrderPrices, BasicOrderProperties, OrderStatus, OrderType, OrderVolume,
+};
+use base::entities::{
+    BasicTickProperties, PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES,
+};
+use base::stores::order_store::BasicOrderStore;
 use base::{
     entities::{candle::CandleVolatility, Item, LOT},
     helpers::points_to_price,
@@ -9,6 +22,7 @@ use base::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::str::FromStr;
 
 use super::entities::{
     order::StepOrderProperties,
@@ -154,24 +168,175 @@ fn get_volume_per_order(
     Ok(volume_per_order.round_dp(VOLUME_DECIMAL_PLACES))
 }
 
-// pub fn update_orders_backtesting(
-//     current_tick: &BasicTickProperties,
-//     current_candle: &BasicCandleProperties,
-//     config: &mut StepBacktestingConfig,
-//     order_store: &impl BasicOrderStore<OrderProperties = >,
-// ) -> Result<()> {
-//     for order in working_level_store.get_all_orders()? {
-//         if order.props.main_props.status == OrderStatus::Opened && current {}
-//     }
-//
-//     todo!()
-// }
+pub struct UpdateOrdersBacktestingUtils<'a, T, C, L>
+where
+    T: TradingEngine,
+    C: AddEntityToChartTraces,
+    L: LevelConditions,
+{
+    pub trading_engine: &'a T,
+    pub chart_traces_modifier: &'a C,
+    pub level_conditions: &'a L,
+}
+
+pub struct UpdateOrdersBacktestingStores<'a, O, W>
+where
+    O: BasicOrderStore<OrderProperties = StepOrderProperties>,
+    W: StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+{
+    order_store: &'a mut O,
+    working_level_store: &'a mut W,
+    config: &'a mut StepBacktestingConfig,
+    statistics: &'a mut StepBacktestingStatistics,
+}
+
+/// Places and closed orders.
+pub fn update_orders_backtesting<O, W, T, C, L>(
+    current_tick: &BasicTickProperties,
+    current_candle: &StepBacktestingCandleProperties,
+    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+    stores: UpdateOrdersBacktestingStores<O, W>,
+    utils: UpdateOrdersBacktestingUtils<T, C, L>,
+    no_trading_mode: bool,
+) -> Result<()>
+where
+    O: BasicOrderStore<OrderProperties = StepOrderProperties>,
+    W: StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+    T: TradingEngine,
+    C: AddEntityToChartTraces,
+    L: LevelConditions,
+{
+    for order in stores.order_store.get_all_orders()? {
+        match order.props.base.status {
+            OrderStatus::Pending => {
+                if (order.props.base.r#type == OrderType::Buy
+                    && current_tick.bid <= order.props.base.prices.open)
+                    || (order.props.base.r#type == OrderType::Sell
+                        && current_tick.bid >= order.props.base.prices.open)
+                {
+                    let mut remove_working_level = false;
+
+                    if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                        &order.props.working_level_id,
+                        stores.working_level_store,
+                        CorridorType::Small,
+                        params.get_point_param_value(StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel),
+                    )? {
+                        if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                            &order.props.working_level_id,
+                            stores.working_level_store,
+                            CorridorType::Big,
+                            params.get_point_param_value(StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel),
+                        )? {
+                            if !utils.level_conditions.price_is_beyond_stop_loss(
+                                current_tick.bid,
+                                order.props.base.prices.stop_loss,
+                                order.props.base.r#type,
+                            ) {
+                                if !no_trading_mode {
+                                    utils.trading_engine.open_position(&order, OpenPositionBy::OpenPrice, stores.order_store, &mut stores.config.trading_engine)?;
+                                }
+                            } else {
+                                stores.statistics.deleted_by_price_being_beyond_stop_loss += 1;
+                                remove_working_level = true;
+                            }
+                        } else {
+                            stores.statistics.deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing += 1;
+                            remove_working_level = true;
+                        }
+                    } else {
+                        stores.statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing += 1;
+                        remove_working_level = true;
+                    }
+
+                    if remove_working_level {
+                        stores
+                            .working_level_store
+                            .move_working_level_to_removed(&order.props.working_level_id)?;
+                        stores.statistics.number_of_working_levels -= 1;
+                    }
+                }
+            }
+            OrderStatus::Opened => {
+                let mut add_to_chart_traces = false;
+
+                if (order.props.base.r#type == OrderType::Buy
+                    && current_tick.bid >= order.props.base.prices.take_profit)
+                    || (order.props.base.r#type == OrderType::Sell
+                        && current_tick.bid <= order.props.base.prices.take_profit)
+                {
+                    add_to_chart_traces = true;
+                    utils.trading_engine.close_position(
+                        &order,
+                        ClosePositionBy::TakeProfit,
+                        stores.order_store,
+                        &mut stores.config.trading_engine,
+                    )?;
+                } else if (order.props.base.r#type == OrderType::Buy
+                    && current_tick.bid <= order.props.base.prices.stop_loss)
+                    || (order.props.base.r#type == OrderType::Sell
+                        && current_tick.bid >= order.props.base.prices.stop_loss)
+                {
+                    add_to_chart_traces = true;
+                    utils.trading_engine.close_position(
+                        &order,
+                        ClosePositionBy::StopLoss,
+                        stores.order_store,
+                        &mut stores.config.trading_engine,
+                    )?;
+                }
+
+                let working_level_chart_index = stores
+                    .working_level_store
+                    .get_working_level_by_id(&order.props.working_level_id)?
+                    .unwrap()
+                    .props
+                    .chart_index;
+
+                if add_to_chart_traces
+                    && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Debug
+                {
+                    utils.chart_traces_modifier.add_entity_to_chart_traces(
+                        ChartTraceEntity::TakeProfit {
+                            take_profit_price: order.props.base.prices.take_profit,
+                            working_level_chart_index,
+                        },
+                        &mut stores.config.traces,
+                        current_candle,
+                    );
+
+                    utils.chart_traces_modifier.add_entity_to_chart_traces(
+                        ChartTraceEntity::StopLoss {
+                            stop_loss_price: order.props.base.prices.stop_loss,
+                            working_level_chart_index,
+                        },
+                        &mut stores.config.traces,
+                        current_candle,
+                    );
+                }
+            }
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
+    use crate::step::utils::backtesting_charts::StepBacktestingChartTraces;
+    use crate::step::utils::entities::working_levels::WLMaxCrossingValue;
+    use crate::step::utils::level_conditions::MinAmountOfCandles;
+    use backtesting::BacktestingTradingEngineConfig;
+    use base::entities::candle::CandleId;
+    use base::entities::order::{OrderId, OrderPrice};
+    use base::entities::tick::TickPrice;
     use base::params::ParamValue;
     use chrono::Utc;
     use rust_decimal_macros::dec;
+    use std::cell::RefCell;
+    use std::collections::{HashMap, HashSet};
+    use std::env;
 
     use super::*;
 
@@ -357,5 +522,926 @@ mod tests {
         let chain_of_orders = get_new_chain_of_orders(&level, &params, volatility, balance);
 
         assert!(chain_of_orders.is_err());
+    }
+
+    #[derive(Default)]
+    struct TestLevelConditions {
+        level_exceeds_amount_of_candles_small_corridor_number_of_calls: RefCell<u32>,
+        level_exceeds_amount_of_candles_big_corridor_number_of_calls: RefCell<u32>,
+        price_is_beyond_stop_loss_number_of_calls: RefCell<u32>,
+    }
+
+    impl LevelConditions for TestLevelConditions {
+        fn level_exceeds_amount_of_candles_in_corridor(
+            &self,
+            level_id: &str,
+            _working_level_store: &impl StepWorkingLevelStore,
+            corridor_type: CorridorType,
+            _min_amount_of_candles: MinAmountOfCandles,
+        ) -> Result<bool> {
+            match corridor_type {
+                CorridorType::Small => {
+                    *self
+                        .level_exceeds_amount_of_candles_small_corridor_number_of_calls
+                        .borrow_mut() += 1
+                }
+                CorridorType::Big => {
+                    *self
+                        .level_exceeds_amount_of_candles_big_corridor_number_of_calls
+                        .borrow_mut() += 1
+                }
+            }
+
+            match level_id {
+                "2" | "4" | "5" | "7" | "9" | "10" if corridor_type == CorridorType::Small => {
+                    Ok(false)
+                }
+                "2" | "5" | "7" | "10" if corridor_type == CorridorType::Big => Ok(false),
+                _ => Ok(true),
+            }
+        }
+
+        fn price_is_beyond_stop_loss(
+            &self,
+            _current_tick_price: TickPrice,
+            stop_loss_price: OrderPrice,
+            _working_level_type: OrderType,
+        ) -> bool {
+            *self.price_is_beyond_stop_loss_number_of_calls.borrow_mut() += 1;
+            stop_loss_price != dec!(1.88888)
+        }
+    }
+
+    #[derive(Default)]
+    struct TestParams;
+
+    impl StrategyParams for TestParams {
+        type PointParam = StepPointParam;
+        type RatioParam = StepRatioParam;
+
+        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamValue {
+            dec!(1)
+        }
+
+        fn get_ratio_param_value(
+            &self,
+            _name: Self::RatioParam,
+            _volatility: CandleVolatility,
+        ) -> ParamValue {
+            dec!(1)
+        }
+    }
+
+    #[derive(Default)]
+    struct TestTradingEngine {
+        opened_orders: RefCell<Vec<String>>,
+        closed_orders_by_take_profit: RefCell<Vec<String>>,
+        closed_orders_by_stop_loss: RefCell<Vec<String>>,
+    }
+
+    impl TradingEngine for TestTradingEngine {
+        fn open_position<O>(
+            &self,
+            order: &Item<OrderId, O>,
+            _by: OpenPositionBy,
+            _order_store: &mut impl BasicOrderStore,
+            _trading_config: &mut BacktestingTradingEngineConfig,
+        ) -> Result<()>
+        where
+            O: Into<BasicOrderProperties> + Clone,
+        {
+            self.opened_orders.borrow_mut().push(order.id.clone());
+            Ok(())
+        }
+
+        fn close_position<O>(
+            &self,
+            order: &Item<OrderId, O>,
+            by: ClosePositionBy,
+            _order_store: &mut impl BasicOrderStore<OrderProperties = O>,
+            _trading_config: &mut BacktestingTradingEngineConfig,
+        ) -> Result<()>
+        where
+            O: Into<BasicOrderProperties> + Clone,
+        {
+            match by {
+                ClosePositionBy::TakeProfit => self
+                    .closed_orders_by_take_profit
+                    .borrow_mut()
+                    .push(order.id.clone()),
+                ClosePositionBy::StopLoss => self
+                    .closed_orders_by_stop_loss
+                    .borrow_mut()
+                    .push(order.id.clone()),
+                _ => unreachable!(),
+            }
+
+            Ok(())
+        }
+    }
+
+    struct TestWorkingLevelStore {
+        working_levels:
+            HashMap<WLId, Item<WLId, <Self as StepWorkingLevelStore>::WorkingLevelProperties>>,
+
+        removed_levels: HashSet<WLId>,
+    }
+
+    impl TestWorkingLevelStore {
+        fn new(
+            working_levels_list: Vec<
+                Item<WLId, <Self as StepWorkingLevelStore>::WorkingLevelProperties>,
+            >,
+        ) -> Self {
+            let mut working_levels = HashMap::new();
+            for working_level in working_levels_list {
+                working_levels.insert(working_level.id.clone(), working_level);
+            }
+
+            Self {
+                working_levels,
+                removed_levels: Default::default(),
+            }
+        }
+    }
+
+    impl StepWorkingLevelStore for TestWorkingLevelStore {
+        type WorkingLevelProperties = BacktestingWLProperties;
+        type CandleProperties = ();
+        type OrderProperties = ();
+
+        fn create_working_level(
+            &mut self,
+            _properties: Self::WorkingLevelProperties,
+        ) -> Result<WLId> {
+            unimplemented!()
+        }
+
+        fn get_working_level_by_id(
+            &self,
+            id: &str,
+        ) -> Result<Option<Item<WLId, Self::WorkingLevelProperties>>> {
+            Ok(self.working_levels.get(id).cloned())
+        }
+
+        fn move_working_level_to_active(&mut self, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn move_working_level_to_removed(&mut self, id: &str) -> Result<()> {
+            self.removed_levels.insert(id.to_string());
+            Ok(())
+        }
+
+        fn remove_working_level(&mut self, _id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn get_created_working_levels(
+            &self,
+        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_active_working_levels(
+            &self,
+        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_removed_working_levels(
+            &self,
+        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+            unimplemented!()
+        }
+
+        fn add_candle_to_working_level_corridor(
+            &mut self,
+            _working_level_id: &str,
+            _candle_id: CandleId,
+            _corridor_type: CorridorType,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn get_candles_of_working_level_corridor(
+            &self,
+            _working_level_id: &str,
+            _corridor_type: CorridorType,
+        ) -> Result<Vec<Item<CandleId, Self::CandleProperties>>> {
+            unimplemented!()
+        }
+
+        fn update_max_crossing_value_of_working_level(
+            &mut self,
+            _working_level_id: &str,
+            _new_value: WLMaxCrossingValue,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn get_max_crossing_value_of_working_level(
+            &self,
+            _working_level_id: &str,
+        ) -> Result<Option<WLMaxCrossingValue>> {
+            unimplemented!()
+        }
+
+        fn move_take_profits_of_level(&mut self, _working_level_id: &str) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn are_take_profits_of_level_moved(&self, _working_level_id: &str) -> Result<bool> {
+            unimplemented!()
+        }
+
+        fn add_order_to_working_level_chain_of_orders(
+            &mut self,
+            _working_level_id: &str,
+            _order_id: OrderId,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn get_working_level_chain_of_orders(
+            &self,
+            _working_level_id: &str,
+        ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestChartTracesModifier {
+        number_of_stop_loss_entities: RefCell<u32>,
+        number_of_take_profit_entities: RefCell<u32>,
+    }
+
+    impl AddEntityToChartTraces for TestChartTracesModifier {
+        fn add_entity_to_chart_traces(
+            &self,
+            entity: ChartTraceEntity,
+            _chart_traces: &mut StepBacktestingChartTraces,
+            _current_candle: &StepBacktestingCandleProperties,
+        ) {
+            match entity {
+                ChartTraceEntity::StopLoss { .. } => {
+                    *self.number_of_stop_loss_entities.borrow_mut() += 1
+                }
+                ChartTraceEntity::TakeProfit { .. } => {
+                    *self.number_of_take_profit_entities.borrow_mut() += 1
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    struct TestOrderStore {
+        orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>,
+    }
+
+    impl TestOrderStore {
+        fn new(orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>) -> Self {
+            Self { orders }
+        }
+    }
+
+    impl BasicOrderStore for TestOrderStore {
+        type OrderProperties = StepOrderProperties;
+
+        fn create_order(&mut self, _properties: Self::OrderProperties) -> Result<OrderId> {
+            unimplemented!()
+        }
+
+        fn get_order_by_id(
+            &self,
+            _id: &str,
+        ) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
+            Ok(self.orders.clone())
+        }
+
+        fn update_order_status(&mut self, _order_id: &str, _new_status: OrderStatus) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    fn testing_working_levels() -> Vec<Item<WLId, BacktestingWLProperties>> {
+        vec![
+            Item {
+                id: String::from("1"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 1,
+                },
+            },
+            Item {
+                id: String::from("2"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 2,
+                },
+            },
+            Item {
+                id: String::from("3"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 3,
+                },
+            },
+            Item {
+                id: String::from("4"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 4,
+                },
+            },
+            Item {
+                id: String::from("5"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 5,
+                },
+            },
+            Item {
+                id: String::from("6"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 6,
+                },
+            },
+            Item {
+                id: String::from("7"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 7,
+                },
+            },
+            Item {
+                id: String::from("8"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 8,
+                },
+            },
+            Item {
+                id: String::from("9"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 9,
+                },
+            },
+            Item {
+                id: String::from("10"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 10,
+                },
+            },
+            Item {
+                id: String::from("11"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 11,
+                },
+            },
+            Item {
+                id: String::from("12"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 12,
+                },
+            },
+            Item {
+                id: String::from("13"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 13,
+                },
+            },
+            Item {
+                id: String::from("14"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 14,
+                },
+            },
+            Item {
+                id: String::from("15"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 15,
+                },
+            },
+            Item {
+                id: String::from("16"),
+                props: BacktestingWLProperties {
+                    base: Default::default(),
+                    chart_index: 16,
+                },
+            },
+        ]
+    }
+
+    fn testing_orders() -> Vec<Item<OrderId, StepOrderProperties>> {
+        vec![
+            Item {
+                id: String::from("1"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.28000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "1".to_string(),
+                },
+            },
+            Item {
+                id: String::from("2"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.30100),
+                            stop_loss: dec!(1.88888),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "2".to_string(),
+                },
+            },
+            Item {
+                id: String::from("3"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.30100),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "3".to_string(),
+                },
+            },
+            Item {
+                id: String::from("4"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.30100),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "4".to_string(),
+                },
+            },
+            Item {
+                id: String::from("5"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.30100),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "5".to_string(),
+                },
+            },
+            Item {
+                id: String::from("6"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.30200),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "6".to_string(),
+                },
+            },
+            Item {
+                id: String::from("7"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.29000),
+                            stop_loss: dec!(1.88888),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "7".to_string(),
+                },
+            },
+            Item {
+                id: String::from("8"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.29000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "8".to_string(),
+                },
+            },
+            Item {
+                id: String::from("9"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.29000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "9".to_string(),
+                },
+            },
+            Item {
+                id: String::from("10"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Pending,
+                        prices: BasicOrderPrices {
+                            open: dec!(1.29000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "10".to_string(),
+                },
+            },
+            Item {
+                id: String::from("11"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.30100),
+                            stop_loss: dec!(1.29000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "11".to_string(),
+                },
+            },
+            Item {
+                id: String::from("12"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.29000),
+                            stop_loss: dec!(1.28900),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "12".to_string(),
+                },
+            },
+            Item {
+                id: String::from("13"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Buy,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.32000),
+                            stop_loss: dec!(1.31000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "13".to_string(),
+                },
+            },
+            Item {
+                id: String::from("14"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.29000),
+                            stop_loss: dec!(1.31000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "14".to_string(),
+                },
+            },
+            Item {
+                id: String::from("15"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.32000),
+                            stop_loss: dec!(1.31000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "15".to_string(),
+                },
+            },
+            Item {
+                id: String::from("16"),
+                props: StepOrderProperties {
+                    base: BasicOrderProperties {
+                        r#type: OrderType::Sell,
+                        status: OrderStatus::Opened,
+                        prices: BasicOrderPrices {
+                            take_profit: dec!(1.27000),
+                            stop_loss: dec!(1.28000),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    working_level_id: "16".to_string(),
+                },
+            },
+        ]
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_orders_backtesting__debug_and_allow_trading_mode__should_successfully_place_and_close_particular_orders(
+    ) {
+        // 2, 7 — 1, 2, 3
+        // 3, 8 — 0
+        // 4, 9 — 1
+        // 5, 10 — 1, 2
+
+        let current_tick = BasicTickProperties {
+            bid: dec!(1.30000),
+            ..Default::default()
+        };
+
+        let current_candle = StepBacktestingCandleProperties::default();
+
+        let params = TestParams::default();
+
+        let mut order_store = TestOrderStore::new(testing_orders());
+        let mut working_level_store = TestWorkingLevelStore::new(testing_working_levels());
+
+        let mut config = StepBacktestingConfig::default(50);
+        let mut statistics = StepBacktestingStatistics {
+            number_of_working_levels: 16,
+            ..Default::default()
+        };
+
+        let stores = UpdateOrdersBacktestingStores {
+            order_store: &mut order_store,
+            working_level_store: &mut working_level_store,
+            config: &mut config,
+            statistics: &mut statistics,
+        };
+
+        let trading_engine = TestTradingEngine::default();
+        let chart_traces_modifier = TestChartTracesModifier::default();
+        let level_conditions = TestLevelConditions::default();
+
+        let utils = UpdateOrdersBacktestingUtils {
+            trading_engine: &trading_engine,
+            chart_traces_modifier: &chart_traces_modifier,
+            level_conditions: &level_conditions,
+        };
+
+        let no_trading_mode = false;
+
+        env::set_var("MODE", "debug");
+
+        update_orders_backtesting(
+            &current_tick,
+            &current_candle,
+            &params,
+            stores,
+            utils,
+            no_trading_mode,
+        )
+        .unwrap();
+
+        assert_eq!(
+            *level_conditions
+                .level_exceeds_amount_of_candles_small_corridor_number_of_calls
+                .borrow(),
+            8
+        );
+        assert_eq!(statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing, 2);
+
+        assert_eq!(
+            *level_conditions
+                .level_exceeds_amount_of_candles_big_corridor_number_of_calls
+                .borrow(),
+            6
+        );
+        assert_eq!(
+            statistics
+                .deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing,
+            2
+        );
+
+        assert_eq!(
+            *level_conditions
+                .price_is_beyond_stop_loss_number_of_calls
+                .borrow(),
+            4
+        );
+        assert_eq!(statistics.deleted_by_price_being_beyond_stop_loss, 2);
+
+        assert_eq!(
+            *trading_engine.opened_orders.borrow(),
+            vec![String::from("2"), String::from("7")]
+        );
+
+        assert_eq!(
+            working_level_store.removed_levels,
+            HashSet::from([
+                String::from("3"),
+                String::from("4"),
+                String::from("5"),
+                String::from("8"),
+                String::from("9"),
+                String::from("10"),
+            ])
+        );
+
+        assert_eq!(statistics.number_of_working_levels, 10);
+
+        assert_eq!(
+            *trading_engine.closed_orders_by_take_profit.borrow(),
+            vec![String::from("12"), String::from("15")]
+        );
+
+        assert_eq!(
+            *trading_engine.closed_orders_by_stop_loss.borrow(),
+            vec![String::from("13"), String::from("16")]
+        );
+
+        assert_eq!(
+            *chart_traces_modifier
+                .number_of_take_profit_entities
+                .borrow(),
+            4
+        );
+        assert_eq!(
+            *chart_traces_modifier.number_of_stop_loss_entities.borrow(),
+            4
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_orders_backtesting__optimization_and_no_trading_mode__should_not_place_orders_and_add_entities_to_chart_traces(
+    ) {
+        let current_tick = BasicTickProperties {
+            bid: dec!(1.30000),
+            ..Default::default()
+        };
+
+        let current_candle = StepBacktestingCandleProperties::default();
+
+        let params = TestParams::default();
+
+        let mut order_store = TestOrderStore::new(testing_orders());
+        let mut working_level_store = TestWorkingLevelStore::new(testing_working_levels());
+
+        let mut config = StepBacktestingConfig::default(50);
+        let mut statistics = StepBacktestingStatistics {
+            number_of_working_levels: 16,
+            ..Default::default()
+        };
+
+        let stores = UpdateOrdersBacktestingStores {
+            order_store: &mut order_store,
+            working_level_store: &mut working_level_store,
+            config: &mut config,
+            statistics: &mut statistics,
+        };
+
+        let trading_engine = TestTradingEngine::default();
+        let chart_traces_modifier = TestChartTracesModifier::default();
+        let level_conditions = TestLevelConditions::default();
+
+        let utils = UpdateOrdersBacktestingUtils {
+            trading_engine: &trading_engine,
+            chart_traces_modifier: &chart_traces_modifier,
+            level_conditions: &level_conditions,
+        };
+
+        let no_trading_mode = true;
+
+        env::set_var("MODE", "optimization");
+
+        update_orders_backtesting(
+            &current_tick,
+            &current_candle,
+            &params,
+            stores,
+            utils,
+            no_trading_mode,
+        )
+        .unwrap();
+
+        assert_eq!(
+            *level_conditions
+                .level_exceeds_amount_of_candles_small_corridor_number_of_calls
+                .borrow(),
+            8
+        );
+        assert_eq!(statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing, 2);
+
+        assert_eq!(
+            *level_conditions
+                .level_exceeds_amount_of_candles_big_corridor_number_of_calls
+                .borrow(),
+            6
+        );
+        assert_eq!(
+            statistics
+                .deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing,
+            2
+        );
+
+        assert_eq!(
+            *level_conditions
+                .price_is_beyond_stop_loss_number_of_calls
+                .borrow(),
+            4
+        );
+        assert_eq!(statistics.deleted_by_price_being_beyond_stop_loss, 2);
+
+        assert!(trading_engine.opened_orders.borrow().is_empty());
+
+        assert_eq!(
+            working_level_store.removed_levels,
+            HashSet::from([
+                String::from("3"),
+                String::from("4"),
+                String::from("5"),
+                String::from("8"),
+                String::from("9"),
+                String::from("10"),
+            ])
+        );
+
+        assert_eq!(statistics.number_of_working_levels, 10);
+
+        assert_eq!(
+            *trading_engine.closed_orders_by_take_profit.borrow(),
+            vec![String::from("12"), String::from("15")]
+        );
+
+        assert_eq!(
+            *trading_engine.closed_orders_by_stop_loss.borrow(),
+            vec![String::from("13"), String::from("16")]
+        );
+
+        assert_eq!(
+            *chart_traces_modifier
+                .number_of_take_profit_entities
+                .borrow(),
+            0
+        );
+        assert_eq!(
+            *chart_traces_modifier.number_of_stop_loss_entities.borrow(),
+            0
+        );
     }
 }

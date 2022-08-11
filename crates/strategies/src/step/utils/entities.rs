@@ -1,4 +1,5 @@
 use rust_decimal::Decimal;
+use std::str::FromStr;
 
 pub mod angle;
 pub mod candle;
@@ -19,3 +20,23 @@ pub struct StrategySignals {
 }
 
 pub type StrategyPerformance = Decimal;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Mode {
+    Debug,
+    Optimization,
+}
+
+impl FromStr for Mode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "debug" => Ok(Self::Debug),
+            "optimization" => Ok(Self::Optimization),
+            _ => anyhow::bail!("Invalid mode: {}", s),
+        }
+    }
+}
+
+pub const MODE_ENV: &str = "MODE";

@@ -1,4 +1,4 @@
-use base::notifier::{Notifier, TelegramNotifier};
+use base::notifier::{NotificationQueue, TelegramNotifier};
 use base::requests::ureq::UreqRequestApi;
 
 #[test]

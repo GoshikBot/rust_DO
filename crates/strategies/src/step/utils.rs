@@ -3,6 +3,7 @@ use anyhow::Result;
 
 pub mod backtesting_charts;
 pub mod entities;
+pub mod level_conditions;
 pub mod level_utils;
 pub mod orders;
 pub mod stores;

@@ -8,6 +8,12 @@ pub struct StepOrderProperties {
     pub working_level_id: WLId,
 }
 
+impl From<StepOrderProperties> for BasicOrderProperties {
+    fn from(properties: StepOrderProperties) -> Self {
+        properties.base
+    }
+}
+
 impl Default for StepOrderProperties {
     fn default() -> Self {
         Self {

@@ -16,8 +16,8 @@ pub struct BasicWLProperties {
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct BacktestingWLProperties {
-    base: BasicWLProperties,
-    chart_index: ChartIndex,
+    pub base: BasicWLProperties,
+    pub chart_index: ChartIndex,
 }
 
 impl From<BacktestingWLProperties> for BasicWLProperties {
