@@ -5,7 +5,7 @@ use anyhow::Result;
 pub trait BasicCandleStore {
     type CandleProperties;
 
-    fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<CandleId>;
+    fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<Item<CandleId, Self::CandleProperties>>;
     fn get_candle_by_id(
         &self,
         candle_id: &str,

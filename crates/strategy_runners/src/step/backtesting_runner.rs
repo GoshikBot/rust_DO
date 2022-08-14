@@ -1,13 +1,31 @@
 use anyhow::Context;
 use anyhow::Result;
+use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use base::params::StrategyParams;
+use base::stores::candle_store::BasicCandleStore;
+use base::stores::order_store::BasicOrderStore;
 use rust_decimal_macros::dec;
+use strategies::step::step_backtesting::RunStepBacktestingIteration;
+use strategies::step::utils::backtesting_charts::ChartTracesModifier;
+use strategies::step::utils::entities::angle::BasicAngleProperties;
+use strategies::step::utils::entities::candle::StepBacktestingCandleProperties;
+use strategies::step::utils::entities::order::StepOrderProperties;
+use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
+use strategies::step::utils::entities::working_levels::BacktestingWLProperties;
 use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
-use strategies::step::utils::stores::StepBacktestingStores;
+use strategies::step::utils::helpers::Helpers;
+use strategies::step::utils::level_conditions::LevelConditions;
+use strategies::step::utils::level_utils::LevelUtils;
+use strategies::step::utils::order_utils::OrderUtils;
+use strategies::step::utils::stores::angle_store::StepAngleStore;
+use strategies::step::utils::stores::tick_store::StepTickStore;
+use strategies::step::utils::stores::working_level_store::StepWorkingLevelStore;
+use strategies::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiter;
+use strategies::step::utils::StepBacktestingUtils;
 
 #[derive(Debug)]
 struct Tick<'a> {
@@ -36,31 +54,43 @@ fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
     (balances.real - balances.initial) / balances.initial * dec!(100)
 }
 
-pub struct StepStrategyRunningConfig<'a, P>
+pub struct StepStrategyRunningConfig<'a, P, T, H, U, N, R, D, E>
 where
-    P: StrategyParams,
+    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+
+    T: StepBacktestingMainStore,
+
+    H: Helpers,
+    U: LevelUtils,
+    N: LevelConditions,
+    R: OrderUtils,
+    D: ChartTracesModifier,
+    E: TradingEngine,
 {
     pub timeframes: StrategyTimeframes,
-    pub stores: &'a mut StepBacktestingStores,
+    pub stores: &'a mut StepBacktestingStores<T>,
+    pub utils: &'a StepBacktestingUtils<H, U, N, R, D, E>,
     pub params: &'a P,
 }
 
-pub fn loop_through_historical_data<P, L, R>(
+pub fn loop_through_historical_data<P, L, T, H, U, N, R, D, E>(
     historical_data: &HistoricalData,
-    strategy_config: StepStrategyRunningConfig<P>,
+    strategy_config: StepStrategyRunningConfig<P, T, H, U, N, R, D, E>,
     trading_limiter: &L,
-    run_iteration: R,
+    iteration_runner: &impl RunStepBacktestingIteration,
 ) -> Result<StrategyPerformance>
 where
-    P: StrategyParams,
+    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     L: TradingLimiter,
-    R: Fn(
-        BasicTickProperties,
-        Option<BasicCandleProperties>,
-        StrategySignals,
-        &mut StepBacktestingStores,
-        &P,
-    ) -> Result<()>,
+
+    T: StepBacktestingMainStore,
+
+    H: Helpers,
+    U: LevelUtils,
+    N: LevelConditions,
+    R: OrderUtils,
+    D: ChartTracesModifier,
+    E: TradingEngine,
 {
     let mut current_tick = Tick {
         index: 0,
@@ -103,10 +133,15 @@ where
             }
 
             // run iteration only if a tick exists
-            run_iteration(
+            iteration_runner.run_iteration(
                 current_tick.clone(),
                 if new_candle_appeared {
-                    current_candle.value.cloned()
+                    current_candle
+                        .value
+                        .map(|candle_props| StepBacktestingCandleProperties {
+                            base: candle_props.clone(),
+                            chart_index: current_candle.index,
+                        })
                 } else {
                     None
                 },
@@ -115,6 +150,7 @@ where
                     cancel_all_orders,
                 },
                 strategy_config.stores,
+                strategy_config.utils,
                 strategy_config.params,
             )?;
 
@@ -173,13 +209,29 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use backtesting::trading_engine::TradingEngine;
+    use backtesting::{BacktestingTradingEngineConfig, Balance, ClosePositionBy, OpenPositionBy};
     use base::entities::candle::CandleVolatility;
-    use base::entities::Timeframe;
+    use base::entities::order::{BasicOrderProperties, OrderId, OrderPrice, OrderType};
+    use base::entities::tick::TickPrice;
+    use base::entities::{Item, Timeframe};
     use base::params::ParamValue;
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
     use rust_decimal_macros::dec;
-    use strategies::step::utils::stores::StepBacktestingConfig;
+    use strategies::step::utils::backtesting_charts::{
+        ChartTraceEntity, ChartTracesModifier, StepBacktestingChartTraces,
+    };
+    use strategies::step::utils::entities::working_levels::{
+        BasicWLProperties, CorridorType, WLId,
+    };
+    use strategies::step::utils::helpers::HelpersImpl;
+    use strategies::step::utils::level_conditions::MinAmountOfCandles;
+    use strategies::step::utils::order_utils::{
+        OrderUtilsImpl, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
+    };
+    use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
+    use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingMainStore};
 
     const HOUR_TO_FORBID_TRADING: u8 = 23;
     const HOURS_TO_FORBID_TRADING: [u8; 3] = [23, 0, 1];
@@ -211,26 +263,43 @@ mod tests {
         }
     }
 
-    fn run_iteration(
-        _tick: BasicTickProperties,
-        candle: Option<BasicCandleProperties>,
-        signals: StrategySignals,
-        stores: &mut StepBacktestingStores,
-        _params: &impl StrategyParams,
-    ) -> Result<()> {
-        if signals.cancel_all_orders {
-            stores.config.trading_engine.balances.real -= dec!(50.0);
-        }
+    #[derive(Default)]
+    struct TestIterationRunner;
 
-        if !signals.no_trading_mode {
-            stores.config.trading_engine.balances.real += dec!(10.0);
+    impl RunStepBacktestingIteration for TestIterationRunner {
+        fn run_iteration<T, H, U, N, R, D, E>(
+            &self,
+            tick: BasicTickProperties,
+            candle: Option<StepBacktestingCandleProperties>,
+            signals: StrategySignals,
+            stores: &mut StepBacktestingStores<T>,
+            utils: &StepBacktestingUtils<H, U, N, R, D, E>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        ) -> Result<()>
+        where
+            T: StepBacktestingMainStore,
 
-            if candle.is_some() {
-                stores.config.trading_engine.balances.real += dec!(20.0);
+            H: Helpers,
+            U: LevelUtils,
+            N: LevelConditions,
+            R: OrderUtils,
+            D: ChartTracesModifier,
+            E: TradingEngine,
+        {
+            if signals.cancel_all_orders {
+                stores.config.trading_engine.balances.real -= dec!(50.0);
             }
-        }
 
-        Ok(())
+            if !signals.no_trading_mode {
+                stores.config.trading_engine.balances.real += dec!(10.0);
+
+                if candle.is_some() {
+                    stores.config.trading_engine.balances.real += dec!(20.0);
+                }
+            }
+
+            Ok(())
+        }
     }
 
     #[derive(Default)]
@@ -243,8 +312,8 @@ mod tests {
     }
 
     impl StrategyParams for TestStrategyParams {
-        type PointParam = String;
-        type RatioParam = String;
+        type PointParam = StepPointParam;
+        type RatioParam = StepRatioParam;
 
         fn get_point_param_value(&self, _name: Self::PointParam) -> ParamValue {
             todo!()
@@ -256,6 +325,143 @@ mod tests {
             _volatility: CandleVolatility,
         ) -> ParamValue {
             todo!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestHelpersImpl;
+
+    impl Helpers for TestHelpersImpl {}
+
+    #[derive(Default)]
+    struct TestLevelUtilsImpl;
+
+    impl LevelUtils for TestLevelUtilsImpl {
+        fn get_crossed_level<'a, W>(
+            &self,
+            current_tick_price: TickPrice,
+            created_working_levels: &'a [Item<WLId, W>],
+        ) -> Option<&'a Item<WLId, W>>
+        where
+            W: Into<BasicWLProperties> + Clone,
+        {
+            unimplemented!()
+        }
+
+        fn remove_active_working_levels_with_closed_orders<O>(
+            &self,
+            working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
+        ) -> Result<()>
+        where
+            O: Into<StepOrderProperties>,
+        {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestLevelConditionsImpl;
+
+    impl LevelConditions for TestLevelConditionsImpl {
+        fn level_exceeds_amount_of_candles_in_corridor(
+            &self,
+            level_id: &str,
+            working_level_store: &impl StepWorkingLevelStore,
+            corridor_type: CorridorType,
+            min_amount_of_candles: MinAmountOfCandles,
+        ) -> Result<bool> {
+            unimplemented!()
+        }
+
+        fn price_is_beyond_stop_loss(
+            &self,
+            current_tick_price: TickPrice,
+            stop_loss_price: OrderPrice,
+            working_level_type: OrderType,
+        ) -> bool {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestOrderUtilsImpl;
+
+    impl OrderUtils for TestOrderUtilsImpl {
+        fn get_new_chain_of_orders<W>(
+            &self,
+            level: &Item<WLId, W>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            current_volatility: CandleVolatility,
+            current_balance: Balance,
+        ) -> Result<Vec<StepOrderProperties>>
+        where
+            W: Into<BasicWLProperties> + Clone,
+        {
+            unimplemented!()
+        }
+
+        fn update_orders_backtesting<M, T, C, L>(
+            &self,
+            current_tick: &BasicTickProperties,
+            current_candle: &StepBacktestingCandleProperties,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            stores: UpdateOrdersBacktestingStores<M>,
+            utils: UpdateOrdersBacktestingUtils<T, C, L>,
+            no_trading_mode: bool,
+        ) -> Result<()>
+        where
+            M: BasicOrderStore<OrderProperties = StepOrderProperties>
+                + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+            T: TradingEngine,
+            C: ChartTracesModifier,
+            L: LevelConditions,
+        {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestChartTracesModifierImpl;
+
+    impl ChartTracesModifier for TestChartTracesModifierImpl {
+        fn add_entity_to_chart_traces(
+            &self,
+            entity: ChartTraceEntity,
+            chart_traces: &mut StepBacktestingChartTraces,
+            current_candle: &StepBacktestingCandleProperties,
+        ) {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestTradingEngineImpl;
+
+    impl TradingEngine for TestTradingEngineImpl {
+        fn open_position<O>(
+            &self,
+            order: &Item<OrderId, O>,
+            by: OpenPositionBy,
+            order_store: &mut impl BasicOrderStore,
+            trading_config: &mut BacktestingTradingEngineConfig,
+        ) -> Result<()>
+        where
+            O: Into<BasicOrderProperties> + Clone,
+        {
+            unimplemented!()
+        }
+
+        fn close_position<O>(
+            &self,
+            order: &Item<OrderId, O>,
+            by: ClosePositionBy,
+            order_store: &mut impl BasicOrderStore<OrderProperties = O>,
+            trading_config: &mut BacktestingTradingEngineConfig,
+        ) -> Result<()>
+        where
+            O: Into<BasicOrderProperties> + Clone,
+        {
+            unimplemented!()
         }
     }
 
@@ -454,8 +660,10 @@ mod tests {
             ],
         };
 
+        let in_memory_store = InMemoryStepBacktestingStore::new();
+
         let mut step_stores = StepBacktestingStores {
-            main: Default::default(),
+            main: InMemoryStepBacktestingStore::new(),
             config: StepBacktestingConfig::default(10),
             statistics: Default::default(),
         };
@@ -464,20 +672,32 @@ mod tests {
 
         let trading_limiter = TestTradingLimiter::new();
 
+        let utils = StepBacktestingUtils {
+            helpers: TestHelpersImpl::default(),
+            level_utils: TestLevelUtilsImpl::default(),
+            level_conditions: TestLevelConditionsImpl::default(),
+            order_utils: TestOrderUtilsImpl::default(),
+            chart_traces_modifier: TestChartTracesModifierImpl::default(),
+            trading_engine: TestTradingEngineImpl::default(),
+        };
+
         let strategy_config = StepStrategyRunningConfig {
             timeframes: StrategyTimeframes {
                 candle: Timeframe::Hour,
                 tick: Timeframe::ThirtyMin,
             },
             stores: &mut step_stores,
+            utils: &utils,
             params: &step_params,
         };
+
+        let iteration_runner = TestIterationRunner::default();
 
         let strategy_performance = loop_through_historical_data(
             &historical_data,
             strategy_config,
             &trading_limiter,
-            run_iteration,
+            &iteration_runner,
         )
         .unwrap();
 

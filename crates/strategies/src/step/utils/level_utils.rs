@@ -7,60 +7,90 @@ use base::entities::Item;
 
 use super::entities::working_levels::{BasicWLProperties, WLId};
 
-/// Checks whether one of the working levels has got crossed and returns such a level.
-pub fn get_crossed_level<W>(
-    current_tick_price: TickPrice,
-    created_working_levels: &[Item<WLId, W>],
-) -> Option<&Item<WLId, W>>
-where
-    W: Into<BasicWLProperties> + Clone,
-{
-    for level in created_working_levels {
-        let level_properties: BasicWLProperties = level.props.clone().into();
+pub trait LevelUtils {
+    /// Checks whether one of the working levels has got crossed and returns such a level.
+    fn get_crossed_level<'a, W>(
+        &self,
+        current_tick_price: TickPrice,
+        created_working_levels: &'a [Item<WLId, W>],
+    ) -> Option<&'a Item<WLId, W>>
+    where
+        W: Into<BasicWLProperties> + Clone;
 
-        match level_properties.r#type {
-            OrderType::Buy => {
-                if current_tick_price < level_properties.price {
-                    return Some(level);
+    /// Moves active working levels to removed if they have closed orders in their chains.
+    fn remove_active_working_levels_with_closed_orders<O>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
+    ) -> Result<()>
+    where
+        O: Into<StepOrderProperties>;
+}
+
+#[derive(Default)]
+pub struct LevelUtilsImpl;
+
+impl LevelUtilsImpl {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn working_level_has_closed_orders_in_chain(chain_of_orders: &[StepOrderProperties]) -> bool {
+        chain_of_orders
+            .iter()
+            .any(|order| order.base.status == OrderStatus::Closed)
+    }
+}
+
+impl LevelUtils for LevelUtilsImpl {
+    fn get_crossed_level<'a, W>(
+        &self,
+        current_tick_price: TickPrice,
+        created_working_levels: &'a [Item<WLId, W>],
+    ) -> Option<&'a Item<WLId, W>>
+    where
+        W: Into<BasicWLProperties> + Clone,
+    {
+        for level in created_working_levels {
+            let level_properties: BasicWLProperties = level.props.clone().into();
+
+            match level_properties.r#type {
+                OrderType::Buy => {
+                    if current_tick_price < level_properties.price {
+                        return Some(level);
+                    }
                 }
-            }
-            OrderType::Sell => {
-                if current_tick_price > level_properties.price {
-                    return Some(level);
+                OrderType::Sell => {
+                    if current_tick_price > level_properties.price {
+                        return Some(level);
+                    }
                 }
             }
         }
+
+        None
     }
 
-    None
-}
+    fn remove_active_working_levels_with_closed_orders<O>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
+    ) -> Result<()>
+    where
+        O: Into<StepOrderProperties>,
+    {
+        for level in working_level_store.get_active_working_levels()? {
+            let level_chain_of_orders: Vec<_> = working_level_store
+                .get_working_level_chain_of_orders(&level.id)?
+                .into_iter()
+                .map(|order| order.props.into())
+                .collect();
 
-fn working_level_has_closed_orders_in_chain(chain_of_orders: &[StepOrderProperties]) -> bool {
-    chain_of_orders
-        .iter()
-        .any(|order| order.base.status == OrderStatus::Closed)
-}
-
-/// Moves active working levels to removed if they have closed orders in their chains.
-pub fn remove_active_working_levels_with_closed_orders<O>(
-    working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
-) -> Result<()>
-where
-    O: Into<StepOrderProperties>,
-{
-    for level in working_level_store.get_active_working_levels()? {
-        let level_chain_of_orders: Vec<_> = working_level_store
-            .get_working_level_chain_of_orders(&level.id)?
-            .into_iter()
-            .map(|order| order.props.into())
-            .collect();
-
-        if working_level_has_closed_orders_in_chain(&level_chain_of_orders) {
-            working_level_store.move_working_level_to_removed(&level.id)?;
+            if Self::working_level_has_closed_orders_in_chain(&level_chain_of_orders) {
+                working_level_store.move_working_level_to_removed(&level.id)?;
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -98,7 +128,10 @@ mod tests {
 
         let current_tick_price = dec!(9);
 
-        let crossed_level = get_crossed_level(current_tick_price, &created_working_levels);
+        let level_utils = LevelUtilsImpl::new();
+
+        let crossed_level =
+            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
 
         assert_eq!(crossed_level.unwrap().id, "1");
     }
@@ -128,7 +161,10 @@ mod tests {
 
         let current_tick_price = dec!(11);
 
-        let crossed_level = get_crossed_level(current_tick_price, &created_working_levels);
+        let level_utils = LevelUtilsImpl::new();
+
+        let crossed_level =
+            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
 
         assert_eq!(crossed_level.unwrap().id, "2");
     }
@@ -158,7 +194,10 @@ mod tests {
 
         let current_tick_price = dec!(11);
 
-        let crossed_level = get_crossed_level(current_tick_price, &created_working_levels);
+        let level_utils = LevelUtilsImpl::new();
+
+        let crossed_level =
+            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
 
         assert!(crossed_level.is_none());
     }
@@ -171,7 +210,7 @@ mod tests {
         let mut working_level_ids = Vec::new();
 
         for _ in 0..4 {
-            working_level_ids.push(store.create_working_level(Default::default()).unwrap());
+            working_level_ids.push(store.create_working_level(Default::default()).unwrap().id);
         }
 
         let first_chain_of_orders_with_closed_orders: Vec<_> = (0..5)
@@ -192,6 +231,7 @@ mod tests {
                         ..Default::default()
                     })
                     .unwrap()
+                    .id
             })
             .collect();
 
@@ -213,17 +253,18 @@ mod tests {
                         ..Default::default()
                     })
                     .unwrap()
+                    .id
             })
             .collect();
 
         let first_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|_| store.create_order(Default::default()).unwrap())
+            .map(|_| store.create_order(Default::default()).unwrap().id)
             .collect();
 
         let second_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|_| store.create_order(Default::default()).unwrap())
+            .map(|_| store.create_order(Default::default()).unwrap().id)
             .collect();
 
         for order_id in first_chain_of_orders_with_closed_orders {
@@ -266,7 +307,11 @@ mod tests {
             store.move_working_level_to_active(level_id).unwrap();
         }
 
-        remove_active_working_levels_with_closed_orders(&mut store).unwrap();
+        let level_utils = LevelUtilsImpl::new();
+
+        level_utils
+            .remove_active_working_levels_with_closed_orders(&mut store)
+            .unwrap();
 
         let removed_working_levels = store.get_removed_working_levels().unwrap();
 

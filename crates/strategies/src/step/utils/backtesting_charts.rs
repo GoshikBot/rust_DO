@@ -119,7 +119,7 @@ impl StepBacktestingChartTraces {
     }
 }
 
-pub trait AddEntityToChartTraces {
+pub trait ChartTracesModifier {
     /// Saves additional data of the current backtesting launch for the future analysis.
     fn add_entity_to_chart_traces(
         &self,
@@ -138,7 +138,7 @@ impl BacktestingChartTracesModifier {
     }
 }
 
-impl AddEntityToChartTraces for BacktestingChartTracesModifier {
+impl ChartTracesModifier for BacktestingChartTracesModifier {
     fn add_entity_to_chart_traces(
         &self,
         entity: ChartTraceEntity,

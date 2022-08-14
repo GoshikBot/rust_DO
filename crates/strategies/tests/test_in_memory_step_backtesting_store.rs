@@ -21,7 +21,7 @@ fn should_remove_only_unused_items() {
     let mut ticks = Vec::new();
 
     for _ in 1..=4 {
-        let tick_id = store.create_tick(Default::default()).unwrap();
+        let tick_id = store.create_tick(Default::default()).unwrap().id;
         ticks.push(tick_id);
     }
 
@@ -34,7 +34,7 @@ fn should_remove_only_unused_items() {
 
     let mut candles = Vec::new();
     for _ in 1..=10 {
-        let candle_id = store.create_candle(Default::default()).unwrap();
+        let candle_id = store.create_candle(Default::default()).unwrap().id;
         candles.push(candle_id);
     }
 
@@ -45,7 +45,7 @@ fn should_remove_only_unused_items() {
         .update_previous_candle(candles.get(1).unwrap().clone())
         .is_ok());
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -71,7 +71,8 @@ fn should_remove_only_unused_items() {
                 BasicAngleProperties { r#type: Level::Min },
                 candles.get(i - 1).unwrap().clone(),
             )
-            .unwrap();
+            .unwrap()
+            .id;
         angles.push(angle_id);
     }
 
@@ -136,7 +137,7 @@ fn should_remove_only_unused_items() {
 fn should_return_error_on_moving_working_level_to_active_if_it_is_not_present_in_created() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
     assert!(store
         .move_working_level_to_active(&working_level_id)
@@ -151,7 +152,7 @@ fn should_return_error_on_moving_working_level_to_removed_if_it_is_not_present_n
 ) {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
     assert!(store
         .move_working_level_to_removed(&working_level_id)
@@ -165,10 +166,10 @@ fn should_return_error_on_moving_working_level_to_removed_if_it_is_not_present_n
 fn should_successfully_move_working_level_to_removed() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
     for _ in 0..3 {
-        let order_id = store.create_order(Default::default()).unwrap();
+        let order_id = store.create_order(Default::default()).unwrap().id;
         store
             .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
             .unwrap();
@@ -196,7 +197,7 @@ fn should_successfully_move_working_level_to_removed() {
 fn should_successfully_remove_working_level() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
     assert!(store
         .move_working_level_to_active(&working_level_id)
@@ -206,7 +207,7 @@ fn should_successfully_remove_working_level() {
         .update_max_crossing_value_of_working_level(&working_level_id, 10.0)
         .is_ok());
 
-    let candle_id = store.create_candle(Default::default()).unwrap();
+    let candle_id = store.create_candle(Default::default()).unwrap().id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -222,7 +223,7 @@ fn should_successfully_remove_working_level() {
 
     assert!(store.move_take_profits_of_level(&working_level_id).is_ok());
 
-    let order_id = store.create_order(Default::default()).unwrap();
+    let order_id = store.create_order(Default::default()).unwrap().id;
 
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
@@ -277,11 +278,11 @@ fn should_successfully_remove_working_level() {
 fn should_successfully_add_candle_to_working_level_corridor() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
-    let first_candle_id = store.create_candle(Default::default()).unwrap();
+    let first_candle_id = store.create_candle(Default::default()).unwrap().id;
 
-    let second_candle_id = store.create_candle(Default::default()).unwrap();
+    let second_candle_id = store.create_candle(Default::default()).unwrap().id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -316,9 +317,9 @@ fn should_successfully_add_candle_to_working_level_corridor() {
 fn should_return_error_on_adding_candle_to_working_level_corridor_if_it_is_already_present_there() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
-    let candle_id = store.create_candle(Default::default()).unwrap();
+    let candle_id = store.create_candle(Default::default()).unwrap().id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -336,9 +337,9 @@ fn should_return_error_on_adding_candle_to_working_level_corridor_if_it_is_alrea
 fn should_successfully_add_order_to_working_level_chain_of_orders() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
-    let order_id = store.create_order(Default::default()).unwrap();
+    let order_id = store.create_order(Default::default()).unwrap().id;
 
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
@@ -356,9 +357,9 @@ fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is
 ) {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap();
+    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
-    let order_id = store.create_order(Default::default()).unwrap();
+    let order_id = store.create_order(Default::default()).unwrap().id;
 
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())

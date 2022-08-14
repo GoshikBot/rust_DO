@@ -2,6 +2,7 @@ use anyhow::Result;
 use backtesting::historical_data::get_historical_data;
 use backtesting::historical_data::serialization::HistoricalDataCsvSerialization;
 use backtesting::historical_data::synchronization::sync_candles_and_ticks;
+use backtesting::trading_engine::BacktestingTradingEngine;
 use backtesting::StrategyInitConfig;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV};
@@ -15,9 +16,17 @@ use trading_apis::MetaapiMarketDataApi;
 
 use base::params::StrategyCsvFileParams;
 use strategies::step::step_backtesting;
+use strategies::step::step_backtesting::StepBacktestingIterationRunner;
+use strategies::step::utils::backtesting_charts::BacktestingChartTracesModifier;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
+use strategies::step::utils::helpers::HelpersImpl;
+use strategies::step::utils::level_conditions::LevelConditionsImpl;
+use strategies::step::utils::level_utils::LevelUtilsImpl;
+use strategies::step::utils::order_utils::OrderUtilsImpl;
+use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiterBacktesting;
+use strategies::step::utils::StepBacktestingUtils;
 use strategy_runners::step::backtesting_runner;
 use strategy_runners::step::backtesting_runner::StepStrategyRunningConfig;
 
@@ -84,7 +93,7 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
     )?;
 
     let mut step_stores = StepBacktestingStores {
-        main: Default::default(),
+        main: InMemoryStepBacktestingStore::new(),
         config: StepBacktestingConfig::default(historical_data.candles.len()),
         statistics: Default::default(),
     };
@@ -95,15 +104,27 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
 
     let trading_limiter = TradingLimiterBacktesting::new();
 
+    let utils = StepBacktestingUtils {
+        helpers: HelpersImpl::new(),
+        level_utils: LevelUtilsImpl::new(),
+        level_conditions: LevelConditionsImpl::new(),
+        order_utils: OrderUtilsImpl::new(),
+        chart_traces_modifier: BacktestingChartTracesModifier::new(),
+        trading_engine: BacktestingTradingEngine::new(),
+    };
+
+    let iteration_runner = StepBacktestingIterationRunner::new();
+
     let strategy_performance = backtesting_runner::loop_through_historical_data(
         &historical_data,
         StepStrategyRunningConfig {
             timeframes: strategy_properties.timeframes,
             stores: &mut step_stores,
+            utils: &utils,
             params: &step_params,
         },
         &trading_limiter,
-        step_backtesting::run_iteration,
+        &iteration_runner,
     )?;
 
     println!("Strategy performance: {}", strategy_performance);

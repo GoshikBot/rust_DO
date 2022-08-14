@@ -94,7 +94,7 @@ mod tests {
         fn create_working_level(
             &mut self,
             _properties: Self::WorkingLevelProperties,
-        ) -> Result<WLId> {
+        ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
             unimplemented!()
         }
 

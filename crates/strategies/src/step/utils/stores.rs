@@ -1,9 +1,18 @@
 use crate::step::utils::backtesting_charts::{AmountOfCandles, StepBacktestingChartTraces};
-use crate::step::utils::entities::angle::AngleId;
+use crate::step::utils::entities::angle::{AngleId, BasicAngleProperties};
+use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+use crate::step::utils::entities::order::StepOrderProperties;
+use crate::step::utils::entities::working_levels::BacktestingWLProperties;
 use crate::step::utils::entities::Diff;
+use crate::step::utils::stores::angle_store::StepAngleStore;
 use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
+use crate::step::utils::stores::tick_store::StepTickStore;
+use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use backtesting::BacktestingTradingEngineConfig;
-use base::entities::{candle::CandleId, tick::TickId, Tendency};
+use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties, Tendency};
+use base::stores::candle_store::BasicCandleStore;
+use base::stores::order_store::BasicOrderStore;
+use base::stores::tick_store::BasicTickStore;
 
 pub mod angle_store;
 pub mod in_memory_step_backtesting_store;
@@ -12,11 +21,27 @@ pub mod step_realtime_config_store;
 pub mod tick_store;
 pub mod working_level_store;
 
-pub struct StepBacktestingStores {
-    pub main: InMemoryStepBacktestingStore,
+pub struct StepBacktestingStores<T>
+where
+    T: StepBacktestingMainStore
+{
+    pub main: T,
     pub config: StepBacktestingConfig,
     pub statistics: StepBacktestingStatistics,
 }
+
+pub trait StepBacktestingMainStore:
+    StepTickStore<TickProperties = BasicTickProperties>
+    + BasicCandleStore<CandleProperties = StepBacktestingCandleProperties>
+    + StepAngleStore<
+        AngleProperties = BasicAngleProperties,
+        CandleProperties = StepBacktestingCandleProperties,
+    > + StepWorkingLevelStore<
+        WorkingLevelProperties = BacktestingWLProperties,
+        CandleProperties = StepBacktestingCandleProperties,
+        OrderProperties = StepOrderProperties,
+    > + BasicOrderStore<OrderProperties = StepOrderProperties>
+{}
 
 pub type SettingFile = &'static str;
 pub type Symbol = &'static str;

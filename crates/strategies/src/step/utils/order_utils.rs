@@ -1,4 +1,4 @@
-use crate::step::utils::backtesting_charts::{AddEntityToChartTraces, ChartTraceEntity};
+use crate::step::utils::backtesting_charts::{ChartTraceEntity, ChartTracesModifier};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::working_levels::{BacktestingWLProperties, CorridorType};
 use crate::step::utils::entities::{Mode, MODE_ENV};
@@ -30,148 +30,325 @@ use super::entities::{
     working_levels::{BasicWLProperties, WLId},
 };
 
-/// Creates the chain of orders from the particular level when this level is crossed.
-pub fn get_new_chain_of_orders<W>(
-    level: &Item<WLId, W>,
-    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    current_volatility: CandleVolatility,
-    current_balance: Balance,
-) -> Result<Vec<StepOrderProperties>>
-where
-    W: Into<BasicWLProperties> + Clone,
-{
-    let level: Item<WLId, BasicWLProperties> = Item {
-        id: level.id.clone(),
-        props: level.props.clone().into(),
-    };
+pub trait OrderUtils {
+    /// Creates the chain of orders from the particular level when this level is crossed.
+    fn get_new_chain_of_orders<W>(
+        &self,
+        level: &Item<WLId, W>,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        current_volatility: CandleVolatility,
+        current_balance: Balance,
+    ) -> Result<Vec<StepOrderProperties>>
+    where
+        W: Into<BasicWLProperties> + Clone;
 
-    let distance_from_level_to_first_order = points_to_price(params.get_ratio_param_value(
-        StepRatioParam::DistanceFromLevelToFirstOrder,
-        current_volatility,
-    ));
+    /// Places and closed orders.
+    fn update_orders_backtesting<M, T, C, L>(
+        &self,
+        current_tick: &BasicTickProperties,
+        current_candle: &StepBacktestingCandleProperties,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        stores: UpdateOrdersBacktestingStores<M>,
+        utils: UpdateOrdersBacktestingUtils<T, C, L>,
+        no_trading_mode: bool,
+    ) -> Result<()>
+    where
+        M: BasicOrderStore<OrderProperties = StepOrderProperties>
+            + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+        T: TradingEngine,
+        C: ChartTracesModifier,
+        L: LevelConditions;
+}
 
-    let distance_from_level_to_stop_loss = points_to_price(params.get_ratio_param_value(
-        StepRatioParam::DistanceFromLevelToStopLoss,
-        current_volatility,
-    ));
+#[derive(Default)]
+pub struct OrderUtilsImpl;
 
-    let distance_between_orders = (distance_from_level_to_stop_loss
-        - distance_from_level_to_first_order)
-        / params.get_point_param_value(StepPointParam::AmountOfOrders);
-
-    let volume_per_order = get_volume_per_order(params, distance_between_orders, current_balance)?;
-
-    let (mut price_for_current_order, stop_loss) = match level.props.r#type {
-        OrderType::Buy => {
-            let price_for_current_order = level.props.price - distance_from_level_to_first_order;
-            let stop_loss = level.props.price - distance_from_level_to_stop_loss;
-            (
-                price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
-                stop_loss.round_dp(PRICE_DECIMAL_PLACES),
-            )
-        }
-        OrderType::Sell => {
-            let price_for_current_order = level.props.price + distance_from_level_to_first_order;
-            let stop_loss = level.props.price + distance_from_level_to_stop_loss;
-            (
-                price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
-                stop_loss.round_dp(PRICE_DECIMAL_PLACES),
-            )
-        }
-    };
-
-    let take_profit = level.props.price.round_dp(PRICE_DECIMAL_PLACES);
-
-    let mut chain_of_orders = Vec::new();
-
-    let amount_of_orders = params
-        .get_point_param_value(StepPointParam::AmountOfOrders)
-        .normalize()
-        .to_string()
-        .parse::<usize>()
-        .unwrap();
-
-    for _ in 0..amount_of_orders {
-        chain_of_orders.push(StepOrderProperties {
-            base: BasicOrderProperties {
-                r#type: level.props.r#type,
-                volume: volume_per_order,
-                status: Default::default(),
-                prices: BasicOrderPrices {
-                    open: price_for_current_order,
-                    stop_loss,
-                    take_profit,
-                },
-            },
-            working_level_id: level.id.clone(),
-        });
-
-        match level.props.r#type {
-            OrderType::Buy => price_for_current_order -= distance_between_orders,
-            OrderType::Sell => price_for_current_order += distance_between_orders,
-        }
-
-        price_for_current_order = price_for_current_order.round_dp(PRICE_DECIMAL_PLACES);
+impl OrderUtilsImpl {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    Ok(chain_of_orders)
+    /// Converts the max loss per the chain of orders from percent of the balance to the real price.
+    fn get_max_loss_per_chain_of_orders_in_price(
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        current_balance: Balance,
+    ) -> Result<MaxLossPerChainOfOrders> {
+        if current_balance <= dec!(0) {
+            bail!("balance should be positive, but got {}", current_balance);
+        }
+
+        let max_loss_per_chain_of_orders_pct = current_balance
+            * params.get_point_param_value(StepPointParam::MaxLossPerOneChainOfOrdersPctOfBalance)
+            / dec!(100);
+
+        log::debug!(
+            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+            "max loss per chain of orders in price is {}; current balance — {}",
+            max_loss_per_chain_of_orders_pct, current_balance
+        );
+
+        Ok(max_loss_per_chain_of_orders_pct)
+    }
+
+    /// Calculates the volume per order based on the max loss per the chain of orders.
+    fn get_volume_per_order(
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        distance_between_orders: DistanceBetweenOrders,
+        current_balance: Balance,
+    ) -> Result<OrderVolume> {
+        let max_loss = Self::get_max_loss_per_chain_of_orders_in_price(params, current_balance)?;
+
+        let amount_of_orders = params.get_point_param_value(StepPointParam::AmountOfOrders);
+
+        let volume_per_order: Decimal = max_loss * dec!(2)
+            / (amount_of_orders
+                * (dec!(2) + amount_of_orders - dec!(1))
+                * distance_between_orders
+                * Decimal::from(LOT));
+
+        log::debug!(
+            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+            "volume per order — {}",
+            volume_per_order
+        );
+
+        Ok(volume_per_order.round_dp(VOLUME_DECIMAL_PLACES))
+    }
+}
+
+impl OrderUtils for OrderUtilsImpl {
+    fn get_new_chain_of_orders<W>(
+        &self,
+        level: &Item<WLId, W>,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        current_volatility: CandleVolatility,
+        current_balance: Balance,
+    ) -> Result<Vec<StepOrderProperties>>
+    where
+        W: Into<BasicWLProperties> + Clone,
+    {
+        let level: Item<WLId, BasicWLProperties> = Item {
+            id: level.id.clone(),
+            props: level.props.clone().into(),
+        };
+
+        let distance_from_level_to_first_order = points_to_price(params.get_ratio_param_value(
+            StepRatioParam::DistanceFromLevelToFirstOrder,
+            current_volatility,
+        ));
+
+        let distance_from_level_to_stop_loss = points_to_price(params.get_ratio_param_value(
+            StepRatioParam::DistanceFromLevelToStopLoss,
+            current_volatility,
+        ));
+
+        let distance_between_orders = (distance_from_level_to_stop_loss
+            - distance_from_level_to_first_order)
+            / params.get_point_param_value(StepPointParam::AmountOfOrders);
+
+        let volume_per_order =
+            Self::get_volume_per_order(params, distance_between_orders, current_balance)?;
+
+        let (mut price_for_current_order, stop_loss) = match level.props.r#type {
+            OrderType::Buy => {
+                let price_for_current_order =
+                    level.props.price - distance_from_level_to_first_order;
+                let stop_loss = level.props.price - distance_from_level_to_stop_loss;
+                (
+                    price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
+                    stop_loss.round_dp(PRICE_DECIMAL_PLACES),
+                )
+            }
+            OrderType::Sell => {
+                let price_for_current_order =
+                    level.props.price + distance_from_level_to_first_order;
+                let stop_loss = level.props.price + distance_from_level_to_stop_loss;
+                (
+                    price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
+                    stop_loss.round_dp(PRICE_DECIMAL_PLACES),
+                )
+            }
+        };
+
+        let take_profit = level.props.price.round_dp(PRICE_DECIMAL_PLACES);
+
+        let mut chain_of_orders = Vec::new();
+
+        let amount_of_orders = params
+            .get_point_param_value(StepPointParam::AmountOfOrders)
+            .normalize()
+            .to_string()
+            .parse::<usize>()
+            .unwrap();
+
+        for _ in 0..amount_of_orders {
+            chain_of_orders.push(StepOrderProperties {
+                base: BasicOrderProperties {
+                    r#type: level.props.r#type,
+                    volume: volume_per_order,
+                    status: Default::default(),
+                    prices: BasicOrderPrices {
+                        open: price_for_current_order,
+                        stop_loss,
+                        take_profit,
+                    },
+                },
+                working_level_id: level.id.clone(),
+            });
+
+            match level.props.r#type {
+                OrderType::Buy => price_for_current_order -= distance_between_orders,
+                OrderType::Sell => price_for_current_order += distance_between_orders,
+            }
+
+            price_for_current_order = price_for_current_order.round_dp(PRICE_DECIMAL_PLACES);
+        }
+
+        Ok(chain_of_orders)
+    }
+
+    fn update_orders_backtesting<M, T, C, L>(
+        &self,
+        current_tick: &BasicTickProperties,
+        current_candle: &StepBacktestingCandleProperties,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        stores: UpdateOrdersBacktestingStores<M>,
+        utils: UpdateOrdersBacktestingUtils<T, C, L>,
+        no_trading_mode: bool,
+    ) -> Result<()>
+    where
+        M: BasicOrderStore<OrderProperties = StepOrderProperties>
+            + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+
+        T: TradingEngine,
+        C: ChartTracesModifier,
+        L: LevelConditions,
+    {
+        for order in stores.main.get_all_orders()? {
+            match order.props.base.status {
+                OrderStatus::Pending => {
+                    if (order.props.base.r#type == OrderType::Buy
+                        && current_tick.bid <= order.props.base.prices.open)
+                        || (order.props.base.r#type == OrderType::Sell
+                            && current_tick.bid >= order.props.base.prices.open)
+                    {
+                        let mut remove_working_level = false;
+
+                        if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                            &order.props.working_level_id,
+                            stores.main,
+                            CorridorType::Small,
+                            params.get_point_param_value(StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel),
+                        )? {
+                            if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                                &order.props.working_level_id,
+                                stores.main,
+                                CorridorType::Big,
+                                params.get_point_param_value(StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel),
+                            )? {
+                                if !utils.level_conditions.price_is_beyond_stop_loss(
+                                    current_tick.bid,
+                                    order.props.base.prices.stop_loss,
+                                    order.props.base.r#type,
+                                ) {
+                                    if !no_trading_mode {
+                                        utils.trading_engine.open_position(&order, OpenPositionBy::OpenPrice, stores.main, &mut stores.config.trading_engine)?;
+                                    }
+                                } else {
+                                    stores.statistics.deleted_by_price_being_beyond_stop_loss += 1;
+                                    remove_working_level = true;
+                                }
+                            } else {
+                                stores.statistics.deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing += 1;
+                                remove_working_level = true;
+                            }
+                        } else {
+                            stores.statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing += 1;
+                            remove_working_level = true;
+                        }
+
+                        if remove_working_level {
+                            stores
+                                .main
+                                .move_working_level_to_removed(&order.props.working_level_id)?;
+                            stores.statistics.number_of_working_levels -= 1;
+                        }
+                    }
+                }
+                OrderStatus::Opened => {
+                    let mut add_to_chart_traces = false;
+
+                    if (order.props.base.r#type == OrderType::Buy
+                        && current_tick.bid >= order.props.base.prices.take_profit)
+                        || (order.props.base.r#type == OrderType::Sell
+                            && current_tick.bid <= order.props.base.prices.take_profit)
+                    {
+                        add_to_chart_traces = true;
+                        utils.trading_engine.close_position(
+                            &order,
+                            ClosePositionBy::TakeProfit,
+                            stores.main,
+                            &mut stores.config.trading_engine,
+                        )?;
+                    } else if (order.props.base.r#type == OrderType::Buy
+                        && current_tick.bid <= order.props.base.prices.stop_loss)
+                        || (order.props.base.r#type == OrderType::Sell
+                            && current_tick.bid >= order.props.base.prices.stop_loss)
+                    {
+                        add_to_chart_traces = true;
+                        utils.trading_engine.close_position(
+                            &order,
+                            ClosePositionBy::StopLoss,
+                            stores.main,
+                            &mut stores.config.trading_engine,
+                        )?;
+                    }
+
+                    let working_level_chart_index = stores
+                        .main
+                        .get_working_level_by_id(&order.props.working_level_id)?
+                        .unwrap()
+                        .props
+                        .chart_index;
+
+                    if add_to_chart_traces
+                        && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Debug
+                    {
+                        utils.chart_traces_modifier.add_entity_to_chart_traces(
+                            ChartTraceEntity::TakeProfit {
+                                take_profit_price: order.props.base.prices.take_profit,
+                                working_level_chart_index,
+                            },
+                            &mut stores.config.traces,
+                            current_candle,
+                        );
+
+                        utils.chart_traces_modifier.add_entity_to_chart_traces(
+                            ChartTraceEntity::StopLoss {
+                                stop_loss_price: order.props.base.prices.stop_loss,
+                                working_level_chart_index,
+                            },
+                            &mut stores.config.traces,
+                            current_candle,
+                        );
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        Ok(())
+    }
 }
 
 type MaxLossPerChainOfOrders = Decimal;
 
-/// Converts the max loss per the chain of orders from percent of the balance to the real price.
-fn get_max_loss_per_chain_of_orders_in_price(
-    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    current_balance: Balance,
-) -> Result<MaxLossPerChainOfOrders> {
-    if current_balance <= dec!(0) {
-        bail!("balance should be positive, but got {}", current_balance);
-    }
-
-    let max_loss_per_chain_of_orders_pct = current_balance
-        * params.get_point_param_value(StepPointParam::MaxLossPerOneChainOfOrdersPctOfBalance)
-        / dec!(100);
-
-    log::debug!(
-        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-        "max loss per chain of orders in price is {}; current balance — {}",
-        max_loss_per_chain_of_orders_pct, current_balance
-    );
-
-    Ok(max_loss_per_chain_of_orders_pct)
-}
-
 type DistanceBetweenOrders = Decimal;
-
-/// Calculates the volume per order based on the max loss per the chain of orders.
-fn get_volume_per_order(
-    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    distance_between_orders: DistanceBetweenOrders,
-    current_balance: Balance,
-) -> Result<OrderVolume> {
-    let max_loss = get_max_loss_per_chain_of_orders_in_price(params, current_balance)?;
-
-    let amount_of_orders = params.get_point_param_value(StepPointParam::AmountOfOrders);
-
-    let volume_per_order: Decimal = max_loss * dec!(2)
-        / (amount_of_orders
-            * (dec!(2) + amount_of_orders - dec!(1))
-            * distance_between_orders
-            * Decimal::from(LOT));
-
-    log::debug!(
-        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-        "volume per order — {}",
-        volume_per_order
-    );
-
-    Ok(volume_per_order.round_dp(VOLUME_DECIMAL_PLACES))
-}
 
 pub struct UpdateOrdersBacktestingUtils<'a, T, C, L>
 where
     T: TradingEngine,
-    C: AddEntityToChartTraces,
+    C: ChartTracesModifier,
     L: LevelConditions,
 {
     pub trading_engine: &'a T,
@@ -179,147 +356,14 @@ where
     pub level_conditions: &'a L,
 }
 
-pub struct UpdateOrdersBacktestingStores<'a, O, W>
+pub struct UpdateOrdersBacktestingStores<'a, M>
 where
-    O: BasicOrderStore<OrderProperties = StepOrderProperties>,
-    W: StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+    M: BasicOrderStore<OrderProperties = StepOrderProperties>
+        + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
 {
-    order_store: &'a mut O,
-    working_level_store: &'a mut W,
-    config: &'a mut StepBacktestingConfig,
-    statistics: &'a mut StepBacktestingStatistics,
-}
-
-/// Places and closed orders.
-pub fn update_orders_backtesting<O, W, T, C, L>(
-    current_tick: &BasicTickProperties,
-    current_candle: &StepBacktestingCandleProperties,
-    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    stores: UpdateOrdersBacktestingStores<O, W>,
-    utils: UpdateOrdersBacktestingUtils<T, C, L>,
-    no_trading_mode: bool,
-) -> Result<()>
-where
-    O: BasicOrderStore<OrderProperties = StepOrderProperties>,
-    W: StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
-    T: TradingEngine,
-    C: AddEntityToChartTraces,
-    L: LevelConditions,
-{
-    for order in stores.order_store.get_all_orders()? {
-        match order.props.base.status {
-            OrderStatus::Pending => {
-                if (order.props.base.r#type == OrderType::Buy
-                    && current_tick.bid <= order.props.base.prices.open)
-                    || (order.props.base.r#type == OrderType::Sell
-                        && current_tick.bid >= order.props.base.prices.open)
-                {
-                    let mut remove_working_level = false;
-
-                    if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
-                        &order.props.working_level_id,
-                        stores.working_level_store,
-                        CorridorType::Small,
-                        params.get_point_param_value(StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel),
-                    )? {
-                        if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
-                            &order.props.working_level_id,
-                            stores.working_level_store,
-                            CorridorType::Big,
-                            params.get_point_param_value(StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel),
-                        )? {
-                            if !utils.level_conditions.price_is_beyond_stop_loss(
-                                current_tick.bid,
-                                order.props.base.prices.stop_loss,
-                                order.props.base.r#type,
-                            ) {
-                                if !no_trading_mode {
-                                    utils.trading_engine.open_position(&order, OpenPositionBy::OpenPrice, stores.order_store, &mut stores.config.trading_engine)?;
-                                }
-                            } else {
-                                stores.statistics.deleted_by_price_being_beyond_stop_loss += 1;
-                                remove_working_level = true;
-                            }
-                        } else {
-                            stores.statistics.deleted_by_exceeding_amount_of_candles_in_big_corridor_before_activation_crossing += 1;
-                            remove_working_level = true;
-                        }
-                    } else {
-                        stores.statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing += 1;
-                        remove_working_level = true;
-                    }
-
-                    if remove_working_level {
-                        stores
-                            .working_level_store
-                            .move_working_level_to_removed(&order.props.working_level_id)?;
-                        stores.statistics.number_of_working_levels -= 1;
-                    }
-                }
-            }
-            OrderStatus::Opened => {
-                let mut add_to_chart_traces = false;
-
-                if (order.props.base.r#type == OrderType::Buy
-                    && current_tick.bid >= order.props.base.prices.take_profit)
-                    || (order.props.base.r#type == OrderType::Sell
-                        && current_tick.bid <= order.props.base.prices.take_profit)
-                {
-                    add_to_chart_traces = true;
-                    utils.trading_engine.close_position(
-                        &order,
-                        ClosePositionBy::TakeProfit,
-                        stores.order_store,
-                        &mut stores.config.trading_engine,
-                    )?;
-                } else if (order.props.base.r#type == OrderType::Buy
-                    && current_tick.bid <= order.props.base.prices.stop_loss)
-                    || (order.props.base.r#type == OrderType::Sell
-                        && current_tick.bid >= order.props.base.prices.stop_loss)
-                {
-                    add_to_chart_traces = true;
-                    utils.trading_engine.close_position(
-                        &order,
-                        ClosePositionBy::StopLoss,
-                        stores.order_store,
-                        &mut stores.config.trading_engine,
-                    )?;
-                }
-
-                let working_level_chart_index = stores
-                    .working_level_store
-                    .get_working_level_by_id(&order.props.working_level_id)?
-                    .unwrap()
-                    .props
-                    .chart_index;
-
-                if add_to_chart_traces
-                    && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Debug
-                {
-                    utils.chart_traces_modifier.add_entity_to_chart_traces(
-                        ChartTraceEntity::TakeProfit {
-                            take_profit_price: order.props.base.prices.take_profit,
-                            working_level_chart_index,
-                        },
-                        &mut stores.config.traces,
-                        current_candle,
-                    );
-
-                    utils.chart_traces_modifier.add_entity_to_chart_traces(
-                        ChartTraceEntity::StopLoss {
-                            stop_loss_price: order.props.base.prices.stop_loss,
-                            working_level_chart_index,
-                        },
-                        &mut stores.config.traces,
-                        current_candle,
-                    );
-                }
-            }
-            _ => (),
-        }
-    }
-
-    Ok(())
+    pub main: &'a mut M,
+    pub config: &'a mut StepBacktestingConfig,
+    pub statistics: &'a mut StepBacktestingStatistics,
 }
 
 #[cfg(test)]
@@ -474,8 +518,11 @@ mod tests {
             },
         ];
 
-        let chain_of_orders =
-            get_new_chain_of_orders(&level, &params, volatility, balance).unwrap();
+        let order_utils = OrderUtilsImpl::new();
+
+        let chain_of_orders = order_utils
+            .get_new_chain_of_orders(&level, &params, volatility, balance)
+            .unwrap();
 
         assert_eq!(chain_of_orders, expected_chain_of_orders);
     }
@@ -497,7 +544,10 @@ mod tests {
         let volatility = 180;
         let balance = dec!(0);
 
-        let chain_of_orders = get_new_chain_of_orders(&level, &params, volatility, balance);
+        let order_utils = OrderUtilsImpl::new();
+
+        let chain_of_orders =
+            order_utils.get_new_chain_of_orders(&level, &params, volatility, balance);
 
         assert!(chain_of_orders.is_err());
     }
@@ -519,7 +569,10 @@ mod tests {
         let volatility = 180;
         let balance = dec!(-10);
 
-        let chain_of_orders = get_new_chain_of_orders(&level, &params, volatility, balance);
+        let order_utils = OrderUtilsImpl::new();
+
+        let chain_of_orders =
+            order_utils.get_new_chain_of_orders(&level, &params, volatility, balance);
 
         assert!(chain_of_orders.is_err());
     }
@@ -640,15 +693,43 @@ mod tests {
         }
     }
 
-    struct TestWorkingLevelStore {
+    #[derive(Default)]
+    struct TestChartTracesModifier {
+        number_of_stop_loss_entities: RefCell<u32>,
+        number_of_take_profit_entities: RefCell<u32>,
+    }
+
+    impl ChartTracesModifier for TestChartTracesModifier {
+        fn add_entity_to_chart_traces(
+            &self,
+            entity: ChartTraceEntity,
+            _chart_traces: &mut StepBacktestingChartTraces,
+            _current_candle: &StepBacktestingCandleProperties,
+        ) {
+            match entity {
+                ChartTraceEntity::StopLoss { .. } => {
+                    *self.number_of_stop_loss_entities.borrow_mut() += 1
+                }
+                ChartTraceEntity::TakeProfit { .. } => {
+                    *self.number_of_take_profit_entities.borrow_mut() += 1
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    struct TestStore {
+        orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>,
+
         working_levels:
             HashMap<WLId, Item<WLId, <Self as StepWorkingLevelStore>::WorkingLevelProperties>>,
 
         removed_levels: HashSet<WLId>,
     }
 
-    impl TestWorkingLevelStore {
+    impl TestStore {
         fn new(
+            orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>,
             working_levels_list: Vec<
                 Item<WLId, <Self as StepWorkingLevelStore>::WorkingLevelProperties>,
             >,
@@ -661,19 +742,46 @@ mod tests {
             Self {
                 working_levels,
                 removed_levels: Default::default(),
+                orders,
             }
         }
     }
 
-    impl StepWorkingLevelStore for TestWorkingLevelStore {
+    impl BasicOrderStore for TestStore {
+        type OrderProperties = StepOrderProperties;
+
+        fn create_order(
+            &mut self,
+            _properties: Self::OrderProperties,
+        ) -> Result<Item<OrderId, Self::OrderProperties>> {
+            unimplemented!()
+        }
+
+        fn get_order_by_id(
+            &self,
+            _id: &str,
+        ) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
+            Ok(self.orders.clone())
+        }
+
+        fn update_order_status(&mut self, _order_id: &str, _new_status: OrderStatus) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl StepWorkingLevelStore for TestStore {
         type WorkingLevelProperties = BacktestingWLProperties;
         type CandleProperties = ();
         type OrderProperties = ();
 
         fn create_working_level(
             &mut self,
-            _properties: Self::WorkingLevelProperties,
-        ) -> Result<WLId> {
+            properties: Self::WorkingLevelProperties,
+        ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
             unimplemented!()
         }
 
@@ -767,64 +875,6 @@ mod tests {
             &self,
             _working_level_id: &str,
         ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
-            unimplemented!()
-        }
-    }
-
-    #[derive(Default)]
-    struct TestChartTracesModifier {
-        number_of_stop_loss_entities: RefCell<u32>,
-        number_of_take_profit_entities: RefCell<u32>,
-    }
-
-    impl AddEntityToChartTraces for TestChartTracesModifier {
-        fn add_entity_to_chart_traces(
-            &self,
-            entity: ChartTraceEntity,
-            _chart_traces: &mut StepBacktestingChartTraces,
-            _current_candle: &StepBacktestingCandleProperties,
-        ) {
-            match entity {
-                ChartTraceEntity::StopLoss { .. } => {
-                    *self.number_of_stop_loss_entities.borrow_mut() += 1
-                }
-                ChartTraceEntity::TakeProfit { .. } => {
-                    *self.number_of_take_profit_entities.borrow_mut() += 1
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    struct TestOrderStore {
-        orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>,
-    }
-
-    impl TestOrderStore {
-        fn new(orders: Vec<Item<OrderId, <Self as BasicOrderStore>::OrderProperties>>) -> Self {
-            Self { orders }
-        }
-    }
-
-    impl BasicOrderStore for TestOrderStore {
-        type OrderProperties = StepOrderProperties;
-
-        fn create_order(&mut self, _properties: Self::OrderProperties) -> Result<OrderId> {
-            unimplemented!()
-        }
-
-        fn get_order_by_id(
-            &self,
-            _id: &str,
-        ) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
-            unimplemented!()
-        }
-
-        fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
-            Ok(self.orders.clone())
-        }
-
-        fn update_order_status(&mut self, _order_id: &str, _new_status: OrderStatus) -> Result<()> {
             unimplemented!()
         }
     }
@@ -1217,8 +1267,7 @@ mod tests {
 
         let params = TestParams::default();
 
-        let mut order_store = TestOrderStore::new(testing_orders());
-        let mut working_level_store = TestWorkingLevelStore::new(testing_working_levels());
+        let mut store = TestStore::new(testing_orders(), testing_working_levels());
 
         let mut config = StepBacktestingConfig::default(50);
         let mut statistics = StepBacktestingStatistics {
@@ -1227,8 +1276,7 @@ mod tests {
         };
 
         let stores = UpdateOrdersBacktestingStores {
-            order_store: &mut order_store,
-            working_level_store: &mut working_level_store,
+            main: &mut store,
             config: &mut config,
             statistics: &mut statistics,
         };
@@ -1247,15 +1295,18 @@ mod tests {
 
         env::set_var("MODE", "debug");
 
-        update_orders_backtesting(
-            &current_tick,
-            &current_candle,
-            &params,
-            stores,
-            utils,
-            no_trading_mode,
-        )
-        .unwrap();
+        let order_utils = OrderUtilsImpl::new();
+
+        order_utils
+            .update_orders_backtesting(
+                &current_tick,
+                &current_candle,
+                &params,
+                stores,
+                utils,
+                no_trading_mode,
+            )
+            .unwrap();
 
         assert_eq!(
             *level_conditions
@@ -1291,7 +1342,7 @@ mod tests {
         );
 
         assert_eq!(
-            working_level_store.removed_levels,
+            store.removed_levels,
             HashSet::from([
                 String::from("3"),
                 String::from("4"),
@@ -1339,8 +1390,7 @@ mod tests {
 
         let params = TestParams::default();
 
-        let mut order_store = TestOrderStore::new(testing_orders());
-        let mut working_level_store = TestWorkingLevelStore::new(testing_working_levels());
+        let mut store = TestStore::new(testing_orders(), testing_working_levels());
 
         let mut config = StepBacktestingConfig::default(50);
         let mut statistics = StepBacktestingStatistics {
@@ -1349,8 +1399,7 @@ mod tests {
         };
 
         let stores = UpdateOrdersBacktestingStores {
-            order_store: &mut order_store,
-            working_level_store: &mut working_level_store,
+            main: &mut store,
             config: &mut config,
             statistics: &mut statistics,
         };
@@ -1369,15 +1418,18 @@ mod tests {
 
         env::set_var("MODE", "optimization");
 
-        update_orders_backtesting(
-            &current_tick,
-            &current_candle,
-            &params,
-            stores,
-            utils,
-            no_trading_mode,
-        )
-        .unwrap();
+        let order_utils = OrderUtilsImpl::new();
+
+        order_utils
+            .update_orders_backtesting(
+                &current_tick,
+                &current_candle,
+                &params,
+                stores,
+                utils,
+                no_trading_mode,
+            )
+            .unwrap();
 
         assert_eq!(
             *level_conditions
@@ -1410,7 +1462,7 @@ mod tests {
         assert!(trading_engine.opened_orders.borrow().is_empty());
 
         assert_eq!(
-            working_level_store.removed_levels,
+            store.removed_levels,
             HashSet::from([
                 String::from("3"),
                 String::from("4"),

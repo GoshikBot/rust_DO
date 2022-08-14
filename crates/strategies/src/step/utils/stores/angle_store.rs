@@ -11,7 +11,7 @@ pub trait StepAngleStore {
         &mut self,
         properties: Self::AngleProperties,
         candle_id: CandleId,
-    ) -> Result<AngleId>;
+    ) -> Result<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>;
 
     fn get_angle_by_id(
         &self,

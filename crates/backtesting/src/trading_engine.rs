@@ -209,19 +209,21 @@ mod tests {
     impl BasicOrderStore for TestOrderStore {
         type OrderProperties = BasicOrderProperties;
 
-        fn create_order(&mut self, properties: Self::OrderProperties) -> Result<OrderId> {
+        fn create_order(
+            &mut self,
+            properties: Self::OrderProperties,
+        ) -> Result<Item<OrderId, Self::OrderProperties>> {
             let order_id = self.id_counter.to_string();
             self.id_counter += 1;
 
-            self.orders.insert(
-                order_id.clone(),
-                Item {
-                    id: order_id.clone(),
-                    props: properties,
-                },
-            );
+            let new_order = Item {
+                id: order_id.clone(),
+                props: properties,
+            };
 
-            Ok(order_id)
+            self.orders.insert(order_id, new_order.clone());
+
+            Ok(new_order)
         }
 
         fn get_order_by_id(

@@ -19,7 +19,7 @@ use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
     working_levels::WLId,
 };
-use crate::step::utils::stores::{StepStrategyAngles, StepStrategyTicksCandles};
+use crate::step::utils::stores::{StepBacktestingMainStore, StepStrategyAngles, StepStrategyTicksCandles};
 
 use super::angle_store::StepAngleStore;
 use super::tick_store::StepTickStore;
@@ -72,23 +72,31 @@ pub struct InMemoryStepBacktestingStore {
     strategy_ticks_candles: StepStrategyTicksCandles,
 }
 
+impl StepBacktestingMainStore for InMemoryStepBacktestingStore {}
+
 impl BasicTickStore for InMemoryStepBacktestingStore {
     type TickProperties = BasicTickProperties;
 
-    fn create_tick(&mut self, properties: Self::TickProperties) -> Result<TickId> {
+    fn create_tick(
+        &mut self,
+        properties: Self::TickProperties,
+    ) -> Result<Item<TickId, Self::TickProperties>> {
         let id = xid::new().to_string();
 
         let new_tick = Item {
             id: id.clone(),
             props: TickProperties {
-                main_props: properties,
+                main_props: properties.clone(),
                 ref_count: 0,
             },
         };
 
-        self.ticks.insert(id.clone(), new_tick);
+        self.ticks.insert(id.clone(), new_tick.clone());
 
-        Ok(id)
+        Ok(Item {
+            id,
+            props: properties,
+        })
     }
 
     fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Item<TickId, Self::TickProperties>>> {
@@ -158,20 +166,26 @@ impl StepTickStore for InMemoryStepBacktestingStore {
 impl BasicCandleStore for InMemoryStepBacktestingStore {
     type CandleProperties = StepBacktestingCandleProperties;
 
-    fn create_candle(&mut self, properties: Self::CandleProperties) -> Result<CandleId> {
+    fn create_candle(
+        &mut self,
+        properties: Self::CandleProperties,
+    ) -> Result<Item<CandleId, Self::CandleProperties>> {
         let id = xid::new().to_string();
 
         let new_candle = Item {
             id: id.clone(),
             props: CandleProperties {
-                main_props: properties,
+                main_props: properties.clone(),
                 ref_count: 0,
             },
         };
 
         self.candles.insert(id.clone(), new_candle);
 
-        Ok(id)
+        Ok(Item {
+            id,
+            props: properties,
+        })
     }
 
     fn get_candle_by_id(
@@ -255,20 +269,25 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
         &mut self,
         props: Self::AngleProperties,
         candle_id: CandleId,
-    ) -> Result<AngleId> {
-        match self.candles.get_mut(&candle_id) {
+    ) -> Result<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>
+    {
+        let candle = match self.candles.get_mut(&candle_id) {
             None => bail!("a candle with an id {} doesn't exist", candle_id),
             Some(candle) => {
                 candle.props.ref_count += 1;
+                Item {
+                    id: candle.id.clone(),
+                    props: candle.props.main_props.clone(),
+                }
             }
-        }
+        };
 
         let id = xid::new().to_string();
 
         let new_angle = Item {
             id: id.clone(),
             props: AngleProperties {
-                main_props: props,
+                main_props: props.clone(),
                 ref_count: 0,
                 candle_id,
             },
@@ -276,7 +295,13 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
 
         self.angles.insert(id.clone(), new_angle);
 
-        Ok(id)
+        Ok(Item {
+            id,
+            props: FullAngleProperties {
+                base: props,
+                candle,
+            },
+        })
     }
 
     fn get_angle_by_id(
@@ -569,7 +594,10 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
 impl BasicOrderStore for InMemoryStepBacktestingStore {
     type OrderProperties = StepOrderProperties;
 
-    fn create_order(&mut self, properties: Self::OrderProperties) -> Result<OrderId> {
+    fn create_order(
+        &mut self,
+        properties: Self::OrderProperties,
+    ) -> Result<Item<OrderId, Self::OrderProperties>> {
         let id = xid::new().to_string();
 
         let new_order = Item {
@@ -577,9 +605,9 @@ impl BasicOrderStore for InMemoryStepBacktestingStore {
             props: properties,
         };
 
-        self.orders.insert(id.clone(), new_order);
+        self.orders.insert(id.clone(), new_order.clone());
 
-        Ok(id)
+        Ok(new_order)
     }
 
     fn get_order_by_id(&self, id: &str) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
@@ -607,20 +635,23 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
     type CandleProperties = StepBacktestingCandleProperties;
     type OrderProperties = StepOrderProperties;
 
-    fn create_working_level(&mut self, properties: Self::WorkingLevelProperties) -> Result<WLId> {
+    fn create_working_level(
+        &mut self,
+        properties: Self::WorkingLevelProperties,
+    ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
         let id = xid::new().to_string();
 
-        self.working_levels.insert(
-            id.clone(),
-            Item {
-                id: id.clone(),
-                props: properties,
-            },
-        );
+        let new_working_level = Item {
+            id: id.clone(),
+            props: properties,
+        };
+
+        self.working_levels
+            .insert(id.clone(), new_working_level.clone());
 
         self.created_working_levels.insert(id.clone());
 
-        Ok(id)
+        Ok(new_working_level)
     }
 
     fn get_working_level_by_id(

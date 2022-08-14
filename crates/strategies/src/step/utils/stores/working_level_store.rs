@@ -9,7 +9,7 @@ pub trait StepWorkingLevelStore {
     type CandleProperties;
     type OrderProperties;
 
-    fn create_working_level(&mut self, properties: Self::WorkingLevelProperties) -> Result<WLId>;
+    fn create_working_level(&mut self, properties: Self::WorkingLevelProperties) -> Result<Item<WLId, Self::WorkingLevelProperties>>;
     fn get_working_level_by_id(
         &self,
         id: &str,
