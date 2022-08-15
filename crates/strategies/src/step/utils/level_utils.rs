@@ -1,9 +1,13 @@
 use crate::step::utils::entities::order::StepOrderProperties;
+use crate::step::utils::entities::working_levels::WLMaxCrossingValue;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
 use base::entities::order::{OrderStatus, OrderType};
 use base::entities::tick::TickPrice;
 use base::entities::Item;
+use base::entities::TARGET_LOGGER_ENV;
+use base::helpers::price_to_points;
+use rust_decimal_macros::dec;
 
 use super::entities::working_levels::{BasicWLProperties, WLId};
 
@@ -24,6 +28,17 @@ pub trait LevelUtils {
     ) -> Result<()>
     where
         O: Into<StepOrderProperties>;
+
+    /// Updates the activation max crossing distance for active levels.
+    /// It's required to delete invalid active levels that crossed particular distance
+    /// and returned to level without getting to the first order.
+    fn update_max_crossing_value_of_active_levels<T>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
+        current_tick_price: TickPrice,
+    ) -> Result<()>
+    where
+        T: Into<BasicWLProperties>;
 }
 
 #[derive(Default)]
@@ -91,12 +106,89 @@ impl LevelUtils for LevelUtilsImpl {
 
         Ok(())
     }
+
+    fn update_max_crossing_value_of_active_levels<T>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
+        current_tick_price: TickPrice,
+    ) -> Result<()>
+    where
+        T: Into<BasicWLProperties>,
+    {
+        for level in working_level_store
+            .get_active_working_levels()?
+            .into_iter()
+            .map(|level| Item {
+                id: level.id,
+                props: level.props.into(),
+            })
+        {
+            let current_crossing_value = match level.props.r#type {
+                OrderType::Buy => price_to_points(level.props.price - current_tick_price),
+                OrderType::Sell => price_to_points(current_tick_price - level.props.price),
+            };
+
+            log::debug!(
+                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                "current crossing value of level ({:?}) is {}",
+                level, current_crossing_value
+            );
+
+            if current_crossing_value > dec!(0) {
+                match working_level_store.get_max_crossing_value_of_working_level(&level.id)? {
+                    None => {
+                        working_level_store.update_max_crossing_value_of_working_level(
+                            &level.id,
+                            current_crossing_value,
+                        )?;
+
+                        log::debug!(
+                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                            "max crossing value of level ({:?}) is set to {}",
+                            level, current_crossing_value
+                        );
+                    }
+                    Some(last_crossing_value) => {
+                        log::debug!(
+                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                            "last max crossing value of level ({:?}) is {}",
+                            level, last_crossing_value
+                        );
+
+                        if current_crossing_value > last_crossing_value {
+                            working_level_store.update_max_crossing_value_of_working_level(
+                                &level.id,
+                                current_crossing_value,
+                            )?;
+
+                            log::debug!(
+                                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                                "max crossing value of level ({:?}) is updated to {}",
+                                level, current_crossing_value
+                            );
+                        } else {
+                            log::debug!(
+                                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                                "max crossing value of level ({:?}) is not updated",
+                                level
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+    use crate::step::utils::entities::working_levels::{BacktestingWLProperties, CorridorType};
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-    use base::entities::order::{BasicOrderProperties, OrderStatus};
+    use base::entities::candle::CandleId;
+    use base::entities::order::{BasicOrderProperties, OrderId, OrderStatus};
     use base::stores::order_store::BasicOrderStore;
     use chrono::Utc;
     use rust_decimal_macros::dec;
@@ -322,5 +414,239 @@ mod tests {
         assert!(removed_working_levels
             .iter()
             .any(|level| &level.id == working_level_ids.get(2).unwrap()));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__buy_level_first_crossing_value__should_set_new_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Buy,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.37000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        let expected_max_crossing_value = price_to_points(level_price - current_tick_price);
+
+        assert_eq!(
+            store
+                .get_max_crossing_value_of_working_level(&level.id)
+                .unwrap()
+                .unwrap(),
+            expected_max_crossing_value
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__sell_level_first_crossing_value__should_set_new_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Sell,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.39000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        let expected_max_crossing_value = price_to_points(current_tick_price - level_price);
+
+        assert_eq!(
+            store
+                .get_max_crossing_value_of_working_level(&level.id)
+                .unwrap()
+                .unwrap(),
+            expected_max_crossing_value
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__buy_level_crossing_value_is_negative__should_not_set_new_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Buy,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.39000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        assert!(store
+            .get_max_crossing_value_of_working_level(&level.id)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__sell_level_crossing_value_is_negative__should_not_set_new_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Sell,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.37000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        assert!(store
+            .get_max_crossing_value_of_working_level(&level.id)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__crossing_value_is_greater_than_previous__should_update_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Buy,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+        store
+            .update_max_crossing_value_of_working_level(&level.id, dec!(200))
+            .unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.37000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        assert_eq!(
+            store
+                .get_max_crossing_value_of_working_level(&level.id)
+                .unwrap()
+                .unwrap(),
+            price_to_points(level_price - current_tick_price)
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_max_crossing_value_of_level__crossing_value_is_less_than_previous__should_not_update_crossing_value(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let level_price = dec!(1.38000);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Buy,
+                    price: level_price,
+                    ..Default::default()
+                },
+                chart_index: 0,
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+        let previous_max_crossing_value = dec!(2000);
+
+        store
+            .update_max_crossing_value_of_working_level(&level.id, previous_max_crossing_value)
+            .unwrap();
+
+        let level_utils = LevelUtilsImpl::new();
+
+        let current_tick_price = dec!(1.37000);
+
+        level_utils
+            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+            .unwrap();
+
+        assert_eq!(
+            store
+                .get_max_crossing_value_of_working_level(&level.id)
+                .unwrap()
+                .unwrap(),
+            previous_max_crossing_value
+        );
     }
 }

@@ -1,3 +1,4 @@
+use rust_decimal_macros::dec;
 use std::collections::HashSet;
 
 use base::entities::candle::CandleId;
@@ -204,7 +205,7 @@ fn should_successfully_remove_working_level() {
         .is_ok());
 
     assert!(store
-        .update_max_crossing_value_of_working_level(&working_level_id, 10.0)
+        .update_max_crossing_value_of_working_level(&working_level_id, dec!(10))
         .is_ok());
 
     let candle_id = store.create_candle(Default::default()).unwrap().id;
@@ -395,7 +396,7 @@ fn should_return_error_when_inserting_nonexistent_entity() {
     assert!(store.update_current_candle(String::from("1")).is_err());
     assert!(store.update_previous_candle(String::from("1")).is_err());
     assert!(store
-        .update_max_crossing_value_of_working_level("1", 10.0)
+        .update_max_crossing_value_of_working_level("1", dec!(10))
         .is_err());
     assert!(store.move_take_profits_of_level("1").is_err());
     assert!(store

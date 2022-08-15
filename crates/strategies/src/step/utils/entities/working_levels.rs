@@ -36,7 +36,7 @@ impl Default for BasicWLProperties {
     }
 }
 
-pub type WLMaxCrossingValue = f32;
+pub type WLMaxCrossingValue = Decimal;
 
 pub type WLIndex = u32;
 

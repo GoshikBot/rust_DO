@@ -153,6 +153,10 @@ impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
             )?;
         }
 
+        utils
+            .level_utils
+            .update_max_crossing_value_of_active_levels(&mut stores.main, current_tick.props.bid)?;
+
         Ok(())
     }
 }

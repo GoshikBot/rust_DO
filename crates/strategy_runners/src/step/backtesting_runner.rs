@@ -339,8 +339,8 @@ mod tests {
     impl LevelUtils for TestLevelUtilsImpl {
         fn get_crossed_level<'a, W>(
             &self,
-            current_tick_price: TickPrice,
-            created_working_levels: &'a [Item<WLId, W>],
+            _current_tick_price: TickPrice,
+            _created_working_levels: &'a [Item<WLId, W>],
         ) -> Option<&'a Item<WLId, W>>
         where
             W: Into<BasicWLProperties> + Clone,
@@ -350,10 +350,21 @@ mod tests {
 
         fn remove_active_working_levels_with_closed_orders<O>(
             &self,
-            working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
+            _working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
         ) -> Result<()>
         where
             O: Into<StepOrderProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn update_max_crossing_value_of_active_levels<T>(
+            &self,
+            _working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
+            _current_tick_price: TickPrice,
+        ) -> Result<()>
+        where
+            T: Into<BasicWLProperties>,
         {
             unimplemented!()
         }
@@ -365,19 +376,19 @@ mod tests {
     impl LevelConditions for TestLevelConditionsImpl {
         fn level_exceeds_amount_of_candles_in_corridor(
             &self,
-            level_id: &str,
-            working_level_store: &impl StepWorkingLevelStore,
-            corridor_type: CorridorType,
-            min_amount_of_candles: MinAmountOfCandles,
+            _level_id: &str,
+            _working_level_store: &impl StepWorkingLevelStore,
+            _corridor_type: CorridorType,
+            _min_amount_of_candles: MinAmountOfCandles,
         ) -> Result<bool> {
             unimplemented!()
         }
 
         fn price_is_beyond_stop_loss(
             &self,
-            current_tick_price: TickPrice,
-            stop_loss_price: OrderPrice,
-            working_level_type: OrderType,
+            _current_tick_price: TickPrice,
+            _stop_loss_price: OrderPrice,
+            _working_level_type: OrderType,
         ) -> bool {
             unimplemented!()
         }
@@ -389,10 +400,10 @@ mod tests {
     impl OrderUtils for TestOrderUtilsImpl {
         fn get_new_chain_of_orders<W>(
             &self,
-            level: &Item<WLId, W>,
-            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-            current_volatility: CandleVolatility,
-            current_balance: Balance,
+            _level: &Item<WLId, W>,
+            _params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            _current_volatility: CandleVolatility,
+            _current_balance: Balance,
         ) -> Result<Vec<StepOrderProperties>>
         where
             W: Into<BasicWLProperties> + Clone,
@@ -402,12 +413,12 @@ mod tests {
 
         fn update_orders_backtesting<M, T, C, L>(
             &self,
-            current_tick: &BasicTickProperties,
-            current_candle: &StepBacktestingCandleProperties,
-            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-            stores: UpdateOrdersBacktestingStores<M>,
-            utils: UpdateOrdersBacktestingUtils<T, C, L>,
-            no_trading_mode: bool,
+            _current_tick: &BasicTickProperties,
+            _current_candle: &StepBacktestingCandleProperties,
+            _params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            _stores: UpdateOrdersBacktestingStores<M>,
+            _utils: UpdateOrdersBacktestingUtils<T, C, L>,
+            _no_trading_mode: bool,
         ) -> Result<()>
         where
             M: BasicOrderStore<OrderProperties = StepOrderProperties>
@@ -426,9 +437,9 @@ mod tests {
     impl ChartTracesModifier for TestChartTracesModifierImpl {
         fn add_entity_to_chart_traces(
             &self,
-            entity: ChartTraceEntity,
-            chart_traces: &mut StepBacktestingChartTraces,
-            current_candle: &StepBacktestingCandleProperties,
+            _entity: ChartTraceEntity,
+            _chart_traces: &mut StepBacktestingChartTraces,
+            _current_candle: &StepBacktestingCandleProperties,
         ) {
             unimplemented!()
         }
@@ -440,10 +451,10 @@ mod tests {
     impl TradingEngine for TestTradingEngineImpl {
         fn open_position<O>(
             &self,
-            order: &Item<OrderId, O>,
-            by: OpenPositionBy,
-            order_store: &mut impl BasicOrderStore,
-            trading_config: &mut BacktestingTradingEngineConfig,
+            _order: &Item<OrderId, O>,
+            _by: OpenPositionBy,
+            _order_store: &mut impl BasicOrderStore,
+            _trading_config: &mut BacktestingTradingEngineConfig,
         ) -> Result<()>
         where
             O: Into<BasicOrderProperties> + Clone,
@@ -453,10 +464,10 @@ mod tests {
 
         fn close_position<O>(
             &self,
-            order: &Item<OrderId, O>,
-            by: ClosePositionBy,
-            order_store: &mut impl BasicOrderStore<OrderProperties = O>,
-            trading_config: &mut BacktestingTradingEngineConfig,
+            _order: &Item<OrderId, O>,
+            _by: ClosePositionBy,
+            _order_store: &mut impl BasicOrderStore<OrderProperties = O>,
+            _trading_config: &mut BacktestingTradingEngineConfig,
         ) -> Result<()>
         where
             O: Into<BasicOrderProperties> + Clone,
