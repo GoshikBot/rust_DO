@@ -100,7 +100,7 @@ impl LevelUtils for LevelUtilsImpl {
                 .collect();
 
             if Self::working_level_has_closed_orders_in_chain(&level_chain_of_orders) {
-                working_level_store.move_working_level_to_removed(&level.id)?;
+                working_level_store.remove_working_level(&level.id)?;
             }
         }
 
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn remove_active_working_levels_with_closed_orders__two_active_working_levels_with_closed_orders_exist__should_move_these_two_levels_to_removed(
+    fn remove_active_working_levels_with_closed_orders__two_active_working_levels_with_closed_orders_exist__should_remove_these_two_levels(
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let mut working_level_ids = Vec::new();
@@ -405,15 +405,11 @@ mod tests {
             .remove_active_working_levels_with_closed_orders(&mut store)
             .unwrap();
 
-        let removed_working_levels = store.get_removed_working_levels().unwrap();
-
-        assert_eq!(removed_working_levels.len(), 2);
-        assert!(removed_working_levels
+        assert!(!store
+            .get_active_working_levels()
+            .unwrap()
             .iter()
-            .any(|level| &level.id == working_level_ids.get(0).unwrap()));
-        assert!(removed_working_levels
-            .iter()
-            .any(|level| &level.id == working_level_ids.get(2).unwrap()));
+            .any(|level| { level.id == working_level_ids[0] || level.id == working_level_ids[2] }));
     }
 
     #[test]

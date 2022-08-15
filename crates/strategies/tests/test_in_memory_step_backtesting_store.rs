@@ -149,52 +149,6 @@ fn should_return_error_on_moving_working_level_to_active_if_it_is_not_present_in
 }
 
 #[test]
-fn should_return_error_on_moving_working_level_to_removed_if_it_is_not_present_neither_in_created_nor_in_active(
-) {
-    let mut store: InMemoryStepBacktestingStore = Default::default();
-
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
-
-    assert!(store
-        .move_working_level_to_removed(&working_level_id)
-        .is_ok());
-    assert!(store
-        .move_working_level_to_removed(&working_level_id)
-        .is_err());
-}
-
-#[test]
-fn should_successfully_move_working_level_to_removed() {
-    let mut store: InMemoryStepBacktestingStore = Default::default();
-
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
-
-    for _ in 0..3 {
-        let order_id = store.create_order(Default::default()).unwrap().id;
-        store
-            .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
-            .unwrap();
-    }
-
-    assert!(store
-        .move_working_level_to_removed(&working_level_id)
-        .is_ok());
-
-    assert!(store
-        .get_removed_working_levels()
-        .unwrap()
-        .iter()
-        .any(|level| level.id == working_level_id));
-
-    for order in store
-        .get_working_level_chain_of_orders(&working_level_id)
-        .unwrap()
-    {
-        assert_eq!(order.props.base.status, OrderStatus::Closed);
-    }
-}
-
-#[test]
 fn should_successfully_remove_working_level() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
@@ -240,12 +194,6 @@ fn should_successfully_remove_working_level() {
 
     assert!(!store
         .get_active_working_levels()
-        .unwrap()
-        .iter()
-        .any(|level| level.id == working_level_id));
-
-    assert!(!store
-        .get_removed_working_levels()
         .unwrap()
         .iter()
         .any(|level| level.id == working_level_id));

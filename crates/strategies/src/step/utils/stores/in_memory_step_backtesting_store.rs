@@ -19,7 +19,9 @@ use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
     working_levels::WLId,
 };
-use crate::step::utils::stores::{StepBacktestingMainStore, StepStrategyAngles, StepStrategyTicksCandles};
+use crate::step::utils::stores::{
+    StepBacktestingMainStore, StepStrategyAngles, StepStrategyTicksCandles,
+};
 
 use super::angle_store::StepAngleStore;
 use super::tick_store::StepTickStore;
@@ -59,7 +61,6 @@ pub struct InMemoryStepBacktestingStore {
 
     created_working_levels: HashSet<WLId>,
     active_working_levels: HashSet<WLId>,
-    removed_working_levels: HashSet<WLId>,
 
     working_level_small_corridors: HashMap<WLId, HashSet<CandleId>>,
     working_level_big_corridors: HashMap<WLId, HashSet<CandleId>>,
@@ -672,23 +673,6 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
         Ok(())
     }
 
-    fn move_working_level_to_removed(&mut self, id: &str) -> Result<()> {
-        let existed_in_created = self.created_working_levels.remove(id);
-        let existed_in_active = self.active_working_levels.remove(id);
-
-        if !existed_in_created && !existed_in_active {
-            bail!("can't move a working level with an id {} to removed levels, because it wasn't found neither in created not in active levels", id);
-        }
-
-        for order in self.get_working_level_chain_of_orders(id)? {
-            self.orders.get_mut(&order.id).unwrap().props.base.status = OrderStatus::Closed;
-        }
-
-        self.removed_working_levels.insert(id.to_string());
-
-        Ok(())
-    }
-
     fn remove_working_level(&mut self, id: &str) -> Result<()> {
         if self.working_levels.remove(id).is_none() {
             bail!("a working level with an id {} doesn't exist", id);
@@ -709,7 +693,6 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
 
         self.created_working_levels.remove(id);
         self.active_working_levels.remove(id);
-        self.removed_working_levels.remove(id);
 
         Ok(())
     }
@@ -726,16 +709,6 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
 
     fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
         self.active_working_levels
-            .iter()
-            .map(|working_level_id| {
-                self.get_working_level_by_id(working_level_id)?
-                    .context(format!("no working level with an id {}", working_level_id))
-            })
-            .collect::<Result<_, _>>()
-    }
-
-    fn get_removed_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
-        self.removed_working_levels
             .iter()
             .map(|working_level_id| {
                 self.get_working_level_by_id(working_level_id)?

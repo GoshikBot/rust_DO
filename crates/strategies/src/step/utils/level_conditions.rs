@@ -109,10 +109,6 @@ mod tests {
             unimplemented!()
         }
 
-        fn move_working_level_to_removed(&mut self, _id: &str) -> Result<()> {
-            unimplemented!()
-        }
-
         fn remove_working_level(&mut self, _id: &str) -> Result<()> {
             unimplemented!()
         }
@@ -124,12 +120,6 @@ mod tests {
         }
 
         fn get_active_working_levels(
-            &self,
-        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
-            unimplemented!()
-        }
-
-        fn get_removed_working_levels(
             &self,
         ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
             unimplemented!()

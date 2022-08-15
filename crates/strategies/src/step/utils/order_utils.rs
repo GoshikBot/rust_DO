@@ -270,7 +270,7 @@ impl OrderUtils for OrderUtilsImpl {
                         if remove_working_level {
                             stores
                                 .main
-                                .move_working_level_to_removed(&order.props.working_level_id)?;
+                                .remove_working_level(&order.props.working_level_id)?;
                             stores.statistics.number_of_working_levels -= 1;
                         }
                     }
@@ -796,13 +796,9 @@ mod tests {
             unimplemented!()
         }
 
-        fn move_working_level_to_removed(&mut self, id: &str) -> Result<()> {
+        fn remove_working_level(&mut self, id: &str) -> Result<()> {
             self.removed_levels.insert(id.to_string());
             Ok(())
-        }
-
-        fn remove_working_level(&mut self, _id: &str) -> Result<()> {
-            unimplemented!()
         }
 
         fn get_created_working_levels(
@@ -812,12 +808,6 @@ mod tests {
         }
 
         fn get_active_working_levels(
-            &self,
-        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
-            unimplemented!()
-        }
-
-        fn get_removed_working_levels(
             &self,
         ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
             unimplemented!()

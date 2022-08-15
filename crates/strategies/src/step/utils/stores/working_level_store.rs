@@ -19,12 +19,10 @@ pub trait StepWorkingLevelStore {
     ) -> Result<Option<Item<WLId, Self::WorkingLevelProperties>>>;
 
     fn move_working_level_to_active(&mut self, id: &str) -> Result<()>;
-    fn move_working_level_to_removed(&mut self, id: &str) -> Result<()>;
     fn remove_working_level(&mut self, id: &str) -> Result<()>;
 
     fn get_created_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
     fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
-    fn get_removed_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
 
     fn add_candle_to_working_level_corridor(
         &mut self,
