@@ -14,6 +14,12 @@ impl From<StepOrderProperties> for BasicOrderProperties {
     }
 }
 
+impl AsRef<BasicOrderProperties> for StepOrderProperties {
+    fn as_ref(&self) -> &BasicOrderProperties {
+        &self.base
+    }
+}
+
 impl Default for StepOrderProperties {
     fn default() -> Self {
         Self {

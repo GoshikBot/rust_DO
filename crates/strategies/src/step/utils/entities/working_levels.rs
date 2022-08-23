@@ -7,11 +7,25 @@ use rust_decimal_macros::dec;
 pub type WLId = String;
 pub type WLPrice = Decimal;
 
+pub type LevelTime = NaiveDateTime;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum WLStatus {
+    Created,
+    Active,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BasicWLProperties {
     pub price: WLPrice,
     pub r#type: OrderType,
-    pub time: NaiveDateTime,
+    pub time: LevelTime,
+}
+
+impl AsRef<BasicWLProperties> for BasicWLProperties {
+    fn as_ref(&self) -> &BasicWLProperties {
+        self
+    }
 }
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -23,6 +37,12 @@ pub struct BacktestingWLProperties {
 impl From<BacktestingWLProperties> for BasicWLProperties {
     fn from(properties: BacktestingWLProperties) -> Self {
         properties.base
+    }
+}
+
+impl AsRef<BasicWLProperties> for BacktestingWLProperties {
+    fn as_ref(&self) -> &BasicWLProperties {
+        &self.base
     }
 }
 

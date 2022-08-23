@@ -13,7 +13,7 @@ use crate::step::utils::entities::angle::FullAngleProperties;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::entities::working_levels::{
-    BacktestingWLProperties, CorridorType, WLMaxCrossingValue,
+    BacktestingWLProperties, CorridorType, WLMaxCrossingValue, WLStatus,
 };
 use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
@@ -715,6 +715,16 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
                     .context(format!("no working level with an id {}", working_level_id))
             })
             .collect::<Result<_, _>>()
+    }
+
+    fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
+        if self.created_working_levels.contains(id) {
+            Ok(Some(WLStatus::Created))
+        } else if self.active_working_levels.contains(id) {
+            Ok(Some(WLStatus::Active))
+        } else {
+            Ok(None)
+        }
     }
 
     fn add_candle_to_working_level_corridor(

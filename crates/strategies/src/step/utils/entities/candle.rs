@@ -12,3 +12,9 @@ impl From<StepBacktestingCandleProperties> for BasicCandleProperties {
         properties.base
     }
 }
+
+impl AsRef<BasicCandleProperties> for StepBacktestingCandleProperties {
+    fn as_ref(&self) -> &BasicCandleProperties {
+        &self.base
+    }
+}

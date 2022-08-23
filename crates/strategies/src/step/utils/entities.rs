@@ -1,3 +1,5 @@
+use crate::step::utils::stores::StepBacktestingStatistics;
+use base::notifier::{Message, NotificationQueue};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -40,3 +42,19 @@ impl FromStr for Mode {
 }
 
 pub const MODE_ENV: &str = "MODE";
+
+pub enum StatisticsNotifier<'a, N>
+where
+    N: NotificationQueue,
+{
+    Backtesting(&'a mut StepBacktestingStatistics),
+    Realtime(&'a N),
+}
+
+pub struct FakeBacktestingNotificationQueue;
+
+impl NotificationQueue for FakeBacktestingNotificationQueue {
+    fn send_message(&self, _message: Message) -> anyhow::Result<()> {
+        unreachable!()
+    }
+}

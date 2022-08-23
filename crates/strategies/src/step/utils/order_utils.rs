@@ -40,7 +40,7 @@ pub trait OrderUtils {
         current_balance: Balance,
     ) -> Result<Vec<StepOrderProperties>>
     where
-        W: Into<BasicWLProperties> + Clone;
+        W: AsRef<BasicWLProperties>;
 
     /// Places and closed orders.
     fn update_orders_backtesting<M, T, C, L>(
@@ -125,13 +125,8 @@ impl OrderUtils for OrderUtilsImpl {
         current_balance: Balance,
     ) -> Result<Vec<StepOrderProperties>>
     where
-        W: Into<BasicWLProperties> + Clone,
+        W: AsRef<BasicWLProperties>,
     {
-        let level: Item<WLId, BasicWLProperties> = Item {
-            id: level.id.clone(),
-            props: level.props.clone().into(),
-        };
-
         let distance_from_level_to_first_order = points_to_price(params.get_ratio_param_value(
             StepRatioParam::DistanceFromLevelToFirstOrder,
             current_volatility,
@@ -149,11 +144,11 @@ impl OrderUtils for OrderUtilsImpl {
         let volume_per_order =
             Self::get_volume_per_order(params, distance_between_orders, current_balance)?;
 
-        let (mut price_for_current_order, stop_loss) = match level.props.r#type {
+        let (mut price_for_current_order, stop_loss) = match level.props.as_ref().r#type {
             OrderType::Buy => {
                 let price_for_current_order =
-                    level.props.price - distance_from_level_to_first_order;
-                let stop_loss = level.props.price - distance_from_level_to_stop_loss;
+                    level.props.as_ref().price - distance_from_level_to_first_order;
+                let stop_loss = level.props.as_ref().price - distance_from_level_to_stop_loss;
                 (
                     price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
                     stop_loss.round_dp(PRICE_DECIMAL_PLACES),
@@ -161,8 +156,8 @@ impl OrderUtils for OrderUtilsImpl {
             }
             OrderType::Sell => {
                 let price_for_current_order =
-                    level.props.price + distance_from_level_to_first_order;
-                let stop_loss = level.props.price + distance_from_level_to_stop_loss;
+                    level.props.as_ref().price + distance_from_level_to_first_order;
+                let stop_loss = level.props.as_ref().price + distance_from_level_to_stop_loss;
                 (
                     price_for_current_order.round_dp(PRICE_DECIMAL_PLACES),
                     stop_loss.round_dp(PRICE_DECIMAL_PLACES),
@@ -170,7 +165,7 @@ impl OrderUtils for OrderUtilsImpl {
             }
         };
 
-        let take_profit = level.props.price.round_dp(PRICE_DECIMAL_PLACES);
+        let take_profit = level.props.as_ref().price.round_dp(PRICE_DECIMAL_PLACES);
 
         let mut chain_of_orders = Vec::new();
 
@@ -184,7 +179,7 @@ impl OrderUtils for OrderUtilsImpl {
         for _ in 0..amount_of_orders {
             chain_of_orders.push(StepOrderProperties {
                 base: BasicOrderProperties {
-                    r#type: level.props.r#type,
+                    r#type: level.props.as_ref().r#type,
                     volume: volume_per_order,
                     status: Default::default(),
                     prices: BasicOrderPrices {
@@ -196,7 +191,7 @@ impl OrderUtils for OrderUtilsImpl {
                 working_level_id: level.id.clone(),
             });
 
-            match level.props.r#type {
+            match level.props.as_ref().r#type {
                 OrderType::Buy => price_for_current_order -= distance_between_orders,
                 OrderType::Sell => price_for_current_order += distance_between_orders,
             }
@@ -369,14 +364,17 @@ where
 #[cfg(test)]
 mod tests {
     use crate::step::utils::backtesting_charts::StepBacktestingChartTraces;
-    use crate::step::utils::entities::working_levels::WLMaxCrossingValue;
+    use crate::step::utils::entities::working_levels::{
+        LevelTime, WLMaxCrossingValue, WLPrice, WLStatus,
+    };
     use crate::step::utils::level_conditions::MinAmountOfCandles;
     use backtesting::BacktestingTradingEngineConfig;
     use base::entities::candle::CandleId;
     use base::entities::order::{OrderId, OrderPrice};
-    use base::entities::tick::TickPrice;
+    use base::entities::tick::{TickPrice, TickTime};
+    use base::helpers::{Holiday, NumberOfDaysToExclude};
     use base::params::ParamValue;
-    use chrono::Utc;
+    use chrono::{NaiveDateTime, Utc};
     use rust_decimal_macros::dec;
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
@@ -623,6 +621,46 @@ mod tests {
             *self.price_is_beyond_stop_loss_number_of_calls.borrow_mut() += 1;
             stop_loss_price != dec!(1.88888)
         }
+
+        fn level_expired_by_distance(
+            &self,
+            _level_price: WLPrice,
+            _current_tick_price: TickPrice,
+            _distance_from_level_for_its_deletion: ParamValue,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_expired_by_time(
+            &self,
+            level_time: LevelTime,
+            current_tick_time: TickTime,
+            level_expiration: ParamValue,
+            exclude_weekend_and_holidays: &impl Fn(
+                NaiveDateTime,
+                NaiveDateTime,
+                &[Holiday],
+            ) -> NumberOfDaysToExclude,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &self,
+            level: &impl AsRef<BasicWLProperties>,
+            max_crossing_value: Option<WLMaxCrossingValue>,
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+            current_tick_price: TickPrice,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
+        where
+            T: AsRef<BasicOrderProperties>,
+        {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]
@@ -780,7 +818,7 @@ mod tests {
 
         fn create_working_level(
             &mut self,
-            properties: Self::WorkingLevelProperties,
+            _properties: Self::WorkingLevelProperties,
         ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
             unimplemented!()
         }
@@ -810,6 +848,10 @@ mod tests {
         fn get_active_working_levels(
             &self,
         ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
             unimplemented!()
         }
 
@@ -1243,10 +1285,17 @@ mod tests {
     #[allow(non_snake_case)]
     fn update_orders_backtesting__debug_and_allow_trading_mode__should_successfully_place_and_close_particular_orders(
     ) {
-        // 2, 7 — 1, 2, 3
-        // 3, 8 — 0
-        // 4, 9 — 1
-        // 5, 10 — 1, 2
+        // Notation
+        // o — crossed open price
+        // s — exceed amount of candles in small corridor
+        // b — exceed amount of candles in big corridor
+        // p — price is beyond stop loss
+
+        // Working level indexes
+        // 2(buy), 7(sell)  — o && !s && !b && !p
+        // 3(buy), 8(sell)  — !o
+        // 4(buy), 9(sell)  — o && s
+        // 5(buy), 10(sell) — o && !s && b
 
         let current_tick = BasicTickProperties {
             bid: dec!(1.30000),
@@ -1371,6 +1420,18 @@ mod tests {
     #[allow(non_snake_case)]
     fn update_orders_backtesting__optimization_and_no_trading_mode__should_not_place_orders_and_add_entities_to_chart_traces(
     ) {
+        // Notation
+        // o — crossed open price
+        // s — exceed amount of candles in small corridor
+        // b — exceed amount of candles in big corridor
+        // p — price is beyond stop loss
+
+        // Working level indexes
+        // 2(buy), 7(sell)  — o && !s && !b && !p
+        // 3(buy), 8(sell)  — !o
+        // 4(buy), 9(sell)  — o && s
+        // 5(buy), 10(sell) — o && !s && b
+
         let current_tick = BasicTickProperties {
             bid: dec!(1.30000),
             ..Default::default()

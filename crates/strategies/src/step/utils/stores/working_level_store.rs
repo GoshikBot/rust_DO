@@ -2,7 +2,9 @@ use anyhow::Result;
 use base::entities::order::OrderId;
 use base::entities::{candle::CandleId, Item};
 
-use crate::step::utils::entities::working_levels::{CorridorType, WLId, WLMaxCrossingValue};
+use crate::step::utils::entities::working_levels::{
+    CorridorType, WLId, WLMaxCrossingValue, WLStatus,
+};
 
 pub trait StepWorkingLevelStore {
     type WorkingLevelProperties;
@@ -23,6 +25,7 @@ pub trait StepWorkingLevelStore {
 
     fn get_created_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
     fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
+    fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>>;
 
     fn add_candle_to_working_level_corridor(
         &mut self,

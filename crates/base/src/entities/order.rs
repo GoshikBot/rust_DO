@@ -51,6 +51,12 @@ pub struct BasicOrderProperties {
     pub prices: BasicOrderPrices,
 }
 
+impl AsRef<BasicOrderProperties> for BasicOrderProperties {
+    fn as_ref(&self) -> &BasicOrderProperties {
+        self
+    }
+}
+
 impl Default for BasicOrderProperties {
     fn default() -> Self {
         Self {

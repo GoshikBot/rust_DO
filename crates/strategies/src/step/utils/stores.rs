@@ -23,7 +23,7 @@ pub mod working_level_store;
 
 pub struct StepBacktestingStores<T>
 where
-    T: StepBacktestingMainStore
+    T: StepBacktestingMainStore,
 {
     pub main: T,
     pub config: StepBacktestingConfig,
@@ -41,7 +41,8 @@ pub trait StepBacktestingMainStore:
         CandleProperties = StepBacktestingCandleProperties,
         OrderProperties = StepOrderProperties,
     > + BasicOrderStore<OrderProperties = StepOrderProperties>
-{}
+{
+}
 
 pub type SettingFile = &'static str;
 pub type Symbol = &'static str;

@@ -1,9 +1,16 @@
-use crate::step::utils::entities::working_levels::CorridorType;
+use crate::step::utils::entities::working_levels::{
+    BasicWLProperties, CorridorType, LevelTime, WLMaxCrossingValue, WLPrice,
+};
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
-use base::entities::order::{OrderPrice, OrderType};
-use base::entities::tick::TickPrice;
+use base::entities::candle::CandleVolatility;
+use base::entities::order::{BasicOrderProperties, OrderPrice, OrderStatus, OrderType};
+use base::entities::tick::{TickPrice, TickTime};
+use base::entities::{DEFAULT_HOLIDAYS, TARGET_LOGGER_ENV};
+use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::params::ParamValue;
+use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 
 pub type MinAmountOfCandles = ParamValue;
 
@@ -24,6 +31,37 @@ pub trait LevelConditions {
         stop_loss_price: OrderPrice,
         working_level_type: OrderType,
     ) -> bool;
+
+    fn level_expired_by_distance(
+        &self,
+        level_price: WLPrice,
+        current_tick_price: TickPrice,
+        distance_from_level_for_its_deletion: ParamValue,
+    ) -> bool;
+
+    fn level_expired_by_time(
+        &self,
+        level_time: LevelTime,
+        current_tick_time: TickTime,
+        level_expiration: ParamValue,
+        exclude_weekend_and_holidays: &impl Fn(
+            NaiveDateTime,
+            NaiveDateTime,
+            &[Holiday],
+        ) -> NumberOfDaysToExclude,
+    ) -> bool;
+
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        &self,
+        level: &impl AsRef<BasicWLProperties>,
+        max_crossing_value: Option<WLMaxCrossingValue>,
+        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        current_tick_price: TickPrice,
+    ) -> bool;
+
+    fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
+    where
+        T: AsRef<BasicOrderProperties>;
 }
 
 #[derive(Default)]
@@ -58,15 +96,92 @@ impl LevelConditions for LevelConditionsImpl {
         (working_level_type == OrderType::Buy && current_tick_price <= stop_loss_price)
             || working_level_type == OrderType::Sell && current_tick_price >= stop_loss_price
     }
+
+    fn level_expired_by_distance(
+        &self,
+        level_price: WLPrice,
+        current_tick_price: TickPrice,
+        distance_from_level_for_its_deletion: ParamValue,
+    ) -> bool {
+        log::debug!(
+            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+            "level_expired_by_distance: level price is {}, current tick price is {}, \
+            distance from level for its deletion is {}",
+            level_price, current_tick_price, distance_from_level_for_its_deletion
+        );
+
+        price_to_points((level_price - current_tick_price).abs())
+            >= distance_from_level_for_its_deletion
+    }
+
+    fn level_expired_by_time(
+        &self,
+        level_time: LevelTime,
+        current_tick_time: TickTime,
+        level_expiration: ParamValue,
+        exclude_weekend_and_holidays: &impl Fn(
+            NaiveDateTime,
+            NaiveDateTime,
+            &[Holiday],
+        ) -> NumberOfDaysToExclude,
+    ) -> bool {
+        let diff = (current_tick_time - level_time).num_days()
+            - exclude_weekend_and_holidays(level_time, current_tick_time, &DEFAULT_HOLIDAYS) as i64;
+
+        log::debug!(
+            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+            "level_expired_by_time: current tick time is {}, level time is {},\
+            level expiration is {}, diff is {}",
+            current_tick_time, level_time, level_expiration, diff
+        );
+
+        Decimal::from(diff) >= level_expiration
+    }
+
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        &self,
+        level: &impl AsRef<BasicWLProperties>,
+        max_crossing_value: Option<WLMaxCrossingValue>,
+        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        current_tick_price: TickPrice,
+    ) -> bool {
+        let level = level.as_ref();
+
+        if (level.r#type == OrderType::Buy && current_tick_price >= level.price)
+            || (level.r#type == OrderType::Sell && current_tick_price <= level.price)
+        {
+            if let Some(max_crossing_value) = max_crossing_value {
+                if max_crossing_value >= min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
+    where
+        T: AsRef<BasicOrderProperties>,
+    {
+        for order in level_orders {
+            if order.as_ref().status != OrderStatus::Pending {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::step::utils::entities::working_levels::{WLId, WLMaxCrossingValue};
+    use crate::step::utils::entities::working_levels::{WLId, WLMaxCrossingValue, WLStatus};
     use base::entities::candle::{BasicCandleProperties, CandleId};
     use base::entities::order::OrderId;
     use base::entities::Item;
+    use chrono::NaiveDate;
     use rust_decimal_macros::dec;
 
     struct TestWorkingLevelStore {
@@ -122,6 +237,10 @@ mod tests {
         fn get_active_working_levels(
             &self,
         ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+            unimplemented!()
+        }
+
+        fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
             unimplemented!()
         }
 
@@ -385,6 +504,279 @@ mod tests {
             dec!(1.38500),
             dec!(1.39000),
             OrderType::Sell
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_expired_by_distance__current_tick_price_is_in_acceptable_range_from_level_price__should_return_false(
+    ) {
+        let level_conditions = LevelConditionsImpl::default();
+
+        assert!(!level_conditions.level_expired_by_distance(
+            dec!(1.38000),
+            dec!(1.39000),
+            dec!(2_000)
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_expired_by_distance__current_tick_price_is_beyond_acceptable_range_from_level_price__should_return_true(
+    ) {
+        let level_conditions = LevelConditionsImpl::default();
+
+        assert!(level_conditions.level_expired_by_distance(
+            dec!(1.38000),
+            dec!(1.40001),
+            dec!(2_000)
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_expired_by_time__current_diff_is_greater_than_level_expiration__should_return_true() {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level_time = NaiveDate::from_ymd(2022, 8, 11).and_hms(0, 0, 0);
+        let current_tick_time = NaiveDate::from_ymd(2022, 8, 19).and_hms(0, 0, 0);
+        let level_expiration = dec!(5);
+
+        let exclude_weekend_and_holidays =
+            |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 2;
+
+        assert!(level_conditions.level_expired_by_time(
+            level_time,
+            current_tick_time,
+            level_expiration,
+            &exclude_weekend_and_holidays
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_expired_by_time__current_diff_is_less_than_level_expiration__should_return_false() {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level_time = NaiveDate::from_ymd(2022, 8, 11).and_hms(0, 0, 0);
+        let current_tick_time = NaiveDate::from_ymd(2022, 8, 19).and_hms(0, 0, 0);
+        let level_expiration = dec!(7);
+
+        let exclude_weekend_and_holidays =
+            |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 2;
+
+        assert!(!level_conditions.level_expired_by_time(
+            level_time,
+            current_tick_time,
+            level_expiration,
+            &exclude_weekend_and_holidays
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_has_no_opened_orders__all_orders_are_pending__should_return_true() {
+        let orders = vec![
+            BasicOrderProperties::default(),
+            BasicOrderProperties::default(),
+            BasicOrderProperties::default(),
+            BasicOrderProperties::default(),
+        ];
+
+        let level_conditions = LevelConditionsImpl::new();
+
+        assert!(level_conditions.level_has_no_active_orders(&orders));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_has_no_opened_orders__some_orders_are_opened__should_return_false() {
+        let orders = vec![
+            BasicOrderProperties::default(),
+            BasicOrderProperties::default(),
+            BasicOrderProperties {
+                status: OrderStatus::Opened,
+                ..Default::default()
+            },
+            BasicOrderProperties::default(),
+        ];
+
+        let level_conditions = LevelConditionsImpl::new();
+
+        assert!(!level_conditions.level_has_no_active_orders(&orders));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn level_has_no_opened_orders__some_orders_are_closed__should_return_false() {
+        let orders = vec![
+            BasicOrderProperties::default(),
+            BasicOrderProperties::default(),
+            BasicOrderProperties {
+                status: OrderStatus::Closed,
+                ..Default::default()
+            },
+            BasicOrderProperties::default(),
+        ];
+
+        let level_conditions = LevelConditionsImpl::new();
+
+        assert!(!level_conditions.level_has_no_active_orders(&orders));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_buy_level_max_crossing_value_is_beyond_limit__should_return_true(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Buy,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(200);
+        let current_tick_price = dec!(1.38050);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__have_not_returned_to_buy_level_max_crossing_value_is_beyond_limit__should_return_false(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Buy,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(200);
+        let current_tick_price = dec!(1.37999);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(!level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_buy_level_max_crossing_value_is_not_beyond_limit__should_return_false(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Buy,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(99);
+        let current_tick_price = dec!(1.38050);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(!level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_sell_level_max_crossing_value_is_beyond_limit__should_return_true(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Sell,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(200);
+        let current_tick_price = dec!(1.37999);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_sell_level_max_crossing_value_is_not_beyond_limit__should_return_false(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Sell,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(50);
+        let current_tick_price = dec!(1.37999);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(!level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
+        ));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__have_not_returned_to_sell_level_max_crossing_value_is_beyond_limit__should_return_false(
+    ) {
+        let level_conditions = LevelConditionsImpl::new();
+
+        let level = BasicWLProperties {
+            price: dec!(1.38000),
+            r#type: OrderType::Sell,
+            ..Default::default()
+        };
+
+        let max_crossing_value = dec!(200);
+        let current_tick_price = dec!(1.38001);
+        let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
+            dec!(100);
+
+        assert!(!level_conditions
+            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &level,
+            Some(max_crossing_value),
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
+            current_tick_price,
         ));
     }
 }

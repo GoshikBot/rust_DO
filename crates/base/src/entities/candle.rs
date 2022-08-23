@@ -59,6 +59,12 @@ pub struct BasicCandleProperties {
     pub prices: CandlePrices,
 }
 
+impl AsRef<BasicCandleProperties> for BasicCandleProperties {
+    fn as_ref(&self) -> &BasicCandleProperties {
+        self
+    }
+}
+
 impl Default for BasicCandleProperties {
     fn default() -> Self {
         Self {

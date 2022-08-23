@@ -2,6 +2,7 @@ pub mod candle;
 pub mod order;
 pub mod tick;
 
+use crate::helpers::Holiday;
 use anyhow::Result;
 pub use candle::{CandlePrices, CandleType};
 use std::fmt::{Display, Formatter};
@@ -86,3 +87,6 @@ pub struct Item<I, P> {
 pub const TARGET_LOGGER_ENV: &str = "TARGET_LOGGER";
 pub const CANDLE_TIMEFRAME_ENV: &str = "CANDLE_TIMEFRAME";
 pub const TICK_TIMEFRAME_ENV: &str = "TICK_TIMEFRAME";
+
+pub const DEFAULT_HOLIDAYS: [Holiday; 2] =
+    [Holiday { day: 25, month: 12 }, Holiday { day: 1, month: 1 }];

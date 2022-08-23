@@ -213,8 +213,10 @@ mod tests {
     use backtesting::{BacktestingTradingEngineConfig, Balance, ClosePositionBy, OpenPositionBy};
     use base::entities::candle::CandleVolatility;
     use base::entities::order::{BasicOrderProperties, OrderId, OrderPrice, OrderType};
-    use base::entities::tick::TickPrice;
+    use base::entities::tick::{TickPrice, TickTime};
     use base::entities::{Item, Timeframe};
+    use base::helpers::{Holiday, NumberOfDaysToExclude};
+    use base::notifier::NotificationQueue;
     use base::params::ParamValue;
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
@@ -223,10 +225,12 @@ mod tests {
         ChartTraceEntity, ChartTracesModifier, StepBacktestingChartTraces,
     };
     use strategies::step::utils::entities::working_levels::{
-        BasicWLProperties, CorridorType, WLId,
+        BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
     };
+    use strategies::step::utils::entities::StatisticsNotifier;
     use strategies::step::utils::helpers::HelpersImpl;
     use strategies::step::utils::level_conditions::MinAmountOfCandles;
+    use strategies::step::utils::level_utils::RemoveInvalidWorkingLevelsUtils;
     use strategies::step::utils::order_utils::{
         OrderUtilsImpl, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
     };
@@ -339,13 +343,13 @@ mod tests {
     impl LevelUtils for TestLevelUtilsImpl {
         fn get_crossed_level<'a, W>(
             &self,
-            _current_tick_price: TickPrice,
-            _created_working_levels: &'a [Item<WLId, W>],
+            current_tick_price: TickPrice,
+            created_working_levels: &'a [Item<WLId, W>],
         ) -> Option<&'a Item<WLId, W>>
         where
-            W: Into<BasicWLProperties> + Clone,
+            W: AsRef<BasicWLProperties>,
         {
-            unimplemented!()
+            todo!()
         }
 
         fn remove_active_working_levels_with_closed_orders<O>(
@@ -365,6 +369,25 @@ mod tests {
         ) -> Result<()>
         where
             T: Into<BasicWLProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn remove_invalid_working_levels<W, C, E, T, N, O>(
+            &self,
+            current_tick: &BasicTickProperties,
+            current_volatility: CandleVolatility,
+            utils: RemoveInvalidWorkingLevelsUtils<W, C, E, T, O>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            entity: StatisticsNotifier<N>,
+        ) -> Result<()>
+        where
+            T: Into<BasicWLProperties>,
+            O: AsRef<BasicOrderProperties>,
+            W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
+            C: LevelConditions,
+            E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
+            N: NotificationQueue,
         {
             unimplemented!()
         }
@@ -392,6 +415,46 @@ mod tests {
         ) -> bool {
             unimplemented!()
         }
+
+        fn level_expired_by_distance(
+            &self,
+            level_price: WLPrice,
+            current_tick_price: TickPrice,
+            distance_from_level_for_its_deletion: ParamValue,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_expired_by_time(
+            &self,
+            level_time: LevelTime,
+            current_tick_time: TickTime,
+            level_expiration: ParamValue,
+            exclude_weekend_and_holidays: &impl Fn(
+                NaiveDateTime,
+                NaiveDateTime,
+                &[Holiday],
+            ) -> NumberOfDaysToExclude,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+            &self,
+            level: &impl AsRef<BasicWLProperties>,
+            max_crossing_value: Option<WLMaxCrossingValue>,
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+            current_tick_price: TickPrice,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
+        where
+            T: AsRef<BasicOrderProperties>,
+        {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]
@@ -400,13 +463,13 @@ mod tests {
     impl OrderUtils for TestOrderUtilsImpl {
         fn get_new_chain_of_orders<W>(
             &self,
-            _level: &Item<WLId, W>,
-            _params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-            _current_volatility: CandleVolatility,
-            _current_balance: Balance,
+            level: &Item<WLId, W>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            current_volatility: CandleVolatility,
+            current_balance: Balance,
         ) -> Result<Vec<StepOrderProperties>>
         where
-            W: Into<BasicWLProperties> + Clone,
+            W: AsRef<BasicWLProperties>,
         {
             unimplemented!()
         }

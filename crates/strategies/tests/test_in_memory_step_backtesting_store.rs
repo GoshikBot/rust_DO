@@ -9,7 +9,7 @@ use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
 use strategies::step::utils::entities::angle::{AngleId, BasicAngleProperties};
-use strategies::step::utils::entities::working_levels::CorridorType;
+use strategies::step::utils::entities::working_levels::{CorridorType, WLStatus};
 use strategies::step::utils::stores::angle_store::StepAngleStore;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::tick_store::StepTickStore;
@@ -317,6 +317,37 @@ fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is
     assert!(store
         .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
         .is_err());
+}
+
+#[test]
+fn should_successfully_identify_level_status() {
+    let mut store = InMemoryStepBacktestingStore::default();
+
+    let created_working_level = store.create_working_level(Default::default()).unwrap();
+
+    let active_working_level = store.create_working_level(Default::default()).unwrap();
+    store
+        .move_working_level_to_active(&active_working_level.id)
+        .unwrap();
+
+    assert_eq!(
+        store
+            .get_working_level_status(&created_working_level.id)
+            .unwrap()
+            .unwrap(),
+        WLStatus::Created
+    );
+    assert_eq!(
+        store
+            .get_working_level_status(&active_working_level.id)
+            .unwrap()
+            .unwrap(),
+        WLStatus::Active
+    );
+    assert!(store
+        .get_working_level_status("nonexistent level")
+        .unwrap()
+        .is_none());
 }
 
 #[test]
