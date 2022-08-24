@@ -279,11 +279,15 @@ mod tests {
             unimplemented!()
         }
 
-        fn move_take_profits_of_level(&mut self, _working_level_id: &str) -> Result<()> {
+        fn move_take_profits_of_level(
+            &mut self,
+            working_level_id: &str,
+            distance_to_move_take_profits: ParamValue,
+        ) -> Result<()> {
             unimplemented!()
         }
 
-        fn are_take_profits_of_level_moved(&self, _working_level_id: &str) -> Result<bool> {
+        fn take_profits_of_level_are_moved(&self, _working_level_id: &str) -> Result<bool> {
             unimplemented!()
         }
 

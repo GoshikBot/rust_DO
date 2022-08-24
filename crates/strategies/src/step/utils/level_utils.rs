@@ -12,7 +12,7 @@ use base::entities::TARGET_LOGGER_ENV;
 use base::entities::{BasicTickProperties, Item};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::notifier::NotificationQueue;
-use base::params::StrategyParams;
+use base::params::{ParamValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
 
@@ -62,6 +62,18 @@ pub trait LevelUtils {
         C: LevelConditions,
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue;
+
+    /// Moves take profits of the existing chains of orders when the current tick price
+    /// deviates from the active working level on the defined amount of points.
+    fn move_take_profits<W>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+        distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
+        distance_to_move_take_profits: ParamValue,
+        current_tick_price: TickPrice,
+    ) -> Result<()>
+    where
+        W: Into<BasicWLProperties>;
 }
 
 pub struct RemoveInvalidWorkingLevelsUtils<'a, W, C, E, T, O>
@@ -394,11 +406,49 @@ impl LevelUtils for LevelUtilsImpl {
 
         Ok(())
     }
+
+    fn move_take_profits<W>(
+        &self,
+        working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+        distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
+        distance_to_move_take_profits: ParamValue,
+        current_tick_price: TickPrice,
+    ) -> Result<()>
+    where
+        W: Into<BasicWLProperties>,
+    {
+        for level in working_level_store
+            .get_active_working_levels()?
+            .into_iter()
+            .map(|level| Item {
+                id: level.id,
+                props: level.props.into(),
+            })
+        {
+            let deviation_distance = match level.props.r#type {
+                OrderType::Buy => price_to_points(level.props.price - current_tick_price),
+                OrderType::Sell => price_to_points(current_tick_price - level.props.price),
+            };
+
+            if deviation_distance >= distance_from_level_for_signaling_of_moving_take_profits {
+                log::debug!(
+                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
+                    "move take profits of level ({:?}), because the deviation distance ({}) \
+                    >= distance from level for signaling of moving take profits ({})",
+                    level, deviation_distance, distance_from_level_for_signaling_of_moving_take_profits
+                );
+
+                working_level_store
+                    .move_take_profits_of_level(&level.id, distance_to_move_take_profits)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
     use crate::step::utils::entities::working_levels::{
         BacktestingWLProperties, CorridorType, LevelTime, WLPrice,
     };
@@ -406,9 +456,9 @@ mod tests {
     use crate::step::utils::level_conditions::MinAmountOfCandles;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use crate::step::utils::stores::StepBacktestingStatistics;
-    use base::entities::candle::CandleId;
-    use base::entities::order::{BasicOrderProperties, OrderId, OrderPrice, OrderStatus};
+    use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderPrice, OrderStatus};
     use base::entities::tick::TickTime;
+    use base::helpers::points_to_price;
     use base::notifier::Message;
     use base::params::ParamValue;
     use base::stores::order_store::BasicOrderStore;
@@ -1135,5 +1185,87 @@ mod tests {
         assert_eq!(store.get_created_working_levels().unwrap().len(), 1);
         assert_eq!(store.get_active_working_levels().unwrap().len(), 2);
         assert_eq!(*notification_queue.number_of_calls.borrow(), 5);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn move_take_profits__should_successfully_move_take_profits_of_active_levels_only() {
+        let level_utils = LevelUtilsImpl::new();
+
+        let mut store = InMemoryStepBacktestingStore::new();
+
+        let take_profit = dec!(1.36800);
+        let buy_wl_price = dec!(1.37000);
+        let current_tick_price = dec!(1.36799);
+        let sell_wl_price = dec!(1.36598);
+
+        for i in 0..8 {
+            let level = store
+                .create_working_level(BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: if i <= 2 { buy_wl_price } else { sell_wl_price },
+                        r#type: if i <= 2 {
+                            OrderType::Buy
+                        } else {
+                            OrderType::Sell
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+
+            for _ in 0..3 {
+                store
+                    .create_order(StepOrderProperties {
+                        base: BasicOrderProperties {
+                            prices: BasicOrderPrices {
+                                take_profit,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        working_level_id: level.id.clone(),
+                    })
+                    .unwrap();
+            }
+
+            if i <= 5 {
+                store.move_working_level_to_active(&level.id).unwrap();
+            }
+        }
+
+        let distance_from_level_for_signaling_of_moving_take_profits = dec!(200);
+        let distance_to_move_take_profits = dec!(30);
+
+        level_utils
+            .move_take_profits(
+                &mut store,
+                distance_from_level_for_signaling_of_moving_take_profits,
+                distance_to_move_take_profits,
+                current_tick_price,
+            )
+            .unwrap();
+
+        for level in store.get_active_working_levels().unwrap() {
+            for order in store.get_working_level_chain_of_orders(&level.id).unwrap() {
+                match level.props.base.r#type {
+                    OrderType::Buy => assert_eq!(
+                        order.props.base.prices.take_profit,
+                        take_profit - points_to_price(distance_to_move_take_profits)
+                    ),
+                    OrderType::Sell => assert_eq!(
+                        order.props.base.prices.take_profit,
+                        take_profit + points_to_price(distance_to_move_take_profits)
+                    ),
+                }
+            }
+        }
+
+        for level in store.get_created_working_levels().unwrap() {
+            for order in store.get_working_level_chain_of_orders(&level.id).unwrap() {
+                assert_eq!(order.props.base.prices.take_profit, take_profit);
+            }
+        }
     }
 }

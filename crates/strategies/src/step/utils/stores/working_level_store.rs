@@ -1,6 +1,7 @@
 use anyhow::Result;
 use base::entities::order::OrderId;
 use base::entities::{candle::CandleId, Item};
+use base::params::ParamValue;
 
 use crate::step::utils::entities::working_levels::{
     CorridorType, WLId, WLMaxCrossingValue, WLStatus,
@@ -51,9 +52,13 @@ pub trait StepWorkingLevelStore {
         working_level_id: &str,
     ) -> Result<Option<WLMaxCrossingValue>>;
 
-    fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()>;
+    fn move_take_profits_of_level(
+        &mut self,
+        working_level_id: &str,
+        distance_to_move_take_profits: ParamValue,
+    ) -> Result<()>;
 
-    fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool>;
+    fn take_profits_of_level_are_moved(&self, working_level_id: &str) -> Result<bool>;
 
     fn add_order_to_working_level_chain_of_orders(
         &mut self,

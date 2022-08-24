@@ -1,10 +1,12 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
 use crate::step::utils::backtesting_charts::ChartTracesModifier;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
-use crate::step::utils::entities::StrategySignals;
+use crate::step::utils::entities::{
+    FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
+};
 use crate::step::utils::helpers::Helpers;
 use crate::step::utils::level_conditions::LevelConditions;
-use crate::step::utils::level_utils::LevelUtils;
+use crate::step::utils::level_utils::{LevelUtils, RemoveInvalidWorkingLevelsUtils};
 use crate::step::utils::order_utils::{
     OrderUtils, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
 };
@@ -14,17 +16,19 @@ use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::BasicTickProperties;
+use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
+use chrono::NaiveDateTime;
 
 pub trait RunStepBacktestingIteration {
     /// Main iteration of the step strategy.
-    fn run_iteration<T, H, U, N, R, D, E>(
+    fn run_iteration<T, H, U, N, R, D, E, X>(
         &self,
         tick: BasicTickProperties,
         candle: Option<StepBacktestingCandleProperties>,
         signals: StrategySignals,
         stores: &mut StepBacktestingStores<T>,
-        utils: &StepBacktestingUtils<H, U, N, R, D, E>,
+        utils: &StepBacktestingUtils<H, U, N, R, D, E, X>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     ) -> Result<()>
     where
@@ -35,7 +39,8 @@ pub trait RunStepBacktestingIteration {
         N: LevelConditions,
         R: OrderUtils,
         D: ChartTracesModifier,
-        E: TradingEngine;
+        E: TradingEngine,
+        X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude;
 }
 
 #[derive(Default)]
@@ -48,13 +53,13 @@ impl StepBacktestingIterationRunner {
 }
 
 impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
-    fn run_iteration<T, H, U, N, R, D, E>(
+    fn run_iteration<T, H, U, N, R, D, E, X>(
         &self,
         new_tick_props: BasicTickProperties,
         new_candle_props: Option<StepBacktestingCandleProperties>,
         signals: StrategySignals,
         stores: &mut StepBacktestingStores<T>,
-        utils: &StepBacktestingUtils<H, U, N, R, D, E>,
+        utils: &StepBacktestingUtils<H, U, N, R, D, E, X>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     ) -> Result<()>
     where
@@ -66,6 +71,7 @@ impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
         R: OrderUtils,
         D: ChartTracesModifier,
         E: TradingEngine,
+        X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
     {
         let current_tick = stores.main.create_tick(new_tick_props)?;
 
@@ -134,7 +140,7 @@ impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
             .level_utils
             .remove_active_working_levels_with_closed_orders(&mut stores.main)?;
 
-        if let Some(current_candle) = current_candle {
+        if let Some(current_candle) = &current_candle {
             utils.order_utils.update_orders_backtesting(
                 &current_tick.props,
                 &current_candle.props,
@@ -156,6 +162,35 @@ impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
         utils
             .level_utils
             .update_max_crossing_value_of_active_levels(&mut stores.main, current_tick.props.bid)?;
+
+        if let Some(current_candle) = &current_candle {
+            utils.level_utils.remove_invalid_working_levels(
+                &current_tick.props,
+                current_candle.props.base.volatility,
+                RemoveInvalidWorkingLevelsUtils {
+                    working_level_store: &mut stores.main,
+                    level_conditions: &utils.level_conditions,
+                    exclude_weekend_and_holidays: &utils.exclude_weekend_and_holidays,
+                },
+                params,
+                StatisticsNotifier::<FakeBacktestingNotificationQueue>::Backtesting(
+                    &mut stores.statistics,
+                ),
+            )?;
+
+            utils.level_utils.move_take_profits(
+                &mut stores.main,
+                params.get_ratio_param_value(
+                    StepRatioParam::DistanceFromLevelForSignalingOfMovingTakeProfits,
+                    current_candle.props.base.volatility,
+                ),
+                params.get_ratio_param_value(
+                    StepRatioParam::DistanceToMoveTakeProfits,
+                    current_candle.props.base.volatility,
+                ),
+                current_tick.props.bid,
+            )?;
+        }
 
         Ok(())
     }

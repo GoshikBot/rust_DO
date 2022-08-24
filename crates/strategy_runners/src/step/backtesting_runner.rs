@@ -4,9 +4,11 @@ use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{BasicTickProperties, StrategyTimeframes};
+use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
+use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
 use strategies::step::step_backtesting::RunStepBacktestingIteration;
 use strategies::step::utils::backtesting_charts::ChartTracesModifier;
@@ -54,7 +56,7 @@ fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
     (balances.real - balances.initial) / balances.initial * dec!(100)
 }
 
-pub struct StepStrategyRunningConfig<'a, P, T, H, U, N, R, D, E>
+pub struct StepStrategyRunningConfig<'a, P, T, H, U, N, R, D, E, X>
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 
@@ -66,16 +68,17 @@ where
     R: OrderUtils,
     D: ChartTracesModifier,
     E: TradingEngine,
+    X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub timeframes: StrategyTimeframes,
     pub stores: &'a mut StepBacktestingStores<T>,
-    pub utils: &'a StepBacktestingUtils<H, U, N, R, D, E>,
+    pub utils: &'a StepBacktestingUtils<H, U, N, R, D, E, X>,
     pub params: &'a P,
 }
 
-pub fn loop_through_historical_data<P, L, T, H, U, N, R, D, E>(
+pub fn loop_through_historical_data<P, L, T, H, U, N, R, D, E, X>(
     historical_data: &HistoricalData,
-    strategy_config: StepStrategyRunningConfig<P, T, H, U, N, R, D, E>,
+    strategy_config: StepStrategyRunningConfig<P, T, H, U, N, R, D, E, X>,
     trading_limiter: &L,
     iteration_runner: &impl RunStepBacktestingIteration,
 ) -> Result<StrategyPerformance>
@@ -91,6 +94,7 @@ where
     R: OrderUtils,
     D: ChartTracesModifier,
     E: TradingEngine,
+    X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     let mut current_tick = Tick {
         index: 0,
@@ -271,13 +275,13 @@ mod tests {
     struct TestIterationRunner;
 
     impl RunStepBacktestingIteration for TestIterationRunner {
-        fn run_iteration<T, H, U, N, R, D, E>(
+        fn run_iteration<T, H, U, N, R, D, E, X>(
             &self,
             tick: BasicTickProperties,
             candle: Option<StepBacktestingCandleProperties>,
             signals: StrategySignals,
             stores: &mut StepBacktestingStores<T>,
-            utils: &StepBacktestingUtils<H, U, N, R, D, E>,
+            utils: &StepBacktestingUtils<H, U, N, R, D, E, X>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         ) -> Result<()>
         where
@@ -289,6 +293,7 @@ mod tests {
             R: OrderUtils,
             D: ChartTracesModifier,
             E: TradingEngine,
+            X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         {
             if signals.cancel_all_orders {
                 stores.config.trading_engine.balances.real -= dec!(50.0);
@@ -388,6 +393,19 @@ mod tests {
             C: LevelConditions,
             E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
             N: NotificationQueue,
+        {
+            unimplemented!()
+        }
+
+        fn move_take_profits<W>(
+            &self,
+            working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+            distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
+            distance_to_move_take_profits: ParamValue,
+            current_tick_price: TickPrice,
+        ) -> Result<()>
+        where
+            W: Into<BasicWLProperties>,
         {
             unimplemented!()
         }
@@ -746,6 +764,9 @@ mod tests {
 
         let trading_limiter = TestTradingLimiter::new();
 
+        let exclude_weekend_and_holidays =
+            |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 0;
+
         let utils = StepBacktestingUtils {
             helpers: TestHelpersImpl::default(),
             level_utils: TestLevelUtilsImpl::default(),
@@ -753,6 +774,7 @@ mod tests {
             order_utils: TestOrderUtilsImpl::default(),
             chart_traces_modifier: TestChartTracesModifierImpl::default(),
             trading_engine: TestTradingEngineImpl::default(),
+            exclude_weekend_and_holidays,
         };
 
         let strategy_config = StepStrategyRunningConfig {

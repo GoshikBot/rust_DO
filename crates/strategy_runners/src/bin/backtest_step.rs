@@ -6,6 +6,7 @@ use backtesting::trading_engine::BacktestingTradingEngine;
 use backtesting::StrategyInitConfig;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV};
+use base::helpers::exclude_weekend_and_holidays;
 use base::requests::ureq::UreqRequestApi;
 use chrono::{DateTime, Duration};
 use plotly::layout::Axis;
@@ -111,6 +112,7 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
         order_utils: OrderUtilsImpl::new(),
         chart_traces_modifier: BacktestingChartTracesModifier::new(),
         trading_engine: BacktestingTradingEngine::new(),
+        exclude_weekend_and_holidays,
     };
 
     let iteration_runner = StepBacktestingIterationRunner::new();

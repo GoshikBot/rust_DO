@@ -2,14 +2,18 @@ use rust_decimal_macros::dec;
 use std::collections::HashSet;
 
 use base::entities::candle::CandleId;
-use base::entities::order::OrderStatus;
+use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderStatus, OrderType};
 use base::entities::tick::TickId;
 use base::entities::Level;
+use base::helpers::points_to_price;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
 use strategies::step::utils::entities::angle::{AngleId, BasicAngleProperties};
-use strategies::step::utils::entities::working_levels::{CorridorType, WLStatus};
+use strategies::step::utils::entities::order::StepOrderProperties;
+use strategies::step::utils::entities::working_levels::{
+    BacktestingWLProperties, BasicWLProperties, CorridorType, WLStatus,
+};
 use strategies::step::utils::stores::angle_store::StepAngleStore;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::tick_store::StepTickStore;
@@ -176,7 +180,9 @@ fn should_successfully_remove_working_level() {
         .add_candle_to_working_level_corridor(&working_level_id, candle_id, CorridorType::Big)
         .is_ok());
 
-    assert!(store.move_take_profits_of_level(&working_level_id).is_ok());
+    assert!(store
+        .move_take_profits_of_level(&working_level_id, dec!(100))
+        .is_ok());
 
     let order_id = store.create_order(Default::default()).unwrap().id;
 
@@ -209,7 +215,7 @@ fn should_successfully_remove_working_level() {
         .is_empty());
 
     assert!(!store
-        .are_take_profits_of_level_moved(&working_level_id)
+        .take_profits_of_level_are_moved(&working_level_id)
         .unwrap());
 
     assert!(store
@@ -351,6 +357,94 @@ fn should_successfully_identify_level_status() {
 }
 
 #[test]
+fn should_successfully_move_take_profits_of_level() {
+    let mut store = InMemoryStepBacktestingStore::default();
+
+    let buy_working_level_id = store
+        .create_working_level(BacktestingWLProperties {
+            base: BasicWLProperties {
+                r#type: OrderType::Buy,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+
+    let sell_working_level_id = store
+        .create_working_level(BacktestingWLProperties {
+            base: BasicWLProperties {
+                r#type: OrderType::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+
+    let take_profit = dec!(1.38000);
+
+    for _ in 0..5 {
+        store
+            .create_order(StepOrderProperties {
+                base: BasicOrderProperties {
+                    prices: BasicOrderPrices {
+                        take_profit,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                working_level_id: buy_working_level_id.clone(),
+            })
+            .unwrap();
+
+        store
+            .create_order(StepOrderProperties {
+                base: BasicOrderProperties {
+                    prices: BasicOrderPrices {
+                        take_profit,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                working_level_id: sell_working_level_id.clone(),
+            })
+            .unwrap();
+    }
+
+    let distance_to_move_take_profits = dec!(100);
+
+    store
+        .move_take_profits_of_level(&buy_working_level_id, distance_to_move_take_profits)
+        .unwrap();
+    store
+        .move_take_profits_of_level(&sell_working_level_id, distance_to_move_take_profits)
+        .unwrap();
+
+    store
+        .get_working_level_chain_of_orders(&buy_working_level_id)
+        .unwrap()
+        .iter()
+        .for_each(|order| {
+            assert_eq!(
+                order.props.base.prices.take_profit,
+                take_profit - points_to_price(distance_to_move_take_profits)
+            );
+        });
+
+    store
+        .get_working_level_chain_of_orders(&sell_working_level_id)
+        .unwrap()
+        .iter()
+        .for_each(|order| {
+            assert_eq!(
+                order.props.base.prices.take_profit,
+                take_profit + points_to_price(distance_to_move_take_profits)
+            );
+        });
+}
+
+#[test]
 fn should_return_error_when_inserting_nonexistent_entity() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
@@ -377,9 +471,10 @@ fn should_return_error_when_inserting_nonexistent_entity() {
     assert!(store
         .update_max_crossing_value_of_working_level("1", dec!(10))
         .is_err());
-    assert!(store.move_take_profits_of_level("1").is_err());
+    assert!(store
+        .move_take_profits_of_level("1", dec!(0.00050))
+        .is_err());
     assert!(store
         .add_candle_to_working_level_corridor("1", String::from("1"), CorridorType::Small)
         .is_err());
-    assert!(store.move_take_profits_of_level("1").is_err());
 }

@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Context, Result};
+use rust_decimal_macros::dec;
 
-use base::entities::order::{OrderId, OrderStatus};
+use base::entities::order::{OrderId, OrderStatus, OrderType};
 use base::entities::Item;
 use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
+use base::helpers::{points_to_price, PriceValue};
+use base::params::ParamValue;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
@@ -818,13 +821,19 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             .cloned())
     }
 
-    fn move_take_profits_of_level(&mut self, working_level_id: &str) -> Result<()> {
-        if !self.working_levels.contains_key(working_level_id) {
-            bail!(
-                "a working level with an id {} doesn't exist",
-                working_level_id
-            );
-        }
+    fn move_take_profits_of_level(
+        &mut self,
+        working_level_id: &str,
+        distance_to_move_take_profits: ParamValue,
+    ) -> Result<()> {
+        let level = self
+            .get_working_level_by_id(working_level_id)?
+            .with_context(|| {
+                format!(
+                    "a working level with an id {} doesn't exist",
+                    working_level_id
+                )
+            })?;
 
         let was_not_present = self
             .working_levels_with_moved_take_profits
@@ -837,10 +846,28 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             );
         }
 
+        let factor = match level.props.base.r#type {
+            OrderType::Buy => dec!(-1),
+            OrderType::Sell => dec!(1),
+        };
+
+        let distance_to_move_take_profits = points_to_price(distance_to_move_take_profits);
+
+        let orders = self.get_working_level_chain_of_orders(working_level_id)?;
+        for order in orders {
+            self.orders
+                .get_mut(&order.id)
+                .unwrap()
+                .props
+                .base
+                .prices
+                .take_profit += factor * distance_to_move_take_profits;
+        }
+
         Ok(())
     }
 
-    fn are_take_profits_of_level_moved(&self, working_level_id: &str) -> Result<bool> {
+    fn take_profits_of_level_are_moved(&self, working_level_id: &str) -> Result<bool> {
         Ok(self
             .working_levels_with_moved_take_profits
             .contains(working_level_id))
