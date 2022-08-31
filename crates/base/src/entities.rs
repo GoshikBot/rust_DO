@@ -78,7 +78,7 @@ pub struct StrategyTimeframes {
     pub tick: Timeframe,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Item<I, P> {
     pub id: I,
     pub props: P,

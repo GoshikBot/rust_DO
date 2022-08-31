@@ -1,16 +1,17 @@
-use crate::step::utils::backtesting_charts::{ChartTraceEntity, ChartTracesModifier};
+use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::working_levels::{BacktestingWLProperties, CorridorType};
 use crate::step::utils::entities::{Mode, MODE_ENV};
-use crate::step::utils::level_conditions::LevelConditions;
+use crate::step::utils::level_conditions::{LevelConditions, MinAmountOfCandles};
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use crate::step::utils::stores::{StepBacktestingConfig, StepBacktestingStatistics};
 use anyhow::{bail, Result};
 use backtesting::trading_engine::TradingEngine;
 use backtesting::{Balance, ClosePositionBy, OpenPositionBy};
 use base::entities::order::{
-    BasicOrderPrices, BasicOrderProperties, OrderStatus, OrderType, OrderVolume,
+    BasicOrderPrices, BasicOrderProperties, OrderPrice, OrderStatus, OrderType, OrderVolume,
 };
+use base::entities::tick::TickPrice;
 use base::entities::{
     BasicTickProperties, PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES,
 };
@@ -22,6 +23,7 @@ use base::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::marker::PhantomData;
 use std::str::FromStr;
 
 use super::entities::{
@@ -33,7 +35,6 @@ use super::entities::{
 pub trait OrderUtils {
     /// Creates the chain of orders from the particular level when this level is crossed.
     fn get_new_chain_of_orders<W>(
-        &self,
         level: &Item<WLId, W>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         current_volatility: CandleVolatility,
@@ -43,21 +44,21 @@ pub trait OrderUtils {
         W: AsRef<BasicWLProperties>;
 
     /// Places and closed orders.
-    fn update_orders_backtesting<M, T, C, L>(
-        &self,
+    fn update_orders_backtesting<T, C, R, W, P>(
         current_tick: &BasicTickProperties,
         current_candle: &StepBacktestingCandleProperties,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-        stores: UpdateOrdersBacktestingStores<M>,
-        utils: UpdateOrdersBacktestingUtils<T, C, L>,
+        stores: UpdateOrdersBacktestingStores<W>,
+        utils: UpdateOrdersBacktestingUtils<T, C, R, W, P>,
         no_trading_mode: bool,
     ) -> Result<()>
     where
-        M: BasicOrderStore<OrderProperties = StepOrderProperties>
+        W: BasicOrderStore<OrderProperties = StepOrderProperties>
             + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
         T: TradingEngine,
-        C: ChartTracesModifier,
-        L: LevelConditions;
+        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+        R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
+        P: Fn(TickPrice, OrderPrice, OrderType) -> bool;
 }
 
 #[derive(Default)]
@@ -118,7 +119,6 @@ impl OrderUtilsImpl {
 
 impl OrderUtils for OrderUtilsImpl {
     fn get_new_chain_of_orders<W>(
-        &self,
         level: &Item<WLId, W>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         current_volatility: CandleVolatility,
@@ -202,22 +202,21 @@ impl OrderUtils for OrderUtilsImpl {
         Ok(chain_of_orders)
     }
 
-    fn update_orders_backtesting<M, T, C, L>(
-        &self,
+    fn update_orders_backtesting<T, C, R, W, P>(
         current_tick: &BasicTickProperties,
         current_candle: &StepBacktestingCandleProperties,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-        stores: UpdateOrdersBacktestingStores<M>,
-        utils: UpdateOrdersBacktestingUtils<T, C, L>,
+        stores: UpdateOrdersBacktestingStores<W>,
+        utils: UpdateOrdersBacktestingUtils<T, C, R, W, P>,
         no_trading_mode: bool,
     ) -> Result<()>
     where
-        M: BasicOrderStore<OrderProperties = StepOrderProperties>
+        W: BasicOrderStore<OrderProperties = StepOrderProperties>
             + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
-
         T: TradingEngine,
-        C: ChartTracesModifier,
-        L: LevelConditions,
+        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+        R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
+        P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
     {
         for order in stores.main.get_all_orders()? {
             match order.props.base.status {
@@ -229,19 +228,19 @@ impl OrderUtils for OrderUtilsImpl {
                     {
                         let mut remove_working_level = false;
 
-                        if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                        if !(utils.level_exceeds_amount_of_candles_in_corridor)(
                             &order.props.working_level_id,
                             stores.main,
                             CorridorType::Small,
                             params.get_point_param_value(StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel),
                         )? {
-                            if !utils.level_conditions.level_exceeds_amount_of_candles_in_corridor(
+                            if !(utils.level_exceeds_amount_of_candles_in_corridor)(
                                 &order.props.working_level_id,
                                 stores.main,
                                 CorridorType::Big,
                                 params.get_point_param_value(StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel),
                             )? {
-                                if !utils.level_conditions.price_is_beyond_stop_loss(
+                                if !(utils.price_is_beyond_stop_loss)(
                                     current_tick.bid,
                                     order.props.base.prices.stop_loss,
                                     order.props.base.r#type,
@@ -309,7 +308,7 @@ impl OrderUtils for OrderUtilsImpl {
                     if add_to_chart_traces
                         && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Debug
                     {
-                        utils.chart_traces_modifier.add_entity_to_chart_traces(
+                        (utils.add_entity_to_chart_traces)(
                             ChartTraceEntity::TakeProfit {
                                 take_profit_price: order.props.base.prices.take_profit,
                                 working_level_chart_index,
@@ -318,7 +317,7 @@ impl OrderUtils for OrderUtilsImpl {
                             current_candle,
                         );
 
-                        utils.chart_traces_modifier.add_entity_to_chart_traces(
+                        (utils.add_entity_to_chart_traces)(
                             ChartTraceEntity::StopLoss {
                                 stop_loss_price: order.props.base.prices.stop_loss,
                                 working_level_chart_index,
@@ -340,15 +339,43 @@ type MaxLossPerChainOfOrders = Decimal;
 
 type DistanceBetweenOrders = Decimal;
 
-pub struct UpdateOrdersBacktestingUtils<'a, T, C, L>
+pub struct UpdateOrdersBacktestingUtils<'a, T, C, R, W, P>
 where
     T: TradingEngine,
-    C: ChartTracesModifier,
-    L: LevelConditions,
+    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    W: StepWorkingLevelStore,
+    R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
+    P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
 {
     pub trading_engine: &'a T,
-    pub chart_traces_modifier: &'a C,
-    pub level_conditions: &'a L,
+    pub add_entity_to_chart_traces: &'a C,
+    pub level_exceeds_amount_of_candles_in_corridor: &'a R,
+    pub price_is_beyond_stop_loss: &'a P,
+    phantom: PhantomData<W>,
+}
+
+impl<'a, T, C, R, W, P> UpdateOrdersBacktestingUtils<'a, T, C, R, W, P>
+where
+    T: TradingEngine,
+    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    W: StepWorkingLevelStore,
+    R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
+    P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
+{
+    pub fn new(
+        trading_engine: &'a T,
+        add_entity_to_chart_traces: &'a C,
+        level_exceeds_amount_of_candles_in_corridor: &'a R,
+        price_is_beyond_stop_loss: &'a P,
+    ) -> Self {
+        Self {
+            trading_engine,
+            add_entity_to_chart_traces,
+            level_exceeds_amount_of_candles_in_corridor,
+            price_is_beyond_stop_loss,
+            phantom: PhantomData,
+        }
+    }
 }
 
 pub struct UpdateOrdersBacktestingStores<'a, M>
@@ -424,7 +451,7 @@ mod tests {
                 StepRatioParam::DistanceFromLevelToCorridorBeforeActivationCrossingOfLevel => unreachable!(),
                 StepRatioParam::DistanceDefiningNearbyLevelsOfTheSameType => unreachable!(),
                 StepRatioParam::MinDistanceOfActivationCrossingOfLevelWhenReturningToLevelForItsDeletion => unreachable!(),
-                StepRatioParam::BigCorridorNearLevel => unreachable!(),
+                StepRatioParam::RangeOfBigCorridorNearLevel => unreachable!(),
             };
 
             value * Decimal::from(volatility)
@@ -516,11 +543,8 @@ mod tests {
             },
         ];
 
-        let order_utils = OrderUtilsImpl::new();
-
-        let chain_of_orders = order_utils
-            .get_new_chain_of_orders(&level, &params, volatility, balance)
-            .unwrap();
+        let chain_of_orders =
+            OrderUtilsImpl::get_new_chain_of_orders(&level, &params, volatility, balance).unwrap();
 
         assert_eq!(chain_of_orders, expected_chain_of_orders);
     }
@@ -542,10 +566,8 @@ mod tests {
         let volatility = 180;
         let balance = dec!(0);
 
-        let order_utils = OrderUtilsImpl::new();
-
         let chain_of_orders =
-            order_utils.get_new_chain_of_orders(&level, &params, volatility, balance);
+            OrderUtilsImpl::get_new_chain_of_orders(&level, &params, volatility, balance);
 
         assert!(chain_of_orders.is_err());
     }
@@ -567,100 +589,10 @@ mod tests {
         let volatility = 180;
         let balance = dec!(-10);
 
-        let order_utils = OrderUtilsImpl::new();
-
         let chain_of_orders =
-            order_utils.get_new_chain_of_orders(&level, &params, volatility, balance);
+            OrderUtilsImpl::get_new_chain_of_orders(&level, &params, volatility, balance);
 
         assert!(chain_of_orders.is_err());
-    }
-
-    #[derive(Default)]
-    struct TestLevelConditions {
-        level_exceeds_amount_of_candles_small_corridor_number_of_calls: RefCell<u32>,
-        level_exceeds_amount_of_candles_big_corridor_number_of_calls: RefCell<u32>,
-        price_is_beyond_stop_loss_number_of_calls: RefCell<u32>,
-    }
-
-    impl LevelConditions for TestLevelConditions {
-        fn level_exceeds_amount_of_candles_in_corridor(
-            &self,
-            level_id: &str,
-            _working_level_store: &impl StepWorkingLevelStore,
-            corridor_type: CorridorType,
-            _min_amount_of_candles: MinAmountOfCandles,
-        ) -> Result<bool> {
-            match corridor_type {
-                CorridorType::Small => {
-                    *self
-                        .level_exceeds_amount_of_candles_small_corridor_number_of_calls
-                        .borrow_mut() += 1
-                }
-                CorridorType::Big => {
-                    *self
-                        .level_exceeds_amount_of_candles_big_corridor_number_of_calls
-                        .borrow_mut() += 1
-                }
-            }
-
-            match level_id {
-                "2" | "4" | "5" | "7" | "9" | "10" if corridor_type == CorridorType::Small => {
-                    Ok(false)
-                }
-                "2" | "5" | "7" | "10" if corridor_type == CorridorType::Big => Ok(false),
-                _ => Ok(true),
-            }
-        }
-
-        fn price_is_beyond_stop_loss(
-            &self,
-            _current_tick_price: TickPrice,
-            stop_loss_price: OrderPrice,
-            _working_level_type: OrderType,
-        ) -> bool {
-            *self.price_is_beyond_stop_loss_number_of_calls.borrow_mut() += 1;
-            stop_loss_price != dec!(1.88888)
-        }
-
-        fn level_expired_by_distance(
-            &self,
-            _level_price: WLPrice,
-            _current_tick_price: TickPrice,
-            _distance_from_level_for_its_deletion: ParamValue,
-        ) -> bool {
-            unimplemented!()
-        }
-
-        fn level_expired_by_time(
-            &self,
-            level_time: LevelTime,
-            current_tick_time: TickTime,
-            level_expiration: ParamValue,
-            exclude_weekend_and_holidays: &impl Fn(
-                NaiveDateTime,
-                NaiveDateTime,
-                &[Holiday],
-            ) -> NumberOfDaysToExclude,
-        ) -> bool {
-            unimplemented!()
-        }
-
-        fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
-            &self,
-            level: &impl AsRef<BasicWLProperties>,
-            max_crossing_value: Option<WLMaxCrossingValue>,
-            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
-            current_tick_price: TickPrice,
-        ) -> bool {
-            unimplemented!()
-        }
-
-        fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
-        where
-            T: AsRef<BasicOrderProperties>,
-        {
-            unimplemented!()
-        }
     }
 
     #[derive(Default)]
@@ -728,31 +660,6 @@ mod tests {
             }
 
             Ok(())
-        }
-    }
-
-    #[derive(Default)]
-    struct TestChartTracesModifier {
-        number_of_stop_loss_entities: RefCell<u32>,
-        number_of_take_profit_entities: RefCell<u32>,
-    }
-
-    impl ChartTracesModifier for TestChartTracesModifier {
-        fn add_entity_to_chart_traces(
-            &self,
-            entity: ChartTraceEntity,
-            _chart_traces: &mut StepBacktestingChartTraces,
-            _current_candle: &StepBacktestingCandleProperties,
-        ) {
-            match entity {
-                ChartTraceEntity::StopLoss { .. } => {
-                    *self.number_of_stop_loss_entities.borrow_mut() += 1
-                }
-                ChartTraceEntity::TakeProfit { .. } => {
-                    *self.number_of_take_profit_entities.borrow_mut() += 1
-                }
-                _ => unreachable!(),
-            }
         }
     }
 
@@ -852,6 +759,14 @@ mod tests {
         }
 
         fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
+            unimplemented!()
+        }
+
+        fn clear_working_level_corridor(
+            &mut self,
+            working_level_id: &str,
+            corridor_type: CorridorType,
+        ) -> Result<()> {
             unimplemented!()
         }
 
@@ -1325,44 +1240,92 @@ mod tests {
         };
 
         let trading_engine = TestTradingEngine::default();
-        let chart_traces_modifier = TestChartTracesModifier::default();
-        let level_conditions = TestLevelConditions::default();
 
-        let utils = UpdateOrdersBacktestingUtils {
-            trading_engine: &trading_engine,
-            chart_traces_modifier: &chart_traces_modifier,
-            level_conditions: &level_conditions,
-        };
+        let level_exceeds_amount_of_candles_small_corridor_number_of_calls = RefCell::new(0);
+        let level_exceeds_amount_of_candles_big_corridor_number_of_calls = RefCell::new(0);
+
+        let level_exceeds_amount_of_candles_in_corridor =
+            |level_id: &str,
+             working_level_store: &TestStore,
+             corridor_type: CorridorType,
+             min_amount_of_candles: MinAmountOfCandles| {
+                match corridor_type {
+                    CorridorType::Small => {
+                        *level_exceeds_amount_of_candles_small_corridor_number_of_calls
+                            .borrow_mut() += 1
+                    }
+                    CorridorType::Big => {
+                        *level_exceeds_amount_of_candles_big_corridor_number_of_calls
+                            .borrow_mut() += 1
+                    }
+                }
+
+                match level_id {
+                    "2" | "4" | "5" | "7" | "9" | "10" if corridor_type == CorridorType::Small => {
+                        Ok(false)
+                    }
+                    "2" | "5" | "7" | "10" if corridor_type == CorridorType::Big => Ok(false),
+                    _ => Ok(true),
+                }
+            };
+
+        let price_is_beyond_stop_loss_number_of_calls = RefCell::new(0);
+
+        let price_is_beyond_stop_loss =
+            |_current_tick_price: TickPrice,
+             stop_loss_price: OrderPrice,
+             _working_level_type: OrderType| {
+                *price_is_beyond_stop_loss_number_of_calls.borrow_mut() += 1;
+                stop_loss_price != dec!(1.88888)
+            };
+
+        let number_of_stop_loss_entities = RefCell::new(0);
+        let number_of_take_profit_entities = RefCell::new(0);
+
+        let add_entity_to_chart_traces =
+            |entity: ChartTraceEntity,
+             _chart_traces: &mut StepBacktestingChartTraces,
+             _current_candle: &StepBacktestingCandleProperties| {
+                match entity {
+                    ChartTraceEntity::StopLoss { .. } => {
+                        *number_of_stop_loss_entities.borrow_mut() += 1
+                    }
+                    ChartTraceEntity::TakeProfit { .. } => {
+                        *number_of_take_profit_entities.borrow_mut() += 1
+                    }
+                    _ => unreachable!(),
+                }
+            };
+
+        let utils = UpdateOrdersBacktestingUtils::new(
+            &trading_engine,
+            &add_entity_to_chart_traces,
+            &level_exceeds_amount_of_candles_in_corridor,
+            &price_is_beyond_stop_loss,
+        );
 
         let no_trading_mode = false;
 
         env::set_var("MODE", "debug");
 
-        let order_utils = OrderUtilsImpl::new();
-
-        order_utils
-            .update_orders_backtesting(
-                &current_tick,
-                &current_candle,
-                &params,
-                stores,
-                utils,
-                no_trading_mode,
-            )
-            .unwrap();
+        OrderUtilsImpl::update_orders_backtesting(
+            &current_tick,
+            &current_candle,
+            &params,
+            stores,
+            utils,
+            no_trading_mode,
+        )
+        .unwrap();
 
         assert_eq!(
-            *level_conditions
-                .level_exceeds_amount_of_candles_small_corridor_number_of_calls
-                .borrow(),
+            *level_exceeds_amount_of_candles_small_corridor_number_of_calls.borrow(),
             8
         );
         assert_eq!(statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing, 2);
 
         assert_eq!(
-            *level_conditions
-                .level_exceeds_amount_of_candles_big_corridor_number_of_calls
-                .borrow(),
+            *level_exceeds_amount_of_candles_big_corridor_number_of_calls.borrow(),
             6
         );
         assert_eq!(
@@ -1371,12 +1334,7 @@ mod tests {
             2
         );
 
-        assert_eq!(
-            *level_conditions
-                .price_is_beyond_stop_loss_number_of_calls
-                .borrow(),
-            4
-        );
+        assert_eq!(*price_is_beyond_stop_loss_number_of_calls.borrow(), 4);
         assert_eq!(statistics.deleted_by_price_being_beyond_stop_loss, 2);
 
         assert_eq!(
@@ -1408,16 +1366,8 @@ mod tests {
             vec![String::from("13"), String::from("16")]
         );
 
-        assert_eq!(
-            *chart_traces_modifier
-                .number_of_take_profit_entities
-                .borrow(),
-            4
-        );
-        assert_eq!(
-            *chart_traces_modifier.number_of_stop_loss_entities.borrow(),
-            4
-        );
+        assert_eq!(*number_of_take_profit_entities.borrow(), 4);
+        assert_eq!(*number_of_stop_loss_entities.borrow(), 4);
     }
 
     #[test]
@@ -1460,44 +1410,92 @@ mod tests {
         };
 
         let trading_engine = TestTradingEngine::default();
-        let chart_traces_modifier = TestChartTracesModifier::default();
-        let level_conditions = TestLevelConditions::default();
 
-        let utils = UpdateOrdersBacktestingUtils {
-            trading_engine: &trading_engine,
-            chart_traces_modifier: &chart_traces_modifier,
-            level_conditions: &level_conditions,
-        };
+        let level_exceeds_amount_of_candles_small_corridor_number_of_calls = RefCell::new(0);
+        let level_exceeds_amount_of_candles_big_corridor_number_of_calls = RefCell::new(0);
+
+        let level_exceeds_amount_of_candles_in_corridor =
+            |level_id: &str,
+             working_level_store: &TestStore,
+             corridor_type: CorridorType,
+             min_amount_of_candles: MinAmountOfCandles| {
+                match corridor_type {
+                    CorridorType::Small => {
+                        *level_exceeds_amount_of_candles_small_corridor_number_of_calls
+                            .borrow_mut() += 1
+                    }
+                    CorridorType::Big => {
+                        *level_exceeds_amount_of_candles_big_corridor_number_of_calls
+                            .borrow_mut() += 1
+                    }
+                }
+
+                match level_id {
+                    "2" | "4" | "5" | "7" | "9" | "10" if corridor_type == CorridorType::Small => {
+                        Ok(false)
+                    }
+                    "2" | "5" | "7" | "10" if corridor_type == CorridorType::Big => Ok(false),
+                    _ => Ok(true),
+                }
+            };
+
+        let price_is_beyond_stop_loss_number_of_calls = RefCell::new(0);
+
+        let price_is_beyond_stop_loss =
+            |_current_tick_price: TickPrice,
+             stop_loss_price: OrderPrice,
+             _working_level_type: OrderType| {
+                *price_is_beyond_stop_loss_number_of_calls.borrow_mut() += 1;
+                stop_loss_price != dec!(1.88888)
+            };
+
+        let number_of_stop_loss_entities = RefCell::new(0);
+        let number_of_take_profit_entities = RefCell::new(0);
+
+        let add_entity_to_chart_traces =
+            |entity: ChartTraceEntity,
+             _chart_traces: &mut StepBacktestingChartTraces,
+             _current_candle: &StepBacktestingCandleProperties| {
+                match entity {
+                    ChartTraceEntity::StopLoss { .. } => {
+                        *number_of_stop_loss_entities.borrow_mut() += 1
+                    }
+                    ChartTraceEntity::TakeProfit { .. } => {
+                        *number_of_take_profit_entities.borrow_mut() += 1
+                    }
+                    _ => unreachable!(),
+                }
+            };
+
+        let utils = UpdateOrdersBacktestingUtils::new(
+            &trading_engine,
+            &add_entity_to_chart_traces,
+            &level_exceeds_amount_of_candles_in_corridor,
+            &price_is_beyond_stop_loss,
+        );
 
         let no_trading_mode = true;
 
         env::set_var("MODE", "optimization");
 
-        let order_utils = OrderUtilsImpl::new();
-
-        order_utils
-            .update_orders_backtesting(
-                &current_tick,
-                &current_candle,
-                &params,
-                stores,
-                utils,
-                no_trading_mode,
-            )
-            .unwrap();
+        OrderUtilsImpl::update_orders_backtesting(
+            &current_tick,
+            &current_candle,
+            &params,
+            stores,
+            utils,
+            no_trading_mode,
+        )
+        .unwrap();
 
         assert_eq!(
-            *level_conditions
-                .level_exceeds_amount_of_candles_small_corridor_number_of_calls
-                .borrow(),
+            *level_exceeds_amount_of_candles_small_corridor_number_of_calls.borrow(),
             8
         );
         assert_eq!(statistics.deleted_by_exceeding_amount_of_candles_in_small_corridor_before_activation_crossing, 2);
 
         assert_eq!(
-            *level_conditions
-                .level_exceeds_amount_of_candles_big_corridor_number_of_calls
-                .borrow(),
+            *level_exceeds_amount_of_candles_big_corridor_number_of_calls.borrow(),
             6
         );
         assert_eq!(
@@ -1506,12 +1504,7 @@ mod tests {
             2
         );
 
-        assert_eq!(
-            *level_conditions
-                .price_is_beyond_stop_loss_number_of_calls
-                .borrow(),
-            4
-        );
+        assert_eq!(*price_is_beyond_stop_loss_number_of_calls.borrow(), 4);
         assert_eq!(statistics.deleted_by_price_being_beyond_stop_loss, 2);
 
         assert!(trading_engine.opened_orders.borrow().is_empty());
@@ -1540,15 +1533,7 @@ mod tests {
             vec![String::from("13"), String::from("16")]
         );
 
-        assert_eq!(
-            *chart_traces_modifier
-                .number_of_take_profit_entities
-                .borrow(),
-            0
-        );
-        assert_eq!(
-            *chart_traces_modifier.number_of_stop_loss_entities.borrow(),
-            0
-        );
+        assert_eq!(*number_of_take_profit_entities.borrow(), 0);
+        assert_eq!(*number_of_stop_loss_entities.borrow(), 0);
     }
 }

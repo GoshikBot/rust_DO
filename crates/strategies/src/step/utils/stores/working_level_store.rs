@@ -26,7 +26,14 @@ pub trait StepWorkingLevelStore {
 
     fn get_created_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
     fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
+
     fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>>;
+
+    fn clear_working_level_corridor(
+        &mut self,
+        working_level_id: &str,
+        corridor_type: CorridorType,
+    ) -> Result<()>;
 
     fn add_candle_to_working_level_corridor(
         &mut self,

@@ -65,8 +65,8 @@ pub struct InMemoryStepBacktestingStore {
     created_working_levels: HashSet<WLId>,
     active_working_levels: HashSet<WLId>,
 
-    working_level_small_corridors: HashMap<WLId, HashSet<CandleId>>,
-    working_level_big_corridors: HashMap<WLId, HashSet<CandleId>>,
+    working_level_small_corridors: HashMap<WLId, Vec<CandleId>>,
+    working_level_big_corridors: HashMap<WLId, Vec<CandleId>>,
     corridor_candles: HashSet<CandleId>,
 
     working_level_chain_of_orders: HashMap<WLId, HashSet<OrderId>>,
@@ -730,6 +730,28 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
         }
     }
 
+    fn clear_working_level_corridor(
+        &mut self,
+        working_level_id: &str,
+        corridor_type: CorridorType,
+    ) -> Result<()> {
+        if !self.working_levels.contains_key(working_level_id) {
+            bail!(
+                "a working level with an id {} doesn't exist",
+                working_level_id
+            );
+        }
+
+        let working_level_corridors = match corridor_type {
+            CorridorType::Small => &mut self.working_level_small_corridors,
+            CorridorType::Big => &mut self.working_level_big_corridors,
+        };
+
+        working_level_corridors.remove(working_level_id);
+
+        Ok(())
+    }
+
     fn add_candle_to_working_level_corridor(
         &mut self,
         working_level_id: &str,
@@ -765,7 +787,7 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
 
         self.corridor_candles.insert(candle_id.clone());
 
-        candles.insert(candle_id);
+        candles.push(candle_id);
 
         Ok(())
     }

@@ -1,5 +1,5 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
-use crate::step::utils::backtesting_charts::ChartTracesModifier;
+use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::{
     FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
@@ -14,184 +14,148 @@ use crate::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores
 use crate::step::utils::StepBacktestingUtils;
 use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
-use base::entities::candle::BasicCandleProperties;
 use base::entities::BasicTickProperties;
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::NaiveDateTime;
 
-pub trait RunStepBacktestingIteration {
-    /// Main iteration of the step strategy.
-    fn run_iteration<T, H, U, N, R, D, E, X>(
-        &self,
-        tick: BasicTickProperties,
-        candle: Option<StepBacktestingCandleProperties>,
-        signals: StrategySignals,
-        stores: &mut StepBacktestingStores<T>,
-        utils: &StepBacktestingUtils<H, U, N, R, D, E, X>,
-        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    ) -> Result<()>
-    where
-        T: StepBacktestingMainStore,
+pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, D, E, X>(
+    new_tick_props: BasicTickProperties,
+    new_candle_props: Option<StepBacktestingCandleProperties>,
+    signals: StrategySignals,
+    stores: &mut StepBacktestingStores<T>,
+    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, D, E, X>,
+    params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+) -> Result<()>
+where
+    T: StepBacktestingMainStore,
 
-        H: Helpers,
-        U: LevelUtils,
-        N: LevelConditions,
-        R: OrderUtils,
-        D: ChartTracesModifier,
-        E: TradingEngine,
-        X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude;
-}
+    Hel: Helpers,
+    LevUt: LevelUtils,
+    LevCon: LevelConditions,
+    OrUt: OrderUtils,
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    E: TradingEngine,
+    X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
+{
+    let current_tick = stores.main.create_tick(new_tick_props)?;
 
-#[derive(Default)]
-pub struct StepBacktestingIterationRunner;
-
-impl StepBacktestingIterationRunner {
-    pub fn new() -> Self {
-        Self::default()
+    if let Some(current_tick) = stores.main.get_current_tick()? {
+        stores.main.update_previous_tick(current_tick.id)?;
     }
-}
 
-impl RunStepBacktestingIteration for StepBacktestingIterationRunner {
-    fn run_iteration<T, H, U, N, R, D, E, X>(
-        &self,
-        new_tick_props: BasicTickProperties,
-        new_candle_props: Option<StepBacktestingCandleProperties>,
-        signals: StrategySignals,
-        stores: &mut StepBacktestingStores<T>,
-        utils: &StepBacktestingUtils<H, U, N, R, D, E, X>,
-        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-    ) -> Result<()>
-    where
-        T: StepBacktestingMainStore,
+    stores.main.update_current_tick(current_tick.id)?;
 
-        H: Helpers,
-        U: LevelUtils,
-        N: LevelConditions,
-        R: OrderUtils,
-        D: ChartTracesModifier,
-        E: TradingEngine,
-        X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
-    {
-        let current_tick = stores.main.create_tick(new_tick_props)?;
+    let (current_candle, new_candle_appeared) = match new_candle_props {
+        Some(candle_props) => {
+            let current_candle = stores.main.create_candle(candle_props)?;
 
-        if let Some(current_tick) = stores.main.get_current_tick()? {
-            stores.main.update_previous_tick(current_tick.id)?;
-        }
-
-        stores.main.update_current_tick(current_tick.id)?;
-
-        let (current_candle, new_candle_appeared) = match new_candle_props {
-            Some(candle_props) => {
-                let current_candle = stores.main.create_candle(candle_props)?;
-
-                if let Some(current_candle) = stores.main.get_current_candle()? {
-                    stores.main.update_previous_candle(current_candle.id)?;
-                }
-
-                stores
-                    .main
-                    .update_current_candle(current_candle.id.clone())?;
-
-                (Some(current_candle), true)
+            if let Some(current_candle) = stores.main.get_current_candle()? {
+                stores.main.update_previous_candle(current_candle.id)?;
             }
-            None => (stores.main.get_current_candle()?, false),
-        };
 
-        let created_working_levels = stores.main.get_created_working_levels()?;
-
-        let crossed_level = utils
-            .level_utils
-            .get_crossed_level(current_tick.props.bid, &created_working_levels);
-
-        if let Some(crossed_level) = crossed_level {
-            if stores
+            stores
                 .main
-                .get_working_level_chain_of_orders(&crossed_level.id)?
-                .is_empty()
-            {
-                let chain_of_orders = utils.order_utils.get_new_chain_of_orders(
-                    crossed_level,
-                    params,
-                    stores
-                        .main
-                        .get_current_candle()?
-                        .unwrap()
-                        .props
-                        .base
-                        .volatility,
-                    stores.config.trading_engine.balances.real,
-                )?;
+                .update_current_candle(current_candle.id.clone())?;
 
-                for order_props in chain_of_orders {
-                    let order = stores.main.create_order(order_props)?;
-                    stores
-                        .main
-                        .add_order_to_working_level_chain_of_orders(&crossed_level.id, order.id)?;
-                }
+            (Some(current_candle), true)
+        }
+        None => (stores.main.get_current_candle()?, false),
+    };
 
+    let created_working_levels = stores.main.get_created_working_levels()?;
+
+    let crossed_level = LevUt::get_crossed_level(current_tick.props.bid, &created_working_levels);
+
+    if let Some(crossed_level) = crossed_level {
+        if stores
+            .main
+            .get_working_level_chain_of_orders(&crossed_level.id)?
+            .is_empty()
+        {
+            let chain_of_orders = OrUt::get_new_chain_of_orders(
+                crossed_level,
+                params,
                 stores
                     .main
-                    .move_working_level_to_active(&crossed_level.id)?;
+                    .get_current_candle()?
+                    .unwrap()
+                    .props
+                    .base
+                    .volatility,
+                stores.config.trading_engine.balances.real,
+            )?;
+
+            for order_props in chain_of_orders {
+                let order = stores.main.create_order(order_props)?;
+                stores
+                    .main
+                    .add_order_to_working_level_chain_of_orders(&crossed_level.id, order.id)?;
             }
+
+            stores
+                .main
+                .move_working_level_to_active(&crossed_level.id)?;
         }
-
-        utils
-            .level_utils
-            .remove_active_working_levels_with_closed_orders(&mut stores.main)?;
-
-        if let Some(current_candle) = &current_candle {
-            utils.order_utils.update_orders_backtesting(
-                &current_tick.props,
-                &current_candle.props,
-                params,
-                UpdateOrdersBacktestingStores {
-                    main: &mut stores.main,
-                    config: &mut stores.config,
-                    statistics: &mut stores.statistics,
-                },
-                UpdateOrdersBacktestingUtils {
-                    trading_engine: &utils.trading_engine,
-                    chart_traces_modifier: &utils.chart_traces_modifier,
-                    level_conditions: &utils.level_conditions,
-                },
-                signals.no_trading_mode,
-            )?;
-        }
-
-        utils
-            .level_utils
-            .update_max_crossing_value_of_active_levels(&mut stores.main, current_tick.props.bid)?;
-
-        if let Some(current_candle) = &current_candle {
-            utils.level_utils.remove_invalid_working_levels(
-                &current_tick.props,
-                current_candle.props.base.volatility,
-                RemoveInvalidWorkingLevelsUtils {
-                    working_level_store: &mut stores.main,
-                    level_conditions: &utils.level_conditions,
-                    exclude_weekend_and_holidays: &utils.exclude_weekend_and_holidays,
-                },
-                params,
-                StatisticsNotifier::<FakeBacktestingNotificationQueue>::Backtesting(
-                    &mut stores.statistics,
-                ),
-            )?;
-
-            utils.level_utils.move_take_profits(
-                &mut stores.main,
-                params.get_ratio_param_value(
-                    StepRatioParam::DistanceFromLevelForSignalingOfMovingTakeProfits,
-                    current_candle.props.base.volatility,
-                ),
-                params.get_ratio_param_value(
-                    StepRatioParam::DistanceToMoveTakeProfits,
-                    current_candle.props.base.volatility,
-                ),
-                current_tick.props.bid,
-            )?;
-        }
-
-        Ok(())
     }
+
+    LevUt::remove_active_working_levels_with_closed_orders(&mut stores.main)?;
+
+    if let Some(current_candle) = &current_candle {
+        OrUt::update_orders_backtesting(
+            &current_tick.props,
+            &current_candle.props,
+            params,
+            UpdateOrdersBacktestingStores {
+                main: &mut stores.main,
+                config: &mut stores.config,
+                statistics: &mut stores.statistics,
+            },
+            UpdateOrdersBacktestingUtils::new(
+                &utils.trading_engine,
+                &utils.add_entity_to_chart_traces,
+                &LevCon::level_exceeds_amount_of_candles_in_corridor,
+                &LevCon::price_is_beyond_stop_loss,
+            ),
+            signals.no_trading_mode,
+        )?;
+    }
+
+    LevUt::update_max_crossing_value_of_active_levels(&mut stores.main, current_tick.props.bid)?;
+
+    if let Some(current_candle) = &current_candle {
+        LevUt::remove_invalid_working_levels(
+            &current_tick.props,
+            current_candle.props.base.volatility,
+            RemoveInvalidWorkingLevelsUtils {
+                working_level_store: &mut stores.main,
+                level_has_no_active_orders: &LevCon::level_has_no_active_orders,
+                level_expired_by_distance: &LevCon::level_expired_by_distance,
+                level_expired_by_time: &LevCon::level_expired_by_time,
+                active_level_exceeds_activation_crossing_distance_when_returned_to_level: &LevCon::active_level_exceeds_activation_crossing_distance_when_returned_to_level,
+                exclude_weekend_and_holidays: &utils.exclude_weekend_and_holidays,
+            },
+            params,
+            StatisticsNotifier::<FakeBacktestingNotificationQueue>::Backtesting(
+                &mut stores.statistics,
+            ),
+        )?;
+
+        LevUt::move_take_profits(
+            &mut stores.main,
+            params.get_ratio_param_value(
+                StepRatioParam::DistanceFromLevelForSignalingOfMovingTakeProfits,
+                current_candle.props.base.volatility,
+            ),
+            params.get_ratio_param_value(
+                StepRatioParam::DistanceToMoveTakeProfits,
+                current_candle.props.base.volatility,
+            ),
+            current_tick.props.bid,
+        )?;
+    }
+
+    if new_candle_appeared {}
+
+    Ok(())
 }

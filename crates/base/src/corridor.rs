@@ -1,25 +1,31 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::entities::candle::BasicCandleProperties;
+use crate::entities::candle::{BasicCandleProperties, CandleId};
+use crate::entities::Item;
 use crate::helpers::points_to_price;
 use crate::params::ParamValue;
 
 /// Candle can be the corridor leader if its size is less or equal to the current volatility.
-pub fn candle_can_be_corridor_leader(candle_properties: &BasicCandleProperties) -> bool {
-    if candle_properties.size <= candle_properties.volatility.into() {
-        return true;
-    }
-
-    false
+pub fn candle_can_be_corridor_leader<P>(candle_properties: &P) -> bool
+where
+    P: AsRef<BasicCandleProperties>,
+{
+    candle_properties.as_ref().size <= candle_properties.as_ref().volatility.into()
 }
 
 /// Checks if a candle is inside a corridor basing on a leading candle.
-pub fn is_in_corridor(
-    candle: &BasicCandleProperties,
-    leading_candle: &BasicCandleProperties,
+pub fn candle_is_in_corridor<C>(
+    candle: &C,
+    leading_candle: &C,
     max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
-) -> bool {
+) -> bool
+where
+    C: AsRef<BasicCandleProperties>,
+{
+    let candle = candle.as_ref();
+    let leading_candle = leading_candle.as_ref();
+
     diff_between_edges(candle.prices.high, Edge::High, leading_candle)
         <= max_distance_from_corridor_leading_candle_pins_pct
         && diff_between_edges(candle.prices.low, Edge::Low, leading_candle)
@@ -55,18 +61,21 @@ fn diff_between_edges(
 /// Shifts the corridor leader by one from the beginning of the corridor and tries to find
 /// the appropriate leader for the new candle. The corridor will be cropped
 /// to the closest appropriate leader.
-pub fn crop_corridor_to_closest_leader(
-    corridor: &[BasicCandleProperties],
-    new_candle: &BasicCandleProperties,
+pub fn crop_corridor_to_closest_leader<C>(
+    corridor: &[Item<CandleId, C>],
+    new_candle: &Item<CandleId, C>,
     max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
-    candle_can_be_corridor_leader: impl Fn(&BasicCandleProperties) -> bool,
-    is_in_corridor: impl Fn(&BasicCandleProperties, &BasicCandleProperties, ParamValue) -> bool,
-) -> Option<Vec<BasicCandleProperties>> {
+    candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
+    is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+) -> Option<Vec<Item<CandleId, C>>>
+where
+    C: AsRef<BasicCandleProperties> + Clone,
+{
     for (i, candle) in corridor.iter().enumerate() {
-        if candle_can_be_corridor_leader(candle)
+        if candle_can_be_corridor_leader(&candle.props)
             && is_in_corridor(
-                new_candle,
-                candle,
+                &new_candle.props,
+                &candle.props,
                 max_distance_from_corridor_leading_candle_pins_pct,
             )
         {
@@ -82,13 +91,13 @@ pub fn crop_corridor_to_closest_leader(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{CandlePrices, CandleType};
+    use crate::entities::{BasicTickProperties, CandlePrices, CandleType};
     use chrono::Utc;
     use std::cell::RefCell;
 
     #[test]
     #[allow(non_snake_case)]
-    fn candle_can_be_corridor_leader__true() {
+    fn candle_can_be_corridor_leader__appropriate_candle__should_return_true() {
         let candle_properties = BasicCandleProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
@@ -102,7 +111,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn candle_can_be_corridor_leader__false() {
+    fn candle_can_be_corridor_leader__inappropriate_candle__should_return_false() {
         let candle_properties = BasicCandleProperties {
             time: Utc::now().naive_utc(),
             r#type: CandleType::Green,
@@ -111,7 +120,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(!candle_can_be_corridor_leader(&candle_properties));
+        assert!(!candle_can_be_corridor_leader(&candle_properties,));
     }
 
     #[test]
@@ -143,7 +152,11 @@ mod tests {
             },
         };
 
-        assert!(is_in_corridor(&current_candle, &leading_candle, dec!(20)));
+        assert!(candle_is_in_corridor(
+            &current_candle,
+            &leading_candle,
+            dec!(20)
+        ));
     }
 
     #[test]
@@ -175,7 +188,11 @@ mod tests {
             },
         };
 
-        assert!(!is_in_corridor(&current_candle, &leading_candle, dec!(20)));
+        assert!(!candle_is_in_corridor(
+            &current_candle,
+            &leading_candle,
+            dec!(20)
+        ));
     }
 
     #[test]
@@ -183,79 +200,103 @@ mod tests {
     fn crop_corridor_to_closest_leader__third_candle_is_appropriate_leader__new_existing_corridor()
     {
         let current_corridor = [
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.0),
-                    high: dec!(0.0),
-                    low: dec!(0.0),
-                    close: dec!(0.0),
+            Item {
+                id: String::from("1"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.0),
+                        high: dec!(0.0),
+                        low: dec!(0.0),
+                        close: dec!(0.0),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.1),
-                    high: dec!(0.1),
-                    low: dec!(0.1),
-                    close: dec!(0.1),
+            Item {
+                id: String::from("2"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.1),
+                        high: dec!(0.1),
+                        low: dec!(0.1),
+                        close: dec!(0.1),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.2),
-                    high: dec!(0.2),
-                    low: dec!(0.2),
-                    close: dec!(0.2),
+            Item {
+                id: String::from("3"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.2),
+                        high: dec!(0.2),
+                        low: dec!(0.2),
+                        close: dec!(0.2),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.3),
-                    high: dec!(0.3),
-                    low: dec!(0.3),
-                    close: dec!(0.3),
+            Item {
+                id: String::from("4"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.3),
+                        high: dec!(0.3),
+                        low: dec!(0.3),
+                        close: dec!(0.3),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.4),
-                    high: dec!(0.4),
-                    low: dec!(0.4),
-                    close: dec!(0.4),
+            Item {
+                id: String::from("5"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.4),
+                        high: dec!(0.4),
+                        low: dec!(0.4),
+                        close: dec!(0.4),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.5),
-                    high: dec!(0.5),
-                    low: dec!(0.5),
-                    close: dec!(0.5),
+            Item {
+                id: String::from("6"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.5),
+                        high: dec!(0.5),
+                        low: dec!(0.5),
+                        close: dec!(0.5),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
-            BasicCandleProperties {
-                prices: CandlePrices {
-                    open: dec!(0.6),
-                    high: dec!(0.6),
-                    low: dec!(0.6),
-                    close: dec!(0.6),
+            Item {
+                id: String::from("7"),
+                props: BasicCandleProperties {
+                    prices: CandlePrices {
+                        open: dec!(0.6),
+                        high: dec!(0.6),
+                        low: dec!(0.6),
+                        close: dec!(0.6),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
             },
         ];
 
-        let new_candle = BasicCandleProperties {
-            prices: CandlePrices {
-                open: dec!(0.7),
-                high: dec!(0.7),
-                low: dec!(0.7),
-                close: dec!(0.7),
+        let new_candle = Item {
+            id: String::from("8"),
+            props: BasicCandleProperties {
+                prices: CandlePrices {
+                    open: dec!(0.7),
+                    high: dec!(0.7),
+                    low: dec!(0.7),
+                    close: dec!(0.7),
+                },
+                ..Default::default()
             },
-            ..Default::default()
         };
         let max_distance_from_corridor_leading_candle_pins_pct = dec!(20);
 
@@ -278,8 +319,8 @@ mod tests {
             &current_corridor,
             &new_candle,
             max_distance_from_corridor_leading_candle_pins_pct,
-            candle_can_be_corridor_leader,
-            is_in_corridor,
+            &candle_can_be_corridor_leader,
+            &is_in_corridor,
         )
         .unwrap();
 

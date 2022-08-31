@@ -55,7 +55,7 @@ pub enum StepRatioParam {
     DistanceFromLevelToCorridorBeforeActivationCrossingOfLevel,
     DistanceDefiningNearbyLevelsOfTheSameType,
     MinDistanceOfActivationCrossingOfLevelWhenReturningToLevelForItsDeletion,
-    BigCorridorNearLevel,
+    RangeOfBigCorridorNearLevel,
 }
 
 impl Display for StepRatioParam {
@@ -101,8 +101,8 @@ impl Display for StepRatioParam {
                     "min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion"
                 )
             }
-            StepRatioParam::BigCorridorNearLevel => {
-                write!(f, "big_corridor_near_level")
+            StepRatioParam::RangeOfBigCorridorNearLevel => {
+                write!(f, "range_of_big_corridor_near_level")
             }
         }
     }

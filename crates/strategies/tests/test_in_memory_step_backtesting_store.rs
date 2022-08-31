@@ -230,7 +230,7 @@ fn should_successfully_remove_working_level() {
 }
 
 #[test]
-fn should_successfully_add_candle_to_working_level_corridor() {
+fn should_successfully_add_candle_to_working_level_corridor_and_then_clear_corridor() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
     let working_level_id = store.create_working_level(Default::default()).unwrap().id;
@@ -266,6 +266,22 @@ fn should_successfully_add_candle_to_working_level_corridor() {
         .unwrap()
         .iter()
         .any(|candle| candle.id == second_candle_id));
+
+    store
+        .clear_working_level_corridor(&working_level_id, CorridorType::Small)
+        .unwrap();
+    assert!(store
+        .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Small)
+        .unwrap()
+        .is_empty());
+
+    store
+        .clear_working_level_corridor(&working_level_id, CorridorType::Big)
+        .unwrap();
+    assert!(store
+        .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Big)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

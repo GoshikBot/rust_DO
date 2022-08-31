@@ -16,9 +16,8 @@ use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls};
 use trading_apis::MetaapiMarketDataApi;
 
 use base::params::StrategyCsvFileParams;
-use strategies::step::step_backtesting;
-use strategies::step::step_backtesting::StepBacktestingIterationRunner;
-use strategies::step::utils::backtesting_charts::BacktestingChartTracesModifier;
+use strategies::step::step_backtesting::run_iteration;
+use strategies::step::utils::backtesting_charts::add_entity_to_chart_traces;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use strategies::step::utils::helpers::HelpersImpl;
 use strategies::step::utils::level_conditions::LevelConditionsImpl;
@@ -105,17 +104,19 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
 
     let trading_limiter = TradingLimiterBacktesting::new();
 
-    let utils = StepBacktestingUtils {
-        helpers: HelpersImpl::new(),
-        level_utils: LevelUtilsImpl::new(),
-        level_conditions: LevelConditionsImpl::new(),
-        order_utils: OrderUtilsImpl::new(),
-        chart_traces_modifier: BacktestingChartTracesModifier::new(),
-        trading_engine: BacktestingTradingEngine::new(),
+    let utils: StepBacktestingUtils<
+        HelpersImpl,
+        LevelUtilsImpl,
+        LevelConditionsImpl,
+        OrderUtilsImpl,
+        _,
+        _,
+        _,
+    > = StepBacktestingUtils::new(
+        add_entity_to_chart_traces,
+        BacktestingTradingEngine::new(),
         exclude_weekend_and_holidays,
-    };
-
-    let iteration_runner = StepBacktestingIterationRunner::new();
+    );
 
     let strategy_performance = backtesting_runner::loop_through_historical_data(
         &historical_data,
@@ -126,7 +127,7 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
             params: &step_params,
         },
         &trading_limiter,
-        &iteration_runner,
+        &run_iteration,
     )?;
 
     println!("Strategy performance: {}", strategy_performance);

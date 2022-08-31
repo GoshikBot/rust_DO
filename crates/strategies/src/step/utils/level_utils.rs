@@ -1,13 +1,15 @@
 use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::entities::params::{StepPointParam, StepRatioParam};
-use crate::step::utils::entities::working_levels::{WLMaxCrossingValue, WLStatus};
+use crate::step::utils::entities::working_levels::{
+    LevelTime, WLMaxCrossingValue, WLPrice, WLStatus,
+};
 use crate::step::utils::entities::StatisticsNotifier;
 use crate::step::utils::level_conditions::LevelConditions;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::{Context, Result};
 use base::entities::candle::CandleVolatility;
 use base::entities::order::{BasicOrderProperties, OrderStatus, OrderType};
-use base::entities::tick::TickPrice;
+use base::entities::tick::{TickPrice, TickTime};
 use base::entities::TARGET_LOGGER_ENV;
 use base::entities::{BasicTickProperties, Item};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
@@ -15,22 +17,21 @@ use base::notifier::NotificationQueue;
 use base::params::{ParamValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
+use std::marker::PhantomData;
 
 use super::entities::working_levels::{BasicWLProperties, WLId};
 
 pub trait LevelUtils {
     /// Checks whether one of the working levels has got crossed and returns such a level.
-    fn get_crossed_level<'a, W>(
-        &self,
+    fn get_crossed_level<W>(
         current_tick_price: TickPrice,
-        created_working_levels: &'a [Item<WLId, W>],
-    ) -> Option<&'a Item<WLId, W>>
+        created_working_levels: &[Item<WLId, W>],
+    ) -> Option<&Item<WLId, W>>
     where
         W: AsRef<BasicWLProperties>;
 
     /// Moves active working levels to removed if they have closed orders in their chains.
     fn remove_active_working_levels_with_closed_orders<O>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
     ) -> Result<()>
     where
@@ -40,33 +41,33 @@ pub trait LevelUtils {
     /// It's required to delete invalid active levels that crossed particular distance
     /// and returned to level without getting to the first order.
     fn update_max_crossing_value_of_active_levels<T>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
         current_tick_price: TickPrice,
     ) -> Result<()>
     where
         T: Into<BasicWLProperties>;
 
-    fn remove_invalid_working_levels<W, C, E, T, N, O>(
-        &self,
+    fn remove_invalid_working_levels<W, A, D, M, C, E, T, N, O>(
         current_tick: &BasicTickProperties,
         current_volatility: CandleVolatility,
-        utils: RemoveInvalidWorkingLevelsUtils<W, C, E, T, O>,
+        utils: RemoveInvalidWorkingLevelsUtils<W, A, D, M, C, E, T, O>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         entity: StatisticsNotifier<N>,
     ) -> Result<()>
     where
-        T: Into<BasicWLProperties>,
+        T: AsRef<BasicWLProperties>,
         O: AsRef<BasicOrderProperties>,
         W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
-        C: LevelConditions,
+        A: Fn(&[O]) -> bool,
+        D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
+        M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
+        C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue;
 
     /// Moves take profits of the existing chains of orders when the current tick price
     /// deviates from the active working level on the defined amount of points.
     fn move_take_profits<W>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
         distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
         distance_to_move_take_profits: ParamValue,
@@ -76,16 +77,22 @@ pub trait LevelUtils {
         W: Into<BasicWLProperties>;
 }
 
-pub struct RemoveInvalidWorkingLevelsUtils<'a, W, C, E, T, O>
+pub struct RemoveInvalidWorkingLevelsUtils<'a, W, A, D, M, C, E, T, O>
 where
-    T: Into<BasicWLProperties>,
+    T: AsRef<BasicWLProperties>,
     O: AsRef<BasicOrderProperties>,
     W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
-    C: LevelConditions,
+    A: Fn(&[O]) -> bool,
+    D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
+    M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
+    C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
     E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub working_level_store: &'a mut W,
-    pub level_conditions: &'a C,
+    pub level_has_no_active_orders: &'a A,
+    pub level_expired_by_distance: &'a D,
+    pub level_expired_by_time: &'a M,
+    pub active_level_exceeds_activation_crossing_distance_when_returned_to_level: &'a C,
     pub exclude_weekend_and_holidays: &'a E,
 }
 
@@ -105,11 +112,10 @@ impl LevelUtilsImpl {
 }
 
 impl LevelUtils for LevelUtilsImpl {
-    fn get_crossed_level<'a, W>(
-        &self,
+    fn get_crossed_level<W>(
         current_tick_price: TickPrice,
-        created_working_levels: &'a [Item<WLId, W>],
-    ) -> Option<&'a Item<WLId, W>>
+        created_working_levels: &[Item<WLId, W>],
+    ) -> Option<&Item<WLId, W>>
     where
         W: AsRef<BasicWLProperties>,
     {
@@ -134,7 +140,6 @@ impl LevelUtils for LevelUtilsImpl {
     }
 
     fn remove_active_working_levels_with_closed_orders<O>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<OrderProperties = O>,
     ) -> Result<()>
     where
@@ -156,7 +161,6 @@ impl LevelUtils for LevelUtilsImpl {
     }
 
     fn update_max_crossing_value_of_active_levels<T>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
         current_tick_price: TickPrice,
     ) -> Result<()>
@@ -229,19 +233,21 @@ impl LevelUtils for LevelUtilsImpl {
         Ok(())
     }
 
-    fn remove_invalid_working_levels<W, C, E, T, N, O>(
-        &self,
+    fn remove_invalid_working_levels<W, A, D, M, C, E, T, N, O>(
         current_tick: &BasicTickProperties,
         current_volatility: CandleVolatility,
-        utils: RemoveInvalidWorkingLevelsUtils<W, C, E, T, O>,
+        utils: RemoveInvalidWorkingLevelsUtils<W, A, D, M, C, E, T, O>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         mut entity: StatisticsNotifier<N>,
     ) -> Result<()>
     where
-        T: Into<BasicWLProperties>,
+        T: AsRef<BasicWLProperties>,
         O: AsRef<BasicOrderProperties>,
         W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
-        C: LevelConditions,
+        A: Fn(&[O]) -> bool,
+        D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
+        M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
+        C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue,
     {
@@ -255,11 +261,12 @@ impl LevelUtils for LevelUtilsImpl {
                     .get_active_working_levels()?
                     .into_iter(),
             )
-            .map(|level| Item {
-                id: level.id,
-                props: level.props.into(),
-            })
         {
+            let converted_level = Item {
+                id: &level.id,
+                props: level.props.as_ref(),
+            };
+
             let level_status = utils
                 .working_level_store
                 .get_working_level_status(&level.id)?
@@ -274,7 +281,7 @@ impl LevelUtils for LevelUtilsImpl {
 
             if level_status == WLStatus::Created
                 || (level_status == WLStatus::Active
-                    && utils.level_conditions.level_has_no_active_orders(
+                    && (utils.level_has_no_active_orders)(
                         &utils
                             .working_level_store
                             .get_working_level_chain_of_orders(&level.id)?
@@ -283,14 +290,14 @@ impl LevelUtils for LevelUtilsImpl {
                             .collect::<Vec<_>>(),
                     ))
             {
-                if utils.level_conditions.level_expired_by_distance(
-                    level.props.price,
+                if (utils.level_expired_by_distance)(
+                    converted_level.props.price,
                     current_tick.bid,
                     distance_from_level_for_its_deletion,
                 ) {
                     log::debug!(
                         target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                        "level ({:?}) is expired by distance", level
+                        "level ({:?}) is expired by distance", converted_level
                     );
 
                     match &mut entity {
@@ -300,7 +307,7 @@ impl LevelUtils for LevelUtilsImpl {
                         StatisticsNotifier::Realtime(queue) => {
                             queue.send_message(format!(
                                 "level ({:?}) is expired by distance",
-                                level
+                                converted_level
                             ))?;
                         }
                     }
@@ -309,21 +316,21 @@ impl LevelUtils for LevelUtilsImpl {
                 } else {
                     log::debug!(
                         target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                        "level ({:?}) is NOT expired by distance", level
+                        "level ({:?}) is NOT expired by distance", converted_level
                     );
 
                     let level_expiration =
                         params.get_point_param_value(StepPointParam::LevelExpirationDays);
 
-                    if utils.level_conditions.level_expired_by_time(
-                        level.props.time,
+                    if (utils.level_expired_by_time)(
+                        converted_level.props.time,
                         current_tick.time,
                         level_expiration,
                         utils.exclude_weekend_and_holidays,
                     ) {
                         log::debug!(
                             target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                            "level ({:?}) is expired by time", level
+                            "level ({:?}) is expired by time", converted_level
                         );
 
                         match &mut entity {
@@ -333,7 +340,7 @@ impl LevelUtils for LevelUtilsImpl {
                             StatisticsNotifier::Realtime(queue) => {
                                 queue.send_message(format!(
                                     "level ({:?}) is expired by time",
-                                    level
+                                    converted_level
                                 ))?;
                             }
                         }
@@ -342,7 +349,7 @@ impl LevelUtils for LevelUtilsImpl {
                     } else {
                         log::debug!(
                             target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                            "level ({:?}) is NOT expired by time", level
+                            "level ({:?}) is NOT expired by time", converted_level
                         );
 
                         if level_status == WLStatus::Active {
@@ -355,7 +362,7 @@ impl LevelUtils for LevelUtilsImpl {
                                 current_volatility
                             );
 
-                            if utils.level_conditions.active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+                            if (utils.active_level_exceeds_activation_crossing_distance_when_returned_to_level)(
                                 &level.props,
                                 max_crossing_value,
                                 min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -364,7 +371,7 @@ impl LevelUtils for LevelUtilsImpl {
                                 log::debug!(
                                     target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                                     "level ({:?}) exceeds activation crossing distance when returned to level: {:?} >= {}",
-                                    level, max_crossing_value,
+                                    converted_level, max_crossing_value,
                                     min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion
                                 );
 
@@ -375,7 +382,7 @@ impl LevelUtils for LevelUtilsImpl {
                                     StatisticsNotifier::Realtime(queue) => {
                                         queue.send_message(format!(
                                             "level ({:?}) exceeds activation crossing distance when returned to level: {:?} >= {}",
-                                            level, max_crossing_value,
+                                            converted_level, max_crossing_value,
                                             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion
                                         ))?;
                                     }
@@ -386,7 +393,7 @@ impl LevelUtils for LevelUtilsImpl {
                                 log::debug!(
                                     target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                                     "level ({:?}) DOES NOT exceed activation crossing distance when returned to level: {:?} < {}",
-                                    level, max_crossing_value,
+                                    converted_level, max_crossing_value,
                                     min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion
                                 );
                             }
@@ -408,7 +415,6 @@ impl LevelUtils for LevelUtilsImpl {
     }
 
     fn move_take_profits<W>(
-        &self,
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
         distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
         distance_to_move_take_profits: ParamValue,
@@ -453,7 +459,7 @@ mod tests {
         BacktestingWLProperties, CorridorType, LevelTime, WLPrice,
     };
     use crate::step::utils::entities::FakeBacktestingNotificationQueue;
-    use crate::step::utils::level_conditions::MinAmountOfCandles;
+    use crate::step::utils::level_conditions::{LevelConditionsImpl, MinAmountOfCandles};
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use crate::step::utils::stores::StepBacktestingStatistics;
     use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderPrice, OrderStatus};
@@ -494,10 +500,8 @@ mod tests {
 
         let current_tick_price = dec!(9);
 
-        let level_utils = LevelUtilsImpl::new();
-
         let crossed_level =
-            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
+            LevelUtilsImpl::get_crossed_level(current_tick_price, &created_working_levels);
 
         assert_eq!(crossed_level.unwrap().id, "1");
     }
@@ -527,10 +531,8 @@ mod tests {
 
         let current_tick_price = dec!(11);
 
-        let level_utils = LevelUtilsImpl::new();
-
         let crossed_level =
-            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
+            LevelUtilsImpl::get_crossed_level(current_tick_price, &created_working_levels);
 
         assert_eq!(crossed_level.unwrap().id, "2");
     }
@@ -560,10 +562,8 @@ mod tests {
 
         let current_tick_price = dec!(11);
 
-        let level_utils = LevelUtilsImpl::new();
-
         let crossed_level =
-            level_utils.get_crossed_level(current_tick_price, &created_working_levels);
+            LevelUtilsImpl::get_crossed_level(current_tick_price, &created_working_levels);
 
         assert!(crossed_level.is_none());
     }
@@ -673,11 +673,7 @@ mod tests {
             store.move_working_level_to_active(level_id).unwrap();
         }
 
-        let level_utils = LevelUtilsImpl::new();
-
-        level_utils
-            .remove_active_working_levels_with_closed_orders(&mut store)
-            .unwrap();
+        LevelUtilsImpl::remove_active_working_levels_with_closed_orders(&mut store).unwrap();
 
         assert!(!store
             .get_active_working_levels()
@@ -707,12 +703,9 @@ mod tests {
 
         store.move_working_level_to_active(&level.id).unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.37000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         let expected_max_crossing_value = price_to_points(level_price - current_tick_price);
@@ -747,12 +740,9 @@ mod tests {
 
         store.move_working_level_to_active(&level.id).unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.39000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         let expected_max_crossing_value = price_to_points(current_tick_price - level_price);
@@ -787,12 +777,9 @@ mod tests {
 
         store.move_working_level_to_active(&level.id).unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.39000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert!(store
@@ -822,12 +809,9 @@ mod tests {
 
         store.move_working_level_to_active(&level.id).unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.37000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert!(store
@@ -860,12 +844,9 @@ mod tests {
             .update_max_crossing_value_of_working_level(&level.id, dec!(200))
             .unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.37000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert_eq!(
@@ -903,12 +884,9 @@ mod tests {
             .update_max_crossing_value_of_working_level(&level.id, previous_max_crossing_value)
             .unwrap();
 
-        let level_utils = LevelUtilsImpl::new();
-
         let current_tick_price = dec!(1.37000);
 
-        level_utils
-            .update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert_eq!(
@@ -925,7 +903,6 @@ mod tests {
 
     impl LevelConditions for TestLevelConditionsImpl {
         fn level_exceeds_amount_of_candles_in_corridor(
-            &self,
             _level_id: &str,
             _working_level_store: &impl StepWorkingLevelStore,
             _corridor_type: CorridorType,
@@ -935,7 +912,6 @@ mod tests {
         }
 
         fn price_is_beyond_stop_loss(
-            &self,
             _current_tick_price: TickPrice,
             _stop_loss_price: OrderPrice,
             _working_level_type: OrderType,
@@ -944,7 +920,6 @@ mod tests {
         }
 
         fn level_expired_by_distance(
-            &self,
             level_price: WLPrice,
             _current_tick_price: TickPrice,
             _distance_from_level_for_its_deletion: ParamValue,
@@ -953,7 +928,6 @@ mod tests {
         }
 
         fn level_expired_by_time(
-            &self,
             level_time: LevelTime,
             _current_tick_time: TickTime,
             _level_expiration: ParamValue,
@@ -967,7 +941,6 @@ mod tests {
         }
 
         fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
-            &self,
             level: &impl AsRef<BasicWLProperties>,
             _max_crossing_value: Option<WLMaxCrossingValue>,
             _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
@@ -976,10 +949,7 @@ mod tests {
             level.as_ref().price == dec!(7)
         }
 
-        fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
-        where
-            T: AsRef<BasicOrderProperties>,
-        {
+        fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool {
             level_orders.is_empty()
         }
     }
@@ -1004,6 +974,40 @@ mod tests {
         }
     }
 
+    fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool {
+        level_orders.is_empty()
+    }
+
+    fn level_expired_by_distance(
+        level_price: WLPrice,
+        _current_tick_price: TickPrice,
+        _distance_from_level_for_its_deletion: ParamValue,
+    ) -> bool {
+        level_price == dec!(1) || level_price == dec!(5)
+    }
+
+    fn level_expired_by_time(
+        level_time: LevelTime,
+        _current_tick_time: TickTime,
+        _level_expiration: ParamValue,
+        _exclude_weekend_and_holidays: &impl Fn(
+            NaiveDateTime,
+            NaiveDateTime,
+            &[Holiday],
+        ) -> NumberOfDaysToExclude,
+    ) -> bool {
+        matches!(level_time.day(), 2 | 6)
+    }
+
+    fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        level: &impl AsRef<BasicWLProperties>,
+        _max_crossing_value: Option<WLMaxCrossingValue>,
+        _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        _current_tick_price: TickPrice,
+    ) -> bool {
+        level.as_ref().price == dec!(7)
+    }
+
     #[test]
     #[allow(non_snake_case)]
     fn remove_invalid_working_levels__backtesting__should_remove_only_invalid_levels() {
@@ -1014,7 +1018,6 @@ mod tests {
         let current_tick = BasicTickProperties::default();
         let current_volatility = 280;
 
-        let level_conditions = TestLevelConditionsImpl::default();
         let exclude_weekend_and_holidays =
             |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 0;
 
@@ -1067,21 +1070,22 @@ mod tests {
             }
         }
 
-        level_utils
-            .remove_invalid_working_levels(
-                &current_tick,
-                current_volatility,
-                RemoveInvalidWorkingLevelsUtils {
-                    working_level_store: &mut store,
-                    level_conditions: &level_conditions,
-                    exclude_weekend_and_holidays: &exclude_weekend_and_holidays,
-                },
-                &params,
-                StatisticsNotifier::<FakeBacktestingNotificationQueue>::Backtesting(
-                    &mut statistics,
-                ),
-            )
-            .unwrap();
+        LevelUtilsImpl::remove_invalid_working_levels(
+            &current_tick,
+            current_volatility,
+            RemoveInvalidWorkingLevelsUtils {
+                working_level_store: &mut store,
+                level_has_no_active_orders: &level_has_no_active_orders,
+                level_expired_by_distance: &level_expired_by_distance,
+                level_expired_by_time: &level_expired_by_time,
+                active_level_exceeds_activation_crossing_distance_when_returned_to_level:
+                    &active_level_exceeds_activation_crossing_distance_when_returned_to_level,
+                exclude_weekend_and_holidays: &exclude_weekend_and_holidays,
+            },
+            &params,
+            StatisticsNotifier::<FakeBacktestingNotificationQueue>::Backtesting(&mut statistics),
+        )
+        .unwrap();
 
         assert_eq!(statistics.number_of_working_levels, 3);
         assert_eq!(store.get_created_working_levels().unwrap().len(), 1);
@@ -1111,8 +1115,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn remove_invalid_working_levels__realtime__should_remove_only_invalid_levels() {
         let mut store = InMemoryStepBacktestingStore::new();
-
-        let level_utils = LevelUtilsImpl::new();
 
         let current_tick = BasicTickProperties::default();
         let current_volatility = 280;
@@ -1168,19 +1170,22 @@ mod tests {
 
         let notification_queue = TestNotificationQueue::default();
 
-        level_utils
-            .remove_invalid_working_levels(
-                &current_tick,
-                current_volatility,
-                RemoveInvalidWorkingLevelsUtils {
-                    working_level_store: &mut store,
-                    level_conditions: &level_conditions,
-                    exclude_weekend_and_holidays: &exclude_weekend_and_holidays,
-                },
-                &params,
-                StatisticsNotifier::Realtime(&notification_queue),
-            )
-            .unwrap();
+        LevelUtilsImpl::remove_invalid_working_levels(
+            &current_tick,
+            current_volatility,
+            RemoveInvalidWorkingLevelsUtils {
+                working_level_store: &mut store,
+                level_has_no_active_orders: &level_has_no_active_orders,
+                level_expired_by_distance: &level_expired_by_distance,
+                level_expired_by_time: &level_expired_by_time,
+                active_level_exceeds_activation_crossing_distance_when_returned_to_level:
+                    &active_level_exceeds_activation_crossing_distance_when_returned_to_level,
+                exclude_weekend_and_holidays: &exclude_weekend_and_holidays,
+            },
+            &params,
+            StatisticsNotifier::Realtime(&notification_queue),
+        )
+        .unwrap();
 
         assert_eq!(store.get_created_working_levels().unwrap().len(), 1);
         assert_eq!(store.get_active_working_levels().unwrap().len(), 2);
@@ -1238,14 +1243,13 @@ mod tests {
         let distance_from_level_for_signaling_of_moving_take_profits = dec!(200);
         let distance_to_move_take_profits = dec!(30);
 
-        level_utils
-            .move_take_profits(
-                &mut store,
-                distance_from_level_for_signaling_of_moving_take_profits,
-                distance_to_move_take_profits,
-                current_tick_price,
-            )
-            .unwrap();
+        LevelUtilsImpl::move_take_profits(
+            &mut store,
+            distance_from_level_for_signaling_of_moving_take_profits,
+            distance_to_move_take_profits,
+            current_tick_price,
+        )
+        .unwrap();
 
         for level in store.get_active_working_levels().unwrap() {
             for order in store.get_working_level_chain_of_orders(&level.id).unwrap() {

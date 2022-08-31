@@ -18,7 +18,6 @@ pub trait LevelConditions {
     /// Checks whether the level exceeds the amount of candles in the corridor
     /// before the activation crossing of the level.
     fn level_exceeds_amount_of_candles_in_corridor(
-        &self,
         level_id: &str,
         working_level_store: &impl StepWorkingLevelStore,
         corridor_type: CorridorType,
@@ -26,21 +25,18 @@ pub trait LevelConditions {
     ) -> Result<bool>;
 
     fn price_is_beyond_stop_loss(
-        &self,
         current_tick_price: TickPrice,
         stop_loss_price: OrderPrice,
         working_level_type: OrderType,
     ) -> bool;
 
     fn level_expired_by_distance(
-        &self,
         level_price: WLPrice,
         current_tick_price: TickPrice,
         distance_from_level_for_its_deletion: ParamValue,
     ) -> bool;
 
     fn level_expired_by_time(
-        &self,
         level_time: LevelTime,
         current_tick_time: TickTime,
         level_expiration: ParamValue,
@@ -52,30 +48,20 @@ pub trait LevelConditions {
     ) -> bool;
 
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
-        &self,
         level: &impl AsRef<BasicWLProperties>,
         max_crossing_value: Option<WLMaxCrossingValue>,
         min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
         current_tick_price: TickPrice,
     ) -> bool;
 
-    fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
-    where
-        T: AsRef<BasicOrderProperties>;
+    fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool;
 }
 
 #[derive(Default)]
 pub struct LevelConditionsImpl;
 
-impl LevelConditionsImpl {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 impl LevelConditions for LevelConditionsImpl {
     fn level_exceeds_amount_of_candles_in_corridor(
-        &self,
         level_id: &str,
         working_level_store: &impl StepWorkingLevelStore,
         corridor_type: CorridorType,
@@ -88,7 +74,6 @@ impl LevelConditions for LevelConditionsImpl {
     }
 
     fn price_is_beyond_stop_loss(
-        &self,
         current_tick_price: TickPrice,
         stop_loss_price: OrderPrice,
         working_level_type: OrderType,
@@ -98,7 +83,6 @@ impl LevelConditions for LevelConditionsImpl {
     }
 
     fn level_expired_by_distance(
-        &self,
         level_price: WLPrice,
         current_tick_price: TickPrice,
         distance_from_level_for_its_deletion: ParamValue,
@@ -115,7 +99,6 @@ impl LevelConditions for LevelConditionsImpl {
     }
 
     fn level_expired_by_time(
-        &self,
         level_time: LevelTime,
         current_tick_time: TickTime,
         level_expiration: ParamValue,
@@ -139,7 +122,6 @@ impl LevelConditions for LevelConditionsImpl {
     }
 
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
-        &self,
         level: &impl AsRef<BasicWLProperties>,
         max_crossing_value: Option<WLMaxCrossingValue>,
         min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
@@ -160,10 +142,7 @@ impl LevelConditions for LevelConditionsImpl {
         false
     }
 
-    fn level_has_no_active_orders<T>(&self, level_orders: &[T]) -> bool
-    where
-        T: AsRef<BasicOrderProperties>,
-    {
+    fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool {
         for order in level_orders {
             if order.as_ref().status != OrderStatus::Pending {
                 return false;
@@ -241,6 +220,14 @@ mod tests {
         }
 
         fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
+            unimplemented!()
+        }
+
+        fn clear_working_level_corridor(
+            &mut self,
+            working_level_id: &str,
+            corridor_type: CorridorType,
+        ) -> Result<()> {
             unimplemented!()
         }
 
@@ -337,16 +324,13 @@ mod tests {
         let working_level_store = TestWorkingLevelStore::default(small_corridor, vec![]);
         let level_id = "1";
 
-        let level_conditions = LevelConditionsImpl::default();
-
-        let result = level_conditions
-            .level_exceeds_amount_of_candles_in_corridor(
-                level_id,
-                &working_level_store,
-                CorridorType::Small,
-                dec!(3),
-            )
-            .unwrap();
+        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+            level_id,
+            &working_level_store,
+            CorridorType::Small,
+            dec!(3),
+        )
+        .unwrap();
 
         assert!(result);
     }
@@ -369,16 +353,13 @@ mod tests {
         let working_level_store = TestWorkingLevelStore::default(small_corridor, vec![]);
         let level_id = "1";
 
-        let level_conditions = LevelConditionsImpl::default();
-
-        let result = level_conditions
-            .level_exceeds_amount_of_candles_in_corridor(
-                level_id,
-                &working_level_store,
-                CorridorType::Small,
-                dec!(3),
-            )
-            .unwrap();
+        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+            level_id,
+            &working_level_store,
+            CorridorType::Small,
+            dec!(3),
+        )
+        .unwrap();
 
         assert!(!result);
     }
@@ -413,16 +394,13 @@ mod tests {
         let working_level_store = TestWorkingLevelStore::default(vec![], big_corridor);
         let level_id = "1";
 
-        let level_conditions = LevelConditionsImpl::default();
-
-        let result = level_conditions
-            .level_exceeds_amount_of_candles_in_corridor(
-                level_id,
-                &working_level_store,
-                CorridorType::Big,
-                dec!(3),
-            )
-            .unwrap();
+        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+            level_id,
+            &working_level_store,
+            CorridorType::Big,
+            dec!(3),
+        )
+        .unwrap();
 
         assert!(result);
     }
@@ -445,16 +423,13 @@ mod tests {
         let working_level_store = TestWorkingLevelStore::default(vec![], big_corridor);
         let level_id = "1";
 
-        let level_conditions = LevelConditionsImpl::default();
-
-        let result = level_conditions
-            .level_exceeds_amount_of_candles_in_corridor(
-                level_id,
-                &working_level_store,
-                CorridorType::Big,
-                dec!(3),
-            )
-            .unwrap();
+        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+            level_id,
+            &working_level_store,
+            CorridorType::Big,
+            dec!(3),
+        )
+        .unwrap();
 
         assert!(!result);
     }
@@ -463,9 +438,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn price_is_beyond_stop_loss__buy_level_current_tick_price_is_less_than_stop_loss_price__should_return_true(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(level_conditions.price_is_beyond_stop_loss(
+        assert!(LevelConditionsImpl::price_is_beyond_stop_loss(
             dec!(1.38500),
             dec!(1.39000),
             OrderType::Buy
@@ -476,9 +449,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn price_is_beyond_stop_loss__buy_level_current_tick_price_is_greater_than_stop_loss_price__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(!level_conditions.price_is_beyond_stop_loss(
+        assert!(!LevelConditionsImpl::price_is_beyond_stop_loss(
             dec!(1.39500),
             dec!(1.39000),
             OrderType::Buy
@@ -489,9 +460,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn price_is_beyond_stop_loss__sell_level_current_tick_price_is_greater_than_stop_loss_price__should_return_true(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(level_conditions.price_is_beyond_stop_loss(
+        assert!(LevelConditionsImpl::price_is_beyond_stop_loss(
             dec!(1.39500),
             dec!(1.39000),
             OrderType::Sell
@@ -502,9 +471,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn price_is_beyond_stop_loss__sell_level_current_tick_price_is_less_than_stop_loss_price__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(!level_conditions.price_is_beyond_stop_loss(
+        assert!(!LevelConditionsImpl::price_is_beyond_stop_loss(
             dec!(1.38500),
             dec!(1.39000),
             OrderType::Sell
@@ -515,9 +482,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn level_expired_by_distance__current_tick_price_is_in_acceptable_range_from_level_price__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(!level_conditions.level_expired_by_distance(
+        assert!(!LevelConditionsImpl::level_expired_by_distance(
             dec!(1.38000),
             dec!(1.39000),
             dec!(2_000)
@@ -528,9 +493,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn level_expired_by_distance__current_tick_price_is_beyond_acceptable_range_from_level_price__should_return_true(
     ) {
-        let level_conditions = LevelConditionsImpl::default();
-
-        assert!(level_conditions.level_expired_by_distance(
+        assert!(LevelConditionsImpl::level_expired_by_distance(
             dec!(1.38000),
             dec!(1.40001),
             dec!(2_000)
@@ -540,8 +503,6 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn level_expired_by_time__current_diff_is_greater_than_level_expiration__should_return_true() {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level_time = NaiveDate::from_ymd(2022, 8, 11).and_hms(0, 0, 0);
         let current_tick_time = NaiveDate::from_ymd(2022, 8, 19).and_hms(0, 0, 0);
         let level_expiration = dec!(5);
@@ -549,7 +510,7 @@ mod tests {
         let exclude_weekend_and_holidays =
             |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 2;
 
-        assert!(level_conditions.level_expired_by_time(
+        assert!(LevelConditionsImpl::level_expired_by_time(
             level_time,
             current_tick_time,
             level_expiration,
@@ -560,8 +521,6 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn level_expired_by_time__current_diff_is_less_than_level_expiration__should_return_false() {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level_time = NaiveDate::from_ymd(2022, 8, 11).and_hms(0, 0, 0);
         let current_tick_time = NaiveDate::from_ymd(2022, 8, 19).and_hms(0, 0, 0);
         let level_expiration = dec!(7);
@@ -569,7 +528,7 @@ mod tests {
         let exclude_weekend_and_holidays =
             |_start_time: NaiveDateTime, _end_time: NaiveDateTime, _holidays: &[Holiday]| 2;
 
-        assert!(!level_conditions.level_expired_by_time(
+        assert!(!LevelConditionsImpl::level_expired_by_time(
             level_time,
             current_tick_time,
             level_expiration,
@@ -587,9 +546,7 @@ mod tests {
             BasicOrderProperties::default(),
         ];
 
-        let level_conditions = LevelConditionsImpl::new();
-
-        assert!(level_conditions.level_has_no_active_orders(&orders));
+        assert!(LevelConditionsImpl::level_has_no_active_orders(&orders));
     }
 
     #[test]
@@ -605,9 +562,7 @@ mod tests {
             BasicOrderProperties::default(),
         ];
 
-        let level_conditions = LevelConditionsImpl::new();
-
-        assert!(!level_conditions.level_has_no_active_orders(&orders));
+        assert!(!LevelConditionsImpl::level_has_no_active_orders(&orders));
     }
 
     #[test]
@@ -623,17 +578,13 @@ mod tests {
             BasicOrderProperties::default(),
         ];
 
-        let level_conditions = LevelConditionsImpl::new();
-
-        assert!(!level_conditions.level_has_no_active_orders(&orders));
+        assert!(!LevelConditionsImpl::level_has_no_active_orders(&orders));
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_buy_level_max_crossing_value_is_beyond_limit__should_return_true(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Buy,
@@ -645,8 +596,8 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(
+            LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -658,8 +609,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__have_not_returned_to_buy_level_max_crossing_value_is_beyond_limit__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Buy,
@@ -671,8 +620,7 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(!level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(!LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -684,8 +632,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_buy_level_max_crossing_value_is_not_beyond_limit__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Buy,
@@ -697,8 +643,7 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(!level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(!LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -710,8 +655,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_sell_level_max_crossing_value_is_beyond_limit__should_return_true(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Sell,
@@ -723,8 +666,7 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -736,8 +678,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__returned_to_sell_level_max_crossing_value_is_not_beyond_limit__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Sell,
@@ -749,8 +689,7 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(!level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(!LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
@@ -762,8 +701,6 @@ mod tests {
     #[allow(non_snake_case)]
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level__have_not_returned_to_sell_level_max_crossing_value_is_beyond_limit__should_return_false(
     ) {
-        let level_conditions = LevelConditionsImpl::new();
-
         let level = BasicWLProperties {
             price: dec!(1.38000),
             r#type: OrderType::Sell,
@@ -775,8 +712,7 @@ mod tests {
         let min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion =
             dec!(100);
 
-        assert!(!level_conditions
-            .active_level_exceeds_activation_crossing_distance_when_returned_to_level(
+        assert!(!LevelConditionsImpl::active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             &level,
             Some(max_crossing_value),
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion,
