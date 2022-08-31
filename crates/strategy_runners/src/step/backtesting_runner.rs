@@ -2,6 +2,7 @@ use anyhow::Context;
 use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
+use base::corridor::BasicCorridorUtils;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
@@ -11,6 +12,7 @@ use base::stores::order_store::BasicOrderStore;
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
 use strategies::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use strategies::step::utils::corridors::Corridors;
 use strategies::step::utils::entities::angle::BasicAngleProperties;
 use strategies::step::utils::entities::candle::StepBacktestingCandleProperties;
 use strategies::step::utils::entities::order::StepOrderProperties;
@@ -55,7 +57,7 @@ fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
     (balances.real - balances.initial) / balances.initial * dec!(100)
 }
 
-pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, D, E, X>
+pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 
@@ -65,19 +67,21 @@ where
     LevUt: LevelUtils,
     LevCon: LevelConditions,
     OrUt: OrderUtils,
+    BCor: BasicCorridorUtils,
+    Cor: Corridors,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub timeframes: StrategyTimeframes,
     pub stores: &'a mut StepBacktestingStores<T>,
-    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, D, E, X>,
+    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
     pub params: &'a P,
 }
 
-pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, D, E, X, I>(
+pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X, I>(
     historical_data: &HistoricalData,
-    strategy_config: StepStrategyRunningConfig<P, T, Hel, LevUt, LevCon, OrUt, D, E, X>,
+    strategy_config: StepStrategyRunningConfig<P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
     trading_limiter: &L,
     run_iteration: &I,
 ) -> Result<StrategyPerformance>
@@ -91,6 +95,8 @@ where
     LevUt: LevelUtils,
     LevCon: LevelConditions,
     OrUt: OrderUtils,
+    BCor: BasicCorridorUtils,
+    Cor: Corridors,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -100,7 +106,7 @@ where
         Option<StepBacktestingCandleProperties>,
         StrategySignals,
         &mut StepBacktestingStores<T>,
-        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, D, E, X>,
+        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
         &P,
     ) -> Result<()>,
 {
@@ -223,7 +229,7 @@ mod tests {
     use super::*;
     use backtesting::trading_engine::TradingEngine;
     use backtesting::{BacktestingTradingEngineConfig, Balance, ClosePositionBy, OpenPositionBy};
-    use base::entities::candle::CandleVolatility;
+    use base::entities::candle::{CandleId, CandleVolatility};
     use base::entities::order::{BasicOrderProperties, OrderId, OrderPrice, OrderType};
     use base::entities::tick::{TickPrice, TickTime};
     use base::entities::{Item, Timeframe};
@@ -233,9 +239,11 @@ mod tests {
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
     use rust_decimal_macros::dec;
+    use std::fmt::Debug;
     use strategies::step::utils::backtesting_charts::{
         ChartTraceEntity, StepBacktestingChartTraces,
     };
+    use strategies::step::utils::corridors::{Corridors, UpdateCorridorsNearWorkingLevelsUtils};
     use strategies::step::utils::entities::working_levels::{
         BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
     };
@@ -468,6 +476,73 @@ mod tests {
             ),
             R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
             P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
+        {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct TestCorridorsImpl;
+
+    impl Corridors for TestCorridorsImpl {
+        fn update_corridors_near_working_levels<W, O, C, L, N, R, A>(
+            working_level_store: &mut impl StepWorkingLevelStore<
+                WorkingLevelProperties = W,
+                OrderProperties = O,
+                CandleProperties = C,
+            >,
+            current_candle: &Item<CandleId, C>,
+            utils: UpdateCorridorsNearWorkingLevelsUtils<C, O, L, N, R, A>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        ) -> Result<()>
+        where
+            W: Into<BasicWLProperties>,
+            O: AsRef<BasicOrderProperties>,
+            C: AsRef<BasicCandleProperties> + Debug,
+            L: Fn(&C) -> bool,
+            N: Fn(&C, &C, ParamValue) -> bool,
+            R: Fn(
+                &[Item<CandleId, C>],
+                &Item<CandleId, C>,
+                ParamValue,
+                &dyn Fn(&C) -> bool,
+                &dyn Fn(&C, &C, ParamValue) -> bool,
+            ) -> Option<Vec<Item<CandleId, C>>>,
+            A: Fn(&[O]) -> bool,
+        {
+            unimplemented!()
+        }
+    }
+
+    struct TestBasicCorridorUtilsImpl;
+
+    impl BasicCorridorUtils for TestBasicCorridorUtilsImpl {
+        fn candle_can_be_corridor_leader(
+            candle_properties: &impl AsRef<BasicCandleProperties>,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn candle_is_in_corridor<C>(
+            candle: &C,
+            leading_candle: &C,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        ) -> bool
+        where
+            C: AsRef<BasicCandleProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn crop_corridor_to_closest_leader<C>(
+            corridor: &[Item<CandleId, C>],
+            new_candle: &Item<CandleId, C>,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+            candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
+            is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+        ) -> Option<Vec<Item<CandleId, C>>>
+        where
+            C: AsRef<BasicCandleProperties> + Clone,
         {
             unimplemented!()
         }
@@ -727,6 +802,8 @@ mod tests {
             TestLevelUtilsImpl,
             TestLevelConditionsImpl,
             TestOrderUtilsImpl,
+            TestBasicCorridorUtilsImpl,
+            TestCorridorsImpl,
             _,
             _,
             _,
@@ -746,12 +823,12 @@ mod tests {
             params: &step_params,
         };
 
-        fn run_iteration<T, Hel, LevUt, LevCon, OrUt, D, E, X>(
+        fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>(
             new_tick_props: BasicTickProperties,
             new_candle_props: Option<StepBacktestingCandleProperties>,
             signals: StrategySignals,
             stores: &mut StepBacktestingStores<T>,
-            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, D, E, X>,
+            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         ) -> Result<()>
         where
@@ -761,6 +838,8 @@ mod tests {
             LevUt: LevelUtils,
             LevCon: LevelConditions,
             OrUt: OrderUtils,
+            BCor: BasicCorridorUtils,
+            Cor: Corridors,
             D: Fn(
                 ChartTraceEntity,
                 &mut StepBacktestingChartTraces,

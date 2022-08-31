@@ -4,6 +4,7 @@ use backtesting::historical_data::serialization::HistoricalDataCsvSerialization;
 use backtesting::historical_data::synchronization::sync_candles_and_ticks;
 use backtesting::trading_engine::BacktestingTradingEngine;
 use backtesting::StrategyInitConfig;
+use base::corridor::BasicCorridorUtilsImpl;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV};
 use base::helpers::exclude_weekend_and_holidays;
@@ -18,6 +19,7 @@ use trading_apis::MetaapiMarketDataApi;
 use base::params::StrategyCsvFileParams;
 use strategies::step::step_backtesting::run_iteration;
 use strategies::step::utils::backtesting_charts::add_entity_to_chart_traces;
+use strategies::step::utils::corridors::CorridorsImpl;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use strategies::step::utils::helpers::HelpersImpl;
 use strategies::step::utils::level_conditions::LevelConditionsImpl;
@@ -109,6 +111,8 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
         LevelUtilsImpl,
         LevelConditionsImpl,
         OrderUtilsImpl,
+        BasicCorridorUtilsImpl,
+        CorridorsImpl,
         _,
         _,
         _,

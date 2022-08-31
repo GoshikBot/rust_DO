@@ -1,5 +1,8 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
 use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::corridors::{
+    Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
+};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::{
     FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
@@ -14,17 +17,18 @@ use crate::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores
 use crate::step::utils::StepBacktestingUtils;
 use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
+use base::corridor::BasicCorridorUtils;
 use base::entities::BasicTickProperties;
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::NaiveDateTime;
 
-pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, D, E, X>(
+pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>(
     new_tick_props: BasicTickProperties,
     new_candle_props: Option<StepBacktestingCandleProperties>,
     signals: StrategySignals,
     stores: &mut StepBacktestingStores<T>,
-    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, D, E, X>,
+    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
     params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 ) -> Result<()>
 where
@@ -34,6 +38,8 @@ where
     LevUt: LevelUtils,
     LevCon: LevelConditions,
     OrUt: OrderUtils,
+    BCor: BasicCorridorUtils,
+    Cor: Corridors,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -155,7 +161,23 @@ where
         )?;
     }
 
-    if new_candle_appeared {}
+    if new_candle_appeared {
+        let current_candle = current_candle.unwrap();
+
+        Cor::update_corridors_near_working_levels(
+            &mut stores.main,
+            &current_candle,
+            UpdateCorridorsNearWorkingLevelsUtils::new(
+                UpdateSmallCorridorNearLevelUtils::new(
+                    &BCor::candle_can_be_corridor_leader,
+                    &BCor::candle_is_in_corridor,
+                    &BCor::crop_corridor_to_closest_leader,
+                ),
+                &LevCon::level_has_no_active_orders,
+            ),
+            params,
+        )?;
+    }
 
     Ok(())
 }

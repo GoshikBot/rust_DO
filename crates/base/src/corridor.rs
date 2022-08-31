@@ -6,32 +6,6 @@ use crate::entities::Item;
 use crate::helpers::points_to_price;
 use crate::params::ParamValue;
 
-/// Candle can be the corridor leader if its size is less or equal to the current volatility.
-pub fn candle_can_be_corridor_leader<P>(candle_properties: &P) -> bool
-where
-    P: AsRef<BasicCandleProperties>,
-{
-    candle_properties.as_ref().size <= candle_properties.as_ref().volatility.into()
-}
-
-/// Checks if a candle is inside a corridor basing on a leading candle.
-pub fn candle_is_in_corridor<C>(
-    candle: &C,
-    leading_candle: &C,
-    max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
-) -> bool
-where
-    C: AsRef<BasicCandleProperties>,
-{
-    let candle = candle.as_ref();
-    let leading_candle = leading_candle.as_ref();
-
-    diff_between_edges(candle.prices.high, Edge::High, leading_candle)
-        <= max_distance_from_corridor_leading_candle_pins_pct
-        && diff_between_edges(candle.prices.low, Edge::Low, leading_candle)
-            <= max_distance_from_corridor_leading_candle_pins_pct
-}
-
 #[derive(Debug, Copy, Clone)]
 enum Edge {
     High,
@@ -41,51 +15,107 @@ enum Edge {
 type ComparisonPrice = Decimal;
 type Difference = Decimal;
 
-/// Calculates a difference between the passed price and the corridor leading candle's edge
-/// in % of the corridor leading candle size.
-fn diff_between_edges(
-    price: ComparisonPrice,
-    edge: Edge,
-    leading_candle: &BasicCandleProperties,
-) -> Difference {
-    match edge {
-        Edge::High => {
-            (price - leading_candle.prices.high) / points_to_price(leading_candle.size) * dec!(100)
-        }
-        Edge::Low => {
-            (leading_candle.prices.low - price) / points_to_price(leading_candle.size) * dec!(100.0)
+pub trait BasicCorridorUtils {
+    /// Candle can be the corridor leader if its size is less or equal to the current volatility.
+    fn candle_can_be_corridor_leader(candle_properties: &impl AsRef<BasicCandleProperties>)
+        -> bool;
+
+    /// Checks if a candle is inside a corridor basing on a leading candle.
+    fn candle_is_in_corridor<C>(
+        candle: &C,
+        leading_candle: &C,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+    ) -> bool
+    where
+        C: AsRef<BasicCandleProperties>;
+
+    /// Shifts the corridor leader by one from the beginning of the corridor and tries to find
+    /// the appropriate leader for the new candle. The corridor will be cropped
+    /// to the closest appropriate leader.
+    fn crop_corridor_to_closest_leader<C>(
+        corridor: &[Item<CandleId, C>],
+        new_candle: &Item<CandleId, C>,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
+        is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+    ) -> Option<Vec<Item<CandleId, C>>>
+    where
+        C: AsRef<BasicCandleProperties> + Clone;
+}
+
+pub struct BasicCorridorUtilsImpl;
+
+impl BasicCorridorUtilsImpl {
+    /// Calculates a difference between the passed price and the corridor leading candle's edge
+    /// in % of the corridor leading candle size.
+    fn diff_between_edges(
+        price: ComparisonPrice,
+        edge: Edge,
+        leading_candle: &BasicCandleProperties,
+    ) -> Difference {
+        match edge {
+            Edge::High => {
+                (price - leading_candle.prices.high) / points_to_price(leading_candle.size)
+                    * dec!(100)
+            }
+            Edge::Low => {
+                (leading_candle.prices.low - price) / points_to_price(leading_candle.size)
+                    * dec!(100.0)
+            }
         }
     }
 }
 
-/// Shifts the corridor leader by one from the beginning of the corridor and tries to find
-/// the appropriate leader for the new candle. The corridor will be cropped
-/// to the closest appropriate leader.
-pub fn crop_corridor_to_closest_leader<C>(
-    corridor: &[Item<CandleId, C>],
-    new_candle: &Item<CandleId, C>,
-    max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
-    candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
-    is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
-) -> Option<Vec<Item<CandleId, C>>>
-where
-    C: AsRef<BasicCandleProperties> + Clone,
-{
-    for (i, candle) in corridor.iter().enumerate() {
-        if candle_can_be_corridor_leader(&candle.props)
-            && is_in_corridor(
-                &new_candle.props,
-                &candle.props,
-                max_distance_from_corridor_leading_candle_pins_pct,
-            )
-        {
-            let mut new_corridor = corridor[i..].to_vec();
-            new_corridor.push(new_candle.clone());
-            return Some(new_corridor);
-        }
+impl BasicCorridorUtils for BasicCorridorUtilsImpl {
+    fn candle_can_be_corridor_leader(
+        candle_properties: &impl AsRef<BasicCandleProperties>,
+    ) -> bool {
+        candle_properties.as_ref().size <= candle_properties.as_ref().volatility.into()
     }
 
-    None
+    fn candle_is_in_corridor<C>(
+        candle: &C,
+        leading_candle: &C,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+    ) -> bool
+    where
+        C: AsRef<BasicCandleProperties>,
+    {
+        let candle = candle.as_ref();
+        let leading_candle = leading_candle.as_ref();
+
+        Self::diff_between_edges(candle.prices.high, Edge::High, leading_candle)
+            <= max_distance_from_corridor_leading_candle_pins_pct
+            && Self::diff_between_edges(candle.prices.low, Edge::Low, leading_candle)
+                <= max_distance_from_corridor_leading_candle_pins_pct
+    }
+
+    fn crop_corridor_to_closest_leader<C>(
+        corridor: &[Item<CandleId, C>],
+        new_candle: &Item<CandleId, C>,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
+        is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+    ) -> Option<Vec<Item<CandleId, C>>>
+    where
+        C: AsRef<BasicCandleProperties> + Clone,
+    {
+        for (i, candle) in corridor.iter().enumerate() {
+            if candle_can_be_corridor_leader(&candle.props)
+                && is_in_corridor(
+                    &new_candle.props,
+                    &candle.props,
+                    max_distance_from_corridor_leading_candle_pins_pct,
+                )
+            {
+                let mut new_corridor = corridor[i..].to_vec();
+                new_corridor.push(new_candle.clone());
+                return Some(new_corridor);
+            }
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
@@ -106,7 +136,9 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(candle_can_be_corridor_leader(&candle_properties));
+        assert!(BasicCorridorUtilsImpl::candle_can_be_corridor_leader(
+            &candle_properties
+        ));
     }
 
     #[test]
@@ -120,7 +152,9 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(!candle_can_be_corridor_leader(&candle_properties,));
+        assert!(!BasicCorridorUtilsImpl::candle_can_be_corridor_leader(
+            &candle_properties,
+        ));
     }
 
     #[test]
@@ -152,7 +186,7 @@ mod tests {
             },
         };
 
-        assert!(candle_is_in_corridor(
+        assert!(BasicCorridorUtilsImpl::candle_is_in_corridor(
             &current_candle,
             &leading_candle,
             dec!(20)
@@ -188,7 +222,7 @@ mod tests {
             },
         };
 
-        assert!(!candle_is_in_corridor(
+        assert!(!BasicCorridorUtilsImpl::candle_is_in_corridor(
             &current_candle,
             &leading_candle,
             dec!(20)
@@ -315,7 +349,7 @@ mod tests {
                 *number_of_calls_to_is_in_corridor.borrow() > 1
             };
 
-        let new_corridor = crop_corridor_to_closest_leader(
+        let new_corridor = BasicCorridorUtilsImpl::crop_corridor_to_closest_leader(
             &current_corridor,
             &new_candle,
             max_distance_from_corridor_leading_candle_pins_pct,
