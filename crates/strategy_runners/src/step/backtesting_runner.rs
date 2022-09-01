@@ -3,7 +3,7 @@ use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::corridor::BasicCorridorUtils;
-use base::entities::candle::BasicCandleProperties;
+use base::entities::candle::{BasicCandleProperties, CandlePrice};
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
@@ -14,7 +14,9 @@ use rust_decimal_macros::dec;
 use strategies::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use strategies::step::utils::corridors::Corridors;
 use strategies::step::utils::entities::angle::BasicAngleProperties;
-use strategies::step::utils::entities::candle::StepBacktestingCandleProperties;
+use strategies::step::utils::entities::candle::{
+    StepBacktestingCandleProperties, StepCandleProperties,
+};
 use strategies::step::utils::entities::order::StepOrderProperties;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use strategies::step::utils::entities::working_levels::BacktestingWLProperties;
@@ -28,7 +30,7 @@ use strategies::step::utils::stores::tick_store::StepTickStore;
 use strategies::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use strategies::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiter;
-use strategies::step::utils::StepBacktestingUtils;
+use strategies::step::utils::{get_candle_leading_price, StepBacktestingUtils};
 
 #[derive(Debug)]
 struct Tick<'a> {
@@ -83,6 +85,7 @@ pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor
     historical_data: &HistoricalData,
     strategy_config: StepStrategyRunningConfig<P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
     trading_limiter: &L,
+    get_candle_leading_price: &impl Fn(&BasicCandleProperties) -> CandlePrice,
     run_iteration: &I,
 ) -> Result<StrategyPerformance>
 where
@@ -157,7 +160,10 @@ where
                     current_candle
                         .value
                         .map(|candle_props| StepBacktestingCandleProperties {
-                            base: candle_props.clone(),
+                            step_common: StepCandleProperties {
+                                base: candle_props.clone(),
+                                leading_price: get_candle_leading_price(candle_props),
+                            },
                             chart_index: current_candle.index,
                         })
                 } else {
@@ -863,10 +869,13 @@ mod tests {
             Ok(())
         }
 
+        let get_candle_leading_price = |candle: &BasicCandleProperties| candle.prices.high;
+
         let strategy_performance = loop_through_historical_data(
             &historical_data,
             strategy_config,
             &trading_limiter,
+            &get_candle_leading_price,
             &run_iteration,
         )
         .unwrap();

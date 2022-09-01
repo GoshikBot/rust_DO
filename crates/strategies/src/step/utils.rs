@@ -7,10 +7,14 @@ use crate::step::utils::level_utils::LevelUtils;
 use crate::step::utils::order_utils::OrderUtils;
 use backtesting::trading_engine::TradingEngine;
 use base::corridor::BasicCorridorUtils;
+use base::entities::candle::{BasicCandleProperties, CandlePrice};
+use base::entities::CandleType;
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use chrono::NaiveDateTime;
+use std::cmp::Ordering;
 use std::marker::PhantomData;
 
+pub mod angle_utils;
 pub mod backtesting_charts;
 pub mod corridors;
 pub mod entities;
@@ -73,5 +77,104 @@ where
             trading_engine,
             exclude_weekend_and_holidays,
         }
+    }
+}
+
+/// Determines the candle price to use for building the linear trading chart.
+pub fn get_candle_leading_price(candle: &BasicCandleProperties) -> CandlePrice {
+    match candle.r#type {
+        CandleType::Green => candle.prices.high,
+        CandleType::Red => candle.prices.low,
+        CandleType::Neutral => {
+            let candle_upper_part = candle.prices.high - candle.prices.close;
+            let candle_lower_part = candle.prices.close - candle.prices.low;
+
+            match candle_upper_part.cmp(&candle_lower_part) {
+                Ordering::Less => candle.prices.low,
+                Ordering::Greater => candle.prices.high,
+                Ordering::Equal => candle.prices.close,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base::entities::CandlePrices;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_candle_leading_price__green_candle__should_return_high() {
+        let candle = BasicCandleProperties {
+            r#type: CandleType::Green,
+            ..Default::default()
+        };
+
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.high);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_candle_leading_price__red_candle__should_return_low() {
+        let candle = BasicCandleProperties {
+            r#type: CandleType::Red,
+            ..Default::default()
+        };
+
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.low);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_candle_leading_price__neutral_candle_upper_part_is_greater__should_return_high() {
+        let candle = BasicCandleProperties {
+            r#type: CandleType::Neutral,
+            prices: CandlePrices {
+                open: dec!(1.38000),
+                high: dec!(1.38100),
+                low: dec!(1.37950),
+                close: dec!(1.38000),
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.high);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_candle_leading_price__neutral_candle_lower_part_is_greater__should_return_low() {
+        let candle = BasicCandleProperties {
+            r#type: CandleType::Neutral,
+            prices: CandlePrices {
+                open: dec!(1.38000),
+                high: dec!(1.38050),
+                low: dec!(1.37900),
+                close: dec!(1.38000),
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.low);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_candle_leading_price__neutral_candle_upper_and_lower_parts_are_equal__should_return_close(
+    ) {
+        let candle = BasicCandleProperties {
+            r#type: CandleType::Neutral,
+            prices: CandlePrices {
+                open: dec!(1.38000),
+                high: dec!(1.38100),
+                low: dec!(1.37900),
+                close: dec!(1.38000),
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.close);
     }
 }

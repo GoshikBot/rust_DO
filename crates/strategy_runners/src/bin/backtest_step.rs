@@ -28,7 +28,7 @@ use strategies::step::utils::order_utils::OrderUtilsImpl;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingStores};
 use strategies::step::utils::trading_limiter::TradingLimiterBacktesting;
-use strategies::step::utils::StepBacktestingUtils;
+use strategies::step::utils::{get_candle_leading_price, StepBacktestingUtils};
 use strategy_runners::step::backtesting_runner;
 use strategy_runners::step::backtesting_runner::StepStrategyRunningConfig;
 
@@ -131,6 +131,7 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
             params: &step_params,
         },
         &trading_limiter,
+        &get_candle_leading_price,
         &run_iteration,
     )?;
 

@@ -429,7 +429,9 @@ impl Corridors for CorridorsImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+    use crate::step::utils::entities::candle::{
+        StepBacktestingCandleProperties, StepCandleProperties,
+    };
     use crate::step::utils::entities::order::StepOrderProperties;
     use crate::step::utils::entities::working_levels::BacktestingWLProperties;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
@@ -522,11 +524,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Green,
-                    prices: CandlePrices {
-                        close: dec!(1.38199),
-                        low: dec!(1.38029),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Green,
+                        prices: CandlePrices {
+                            close: dec!(1.38199),
+                            low: dec!(1.38029),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -600,11 +605,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Neutral,
-                    prices: CandlePrices {
-                        close: dec!(1.38199),
-                        low: dec!(1.38029),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Neutral,
+                        prices: CandlePrices {
+                            close: dec!(1.38199),
+                            low: dec!(1.38029),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -687,11 +695,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Red,
-                    prices: CandlePrices {
-                        open: dec!(1.38199),
-                        low: dec!(1.38031),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Red,
+                        prices: CandlePrices {
+                            open: dec!(1.38199),
+                            low: dec!(1.38031),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -784,11 +795,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Green,
-                    prices: CandlePrices {
-                        close: dec!(1.38201),
-                        low: dec!(1.38029),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Green,
+                        prices: CandlePrices {
+                            close: dec!(1.38201),
+                            low: dec!(1.38029),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -881,11 +895,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Neutral,
-                    prices: CandlePrices {
-                        close: dec!(1.38201),
-                        low: dec!(1.38029),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Neutral,
+                        prices: CandlePrices {
+                            close: dec!(1.38201),
+                            low: dec!(1.38029),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -978,11 +995,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Red,
-                    prices: CandlePrices {
-                        open: dec!(1.38201),
-                        low: dec!(1.38029),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Red,
+                        prices: CandlePrices {
+                            open: dec!(1.38201),
+                            low: dec!(1.38029),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1067,11 +1087,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Green,
-                    prices: CandlePrices {
-                        open: dec!(1.37801),
-                        high: dec!(1.37971),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Green,
+                        prices: CandlePrices {
+                            open: dec!(1.37801),
+                            high: dec!(1.37971),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1164,11 +1187,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Neutral,
-                    prices: CandlePrices {
-                        open: dec!(1.37801),
-                        high: dec!(1.37969),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Neutral,
+                        prices: CandlePrices {
+                            open: dec!(1.37801),
+                            high: dec!(1.37969),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1261,11 +1287,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Red,
-                    prices: CandlePrices {
-                        close: dec!(1.37801),
-                        high: dec!(1.37969),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Red,
+                        prices: CandlePrices {
+                            close: dec!(1.37801),
+                            high: dec!(1.37969),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1378,11 +1407,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Green,
-                    prices: CandlePrices {
-                        open: dec!(1.37799),
-                        high: dec!(1.37971),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Green,
+                        prices: CandlePrices {
+                            open: dec!(1.37799),
+                            high: dec!(1.37971),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1505,11 +1537,14 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Neutral,
-                    prices: CandlePrices {
-                        open: dec!(1.37799),
-                        high: dec!(1.37971),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Neutral,
+                        prices: CandlePrices {
+                            open: dec!(1.37799),
+                            high: dec!(1.37971),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1612,10 +1647,13 @@ mod tests {
 
         let current_candle = store
             .create_candle(StepBacktestingCandleProperties {
-                base: BasicCandleProperties {
-                    r#type: CandleType::Red,
-                    prices: CandlePrices {
-                        close: dec!(1.37799),
+                step_common: StepCandleProperties {
+                    base: BasicCandleProperties {
+                        r#type: CandleType::Red,
+                        prices: CandlePrices {
+                            close: dec!(1.37799),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()

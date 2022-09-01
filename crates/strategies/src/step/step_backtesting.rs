@@ -5,7 +5,7 @@ use crate::step::utils::corridors::{
 };
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::{
-    FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
+    Diff, FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
 };
 use crate::step::utils::helpers::Helpers;
 use crate::step::utils::level_conditions::LevelConditions;
@@ -18,10 +18,12 @@ use crate::step::utils::StepBacktestingUtils;
 use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
 use base::corridor::BasicCorridorUtils;
-use base::entities::BasicTickProperties;
+use base::entities::candle::CandleId;
+use base::entities::{BasicTickProperties, Item};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::NaiveDateTime;
+use rust_decimal_macros::dec;
 
 pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>(
     new_tick_props: BasicTickProperties,
@@ -87,6 +89,7 @@ where
                     .get_current_candle()?
                     .unwrap()
                     .props
+                    .step_common
                     .base
                     .volatility,
                 stores.config.trading_engine.balances.real,
@@ -132,7 +135,7 @@ where
     if let Some(current_candle) = &current_candle {
         LevUt::remove_invalid_working_levels(
             &current_tick.props,
-            current_candle.props.base.volatility,
+            current_candle.props.step_common.base.volatility,
             RemoveInvalidWorkingLevelsUtils {
                 working_level_store: &mut stores.main,
                 level_has_no_active_orders: &LevCon::level_has_no_active_orders,
@@ -151,11 +154,11 @@ where
             &mut stores.main,
             params.get_ratio_param_value(
                 StepRatioParam::DistanceFromLevelForSignalingOfMovingTakeProfits,
-                current_candle.props.base.volatility,
+                current_candle.props.step_common.base.volatility,
             ),
             params.get_ratio_param_value(
                 StepRatioParam::DistanceToMoveTakeProfits,
-                current_candle.props.base.volatility,
+                current_candle.props.step_common.base.volatility,
             ),
             current_tick.props.bid,
         )?;
@@ -177,6 +180,12 @@ where
             ),
             params,
         )?;
+
+        stores.config.diffs.previous = stores.config.diffs.current;
+        // stores.config.diffs.current = stores
+        //     .main
+        //     .get_previous_candle()?
+        //     .map(|previous_candle| Diff::Greater);
     }
 
     Ok(())

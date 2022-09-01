@@ -155,9 +155,9 @@ pub fn add_entity_to_chart_traces(
         }
         ChartTraceEntity::WorkingLevel { last_broken_angle } => {
             let price = if last_broken_angle.base.r#type == Level::Max {
-                last_broken_angle.candle.props.base.prices.high
+                last_broken_angle.candle.props.step_common.base.prices.high
             } else {
-                last_broken_angle.candle.props.base.prices.low
+                last_broken_angle.candle.props.step_common.base.prices.low
             };
 
             let working_level_trace = chart_traces.create_new_working_level_trace();
@@ -215,7 +215,7 @@ mod tests {
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let leading_price = dec!(1.38473);
@@ -233,7 +233,7 @@ mod tests {
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let new_leading_price = dec!(1.38473);
@@ -264,7 +264,7 @@ mod tests {
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let tendency = Tendency::Up;
@@ -288,7 +288,7 @@ mod tests {
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let new_tendency = Tendency::Down;
@@ -319,7 +319,7 @@ mod tests {
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 2,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let balance = dec!(10_000);
@@ -337,7 +337,7 @@ mod tests {
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let new_balance = dec!(20_000);
@@ -365,15 +365,15 @@ mod tests {
             candle: Item {
                 id: String::from("1"),
                 props: StepBacktestingCandleProperties {
-                    base: Default::default(),
                     chart_index: 1,
+                    ..Default::default()
                 },
             },
         };
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
-            base: Default::default(),
+            ..Default::default()
         };
 
         add_entity_to_chart_traces(
@@ -400,15 +400,15 @@ mod tests {
             candle: Item {
                 id: String::from("2"),
                 props: StepBacktestingCandleProperties {
-                    base: Default::default(),
                     chart_index: 2,
+                    ..Default::default()
                 },
             },
         };
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         add_entity_to_chart_traces(
@@ -441,7 +441,7 @@ mod tests {
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let stop_loss_price = dec!(1.30939);
@@ -468,7 +468,7 @@ mod tests {
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let new_stop_loss_price = dec!(1.40279);
@@ -502,7 +502,7 @@ mod tests {
 
         let current_candle = StepBacktestingCandleProperties {
             chart_index: 3,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let take_profit_price = dec!(1.30939);
@@ -529,7 +529,7 @@ mod tests {
 
         let new_current_candle = StepBacktestingCandleProperties {
             chart_index: 4,
-            base: Default::default(),
+            ..Default::default()
         };
 
         let new_take_profit_price = dec!(1.40279);
