@@ -92,7 +92,7 @@ pub fn get_candle_leading_price(candle: &BasicCandleProperties) -> CandlePrice {
             match candle_upper_part.cmp(&candle_lower_part) {
                 Ordering::Less => candle.prices.low,
                 Ordering::Greater => candle.prices.high,
-                Ordering::Equal => candle.prices.close,
+                Ordering::Equal => candle.prices.high, // equally with low
             }
         }
     }
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn get_candle_leading_price__neutral_candle_upper_and_lower_parts_are_equal__should_return_close(
+    fn get_candle_leading_price__neutral_candle_upper_and_lower_parts_are_equal__should_return_high(
     ) {
         let candle = BasicCandleProperties {
             r#type: CandleType::Neutral,
@@ -175,6 +175,6 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(get_candle_leading_price(&candle), candle.prices.close);
+        assert_eq!(get_candle_leading_price(&candle), candle.prices.high);
     }
 }

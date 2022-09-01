@@ -69,7 +69,9 @@ fn find_next_candle<'a>(
         .context("no next not none candle was found")
 }
 
-fn trim_historical_data(historical_data: HistoricalData) -> HistoricalData {
+fn trim_historical_data(
+    historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>,
+) -> HistoricalData<BasicCandleProperties, BasicTickProperties> {
     HistoricalData {
         candles: historical_data
             .candles
@@ -148,7 +150,10 @@ fn reverse_edge_intersection_indexes(
     }
 }
 
-fn find_edge_intersection(historical_data: &HistoricalData, edge: Edge) -> Result<TickCandle> {
+fn find_edge_intersection(
+    historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+    edge: Edge,
+) -> Result<TickCandle> {
     let first_candle_time = historical_data
         .candles
         .first()
@@ -250,7 +255,9 @@ fn find_edge_intersection(historical_data: &HistoricalData, edge: Edge) -> Resul
     };
 }
 
-fn find_timeframe_intersection(historical_data: &HistoricalData) -> Result<Intersection> {
+fn find_timeframe_intersection(
+    historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+) -> Result<Intersection> {
     let front = find_edge_intersection(historical_data, Edge::Front)?;
     let back = find_edge_intersection(historical_data, Edge::Back)?;
 
@@ -258,7 +265,9 @@ fn find_timeframe_intersection(historical_data: &HistoricalData) -> Result<Inter
 }
 
 /// Reduces the first candle and the first tick to the same time.
-pub fn sync_candles_and_ticks(historical_data: HistoricalData) -> Result<HistoricalData> {
+pub fn sync_candles_and_ticks(
+    historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>,
+) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties>> {
     if historical_data.candles.is_empty() || historical_data.ticks.is_empty() {
         bail!("empty collection of items for synchronization");
     }

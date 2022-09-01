@@ -1,7 +1,8 @@
 use crate::historical_data::serialization::HistoricalDataSerialization;
 use crate::{HistoricalData, StrategyInitConfig};
 use anyhow::{Context, Result};
-use base::entities::StrategyTimeframes;
+use base::entities::candle::BasicCandleProperties;
+use base::entities::{BasicTickProperties, StrategyTimeframes};
 use std::path::PathBuf;
 use trading_apis::MarketDataApi;
 
@@ -15,8 +16,12 @@ pub fn get_historical_data<S, M, P>(
     strategy_properties: &StrategyInitConfig,
     market_data_api: &M,
     serialization: &S,
-    sync_candles_and_ticks: impl Fn(HistoricalData) -> Result<HistoricalData>,
-) -> Result<HistoricalData>
+    sync_candles_and_ticks: impl Fn(
+        HistoricalData<BasicCandleProperties, BasicTickProperties>,
+    ) -> Result<
+        HistoricalData<BasicCandleProperties, BasicTickProperties>,
+    >,
+) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties>>
 where
     S: HistoricalDataSerialization,
     M: MarketDataApi,
@@ -147,7 +152,7 @@ mod tests {
     impl HistoricalDataSerialization for HistoricalDataTestSerializationDataExists {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _historical_data: &HistoricalData,
+            _historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
@@ -159,7 +164,7 @@ mod tests {
             &self,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
-        ) -> Result<Option<HistoricalData>> {
+        ) -> Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
             *self.deserialization_is_called.borrow_mut() = true;
 
             Ok(Some(HistoricalData {
@@ -203,7 +208,7 @@ mod tests {
     impl HistoricalDataSerialization for HistoricalDataTestSerializationDataDoesNotExist {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _historical_data: &HistoricalData,
+            _historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
@@ -216,7 +221,7 @@ mod tests {
             &self,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
-        ) -> Result<Option<HistoricalData>> {
+        ) -> Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
             *self.deserialization_is_called.borrow_mut() = true;
             Ok(None)
         }
@@ -272,10 +277,11 @@ mod tests {
         };
 
         let sync_candles_and_ticks_is_called = RefCell::new(false);
-        let sync_candles_and_ticks = |historical_data: HistoricalData| {
-            *sync_candles_and_ticks_is_called.borrow_mut() = true;
-            Ok(historical_data)
-        };
+        let sync_candles_and_ticks =
+            |historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>| {
+                *sync_candles_and_ticks_is_called.borrow_mut() = true;
+                Ok(historical_data)
+            };
 
         let historical_data = get_historical_data(
             "test",
@@ -347,10 +353,11 @@ mod tests {
         };
 
         let sync_candles_and_ticks_is_called = RefCell::new(false);
-        let sync_candles_and_ticks = |historical_data: HistoricalData| {
-            *sync_candles_and_ticks_is_called.borrow_mut() = true;
-            Ok(historical_data)
-        };
+        let sync_candles_and_ticks =
+            |historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>| {
+                *sync_candles_and_ticks_is_called.borrow_mut() = true;
+                Ok(historical_data)
+            };
 
         let historical_data = get_historical_data(
             "test",

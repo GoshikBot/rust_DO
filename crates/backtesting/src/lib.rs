@@ -82,9 +82,9 @@ impl Default for BacktestingTradingEngineConfig {
 }
 
 #[derive(Debug, PartialEq, Default)]
-pub struct HistoricalData {
-    pub candles: Vec<Option<BasicCandleProperties>>,
-    pub ticks: Vec<Option<BasicTickProperties>>,
+pub struct HistoricalData<C, T> {
+    pub candles: Vec<Option<C>>,
+    pub ticks: Vec<Option<T>>,
 }
 
 #[derive(Debug)]

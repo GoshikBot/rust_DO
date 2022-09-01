@@ -9,7 +9,7 @@ pub mod order;
 pub mod params;
 pub mod working_levels;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Diff {
     Greater = 1,
     Less = -1,

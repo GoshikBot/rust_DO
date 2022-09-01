@@ -33,15 +33,15 @@ use strategies::step::utils::trading_limiter::TradingLimiter;
 use strategies::step::utils::{get_candle_leading_price, StepBacktestingUtils};
 
 #[derive(Debug)]
-struct Tick<'a> {
+struct Tick<'a, T> {
     index: usize,
-    value: Option<&'a BasicTickProperties>,
+    value: Option<&'a T>,
 }
 
 #[derive(Debug)]
-struct Candle<'a> {
+struct Candle<'a, C> {
     index: usize,
-    value: Option<&'a BasicCandleProperties>,
+    value: Option<&'a C>,
 }
 
 fn update_number_of_iterations_to_next_candle(
@@ -82,7 +82,7 @@ where
 }
 
 pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X, I>(
-    historical_data: &HistoricalData,
+    historical_data: &HistoricalData<StepCandleProperties, BasicTickProperties>,
     strategy_config: StepStrategyRunningConfig<P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
     trading_limiter: &L,
     get_candle_leading_price: &impl Fn(&BasicCandleProperties) -> CandlePrice,
@@ -160,10 +160,7 @@ where
                     current_candle
                         .value
                         .map(|candle_props| StepBacktestingCandleProperties {
-                            step_common: StepCandleProperties {
-                                base: candle_props.clone(),
-                                leading_price: get_candle_leading_price(candle_props),
-                            },
+                            step_common: candle_props.clone(),
                             chart_index: current_candle.index,
                         })
                 } else {
@@ -589,57 +586,87 @@ mod tests {
     fn loop_through_historical_data_proper_params_get_correct_performance() {
         let historical_data = HistoricalData {
             candles: vec![
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 18:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("17-05-2022 18:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
                 None,
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
                 None,
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
-                Some(BasicCandleProperties {
-                    time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
-                        .unwrap(),
-                    ..Default::default()
+                Some(StepCandleProperties {
+                    base: BasicCandleProperties {
+                        time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
+                            .unwrap(),
+                        ..Default::default()
+                    },
+                    leading_price: dec!(1.38000),
                 }),
             ],
             ticks: vec![

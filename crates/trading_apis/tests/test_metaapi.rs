@@ -140,11 +140,9 @@ fn should_successfully_get_hourly_historical_candles() {
 
     let duration = Duration::weeks(12);
 
-    let candles = metaapi.get_historical_candles(symbol, timeframe, end_time, duration);
-
-    assert!(candles.is_ok());
-
-    let candles = candles.unwrap();
+    let candles = metaapi
+        .get_historical_candles(symbol, timeframe, end_time, duration)
+        .unwrap();
 
     assert_eq!(
         candles.iter().filter(|candle| candle.is_some()).count() as i64,
@@ -202,11 +200,9 @@ fn should_successfully_get_minute_historical_candles() {
 
     let duration = Duration::weeks(4);
 
-    let candles = metaapi.get_historical_candles(symbol, timeframe, end_time, duration);
-
-    assert!(candles.is_ok());
-
-    let candles = candles.unwrap();
+    let candles = metaapi
+        .get_historical_candles(symbol, timeframe, end_time, duration)
+        .unwrap();
 
     assert_eq!(
         candles.iter().filter(|candle| candle.is_some()).count() as i64,
@@ -265,11 +261,9 @@ fn should_successfully_get_historical_ticks() {
 
     let duration = Duration::weeks(4);
 
-    let ticks = metaapi.get_historical_ticks(symbol, timeframe, end_time, duration);
-
-    assert!(ticks.is_ok());
-
-    let ticks = ticks.unwrap();
+    let ticks = metaapi
+        .get_historical_ticks(symbol, timeframe, end_time, duration)
+        .unwrap();
 
     assert_eq!(
         ticks.iter().filter(|tick| tick.is_some()).count() as i64,

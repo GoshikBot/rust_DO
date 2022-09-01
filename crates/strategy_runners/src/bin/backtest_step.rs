@@ -3,7 +3,7 @@ use backtesting::historical_data::get_historical_data;
 use backtesting::historical_data::serialization::HistoricalDataCsvSerialization;
 use backtesting::historical_data::synchronization::sync_candles_and_ticks;
 use backtesting::trading_engine::BacktestingTradingEngine;
-use backtesting::StrategyInitConfig;
+use backtesting::{HistoricalData, StrategyInitConfig};
 use base::corridor::BasicCorridorUtilsImpl;
 use base::entities::candle::BasicCandleProperties;
 use base::entities::{StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV};
@@ -20,6 +20,7 @@ use base::params::StrategyCsvFileParams;
 use strategies::step::step_backtesting::run_iteration;
 use strategies::step::utils::backtesting_charts::add_entity_to_chart_traces;
 use strategies::step::utils::corridors::CorridorsImpl;
+use strategies::step::utils::entities::candle::StepCandleProperties;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use strategies::step::utils::helpers::HelpersImpl;
 use strategies::step::utils::level_conditions::LevelConditionsImpl;
@@ -93,6 +94,24 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
         &historical_data_csv_serialization,
         sync_candles_and_ticks,
     )?;
+
+    let historical_data = HistoricalData {
+        candles: historical_data
+            .candles
+            .into_iter()
+            .map(|candle| {
+                candle.map(|c| {
+                    let leading_price = get_candle_leading_price(&c);
+
+                    StepCandleProperties {
+                        base: c,
+                        leading_price,
+                    }
+                })
+            })
+            .collect(),
+        ticks: historical_data.ticks,
+    };
 
     let mut step_stores = StepBacktestingStores {
         main: InMemoryStepBacktestingStore::new(),

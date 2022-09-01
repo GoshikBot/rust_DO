@@ -92,7 +92,7 @@ fn historical_data_files_exist(historical_data_paths: &HistoricalDataPaths) -> b
 pub trait HistoricalDataSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
-        historical_data: &HistoricalData,
+        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
         strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()>;
@@ -101,7 +101,7 @@ pub trait HistoricalDataSerialization {
         &self,
         strategy_config: &StrategyInitConfig,
         directory: P,
-    ) -> anyhow::Result<Option<HistoricalData>>;
+    ) -> anyhow::Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>>;
 }
 
 #[derive(Default)]
@@ -138,7 +138,7 @@ impl HistoricalDataCsvSerialization {
     }
 
     fn serialize(
-        historical_data: &HistoricalData,
+        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
         historical_data_paths: &HistoricalDataPaths,
     ) -> anyhow::Result<()> {
         let HistoricalDataPaths {
@@ -191,7 +191,9 @@ impl HistoricalDataCsvSerialization {
         Ok(())
     }
 
-    fn deserialize(historical_data_paths: &HistoricalDataPaths) -> anyhow::Result<HistoricalData> {
+    fn deserialize(
+        historical_data_paths: &HistoricalDataPaths,
+    ) -> anyhow::Result<HistoricalData<BasicCandleProperties, BasicTickProperties>> {
         let HistoricalDataPaths {
             candles_file_path,
             ticks_file_path,
@@ -255,7 +257,7 @@ impl HistoricalDataCsvSerialization {
 impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
-        historical_data: &HistoricalData,
+        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
         strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()> {
@@ -267,7 +269,7 @@ impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
         &self,
         strategy_config: &StrategyInitConfig,
         directory: P,
-    ) -> anyhow::Result<Option<HistoricalData>> {
+    ) -> anyhow::Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
         let historical_data_paths = get_paths_for_historical_data(directory, strategy_config);
 
         if historical_data_files_exist(&historical_data_paths) {
