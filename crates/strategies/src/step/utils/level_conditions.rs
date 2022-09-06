@@ -3,10 +3,9 @@ use crate::step::utils::entities::working_levels::{
 };
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
-use base::entities::candle::CandleVolatility;
 use base::entities::order::{BasicOrderProperties, OrderPrice, OrderStatus, OrderType};
 use base::entities::tick::{TickPrice, TickTime};
-use base::entities::{DEFAULT_HOLIDAYS, TARGET_LOGGER_ENV};
+use base::entities::DEFAULT_HOLIDAYS;
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::params::ParamValue;
 use chrono::NaiveDateTime;
@@ -88,10 +87,11 @@ impl LevelConditions for LevelConditionsImpl {
         distance_from_level_for_its_deletion: ParamValue,
     ) -> bool {
         log::debug!(
-            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
             "level_expired_by_distance: level price is {}, current tick price is {}, \
             distance from level for its deletion is {}",
-            level_price, current_tick_price, distance_from_level_for_its_deletion
+            level_price,
+            current_tick_price,
+            distance_from_level_for_its_deletion
         );
 
         price_to_points((level_price - current_tick_price).abs())
@@ -112,10 +112,12 @@ impl LevelConditions for LevelConditionsImpl {
             - exclude_weekend_and_holidays(level_time, current_tick_time, &DEFAULT_HOLIDAYS) as i64;
 
         log::debug!(
-            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
             "level_expired_by_time: current tick time is {}, level time is {},\
             level expiration is {}, diff is {}",
-            current_tick_time, level_time, level_expiration, diff
+            current_tick_time,
+            level_time,
+            level_expiration,
+            diff
         );
 
         Decimal::from(diff) >= level_expiration

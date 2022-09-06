@@ -12,9 +12,7 @@ use base::entities::order::{
     BasicOrderPrices, BasicOrderProperties, OrderPrice, OrderStatus, OrderType, OrderVolume,
 };
 use base::entities::tick::TickPrice;
-use base::entities::{
-    BasicTickProperties, PRICE_DECIMAL_PLACES, TARGET_LOGGER_ENV, VOLUME_DECIMAL_PLACES,
-};
+use base::entities::{BasicTickProperties, PRICE_DECIMAL_PLACES, VOLUME_DECIMAL_PLACES};
 use base::stores::order_store::BasicOrderStore;
 use base::{
     entities::{candle::CandleVolatility, Item, LOT},
@@ -83,9 +81,9 @@ impl OrderUtilsImpl {
             / dec!(100);
 
         log::debug!(
-            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
             "max loss per chain of orders in price is {}; current balance — {}",
-            max_loss_per_chain_of_orders_pct, current_balance
+            max_loss_per_chain_of_orders_pct,
+            current_balance
         );
 
         Ok(max_loss_per_chain_of_orders_pct)
@@ -107,11 +105,7 @@ impl OrderUtilsImpl {
                 * distance_between_orders
                 * Decimal::from(LOT));
 
-        log::debug!(
-            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-            "volume per order — {}",
-            volume_per_order
-        );
+        log::debug!("volume per order — {}", volume_per_order);
 
         Ok(volume_per_order.round_dp(VOLUME_DECIMAL_PLACES))
     }
@@ -440,8 +434,8 @@ mod tests {
             volatility: CandleVolatility,
         ) -> ParamValue {
             let value = match name {
-                StepRatioParam::MinDistanceBetweenMaxMinAngles => unreachable!(),
-                StepRatioParam::MaxDistanceBetweenMaxMinAnglesForTheirUpdating => unreachable!(),
+                StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles => unreachable!(),
+                StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear => unreachable!(),
                 StepRatioParam::MinBreakDistance => unreachable!(),
                 StepRatioParam::DistanceFromLevelToFirstOrder => dec!(0.7),
                 StepRatioParam::DistanceFromLevelToStopLoss => dec!(3.6),

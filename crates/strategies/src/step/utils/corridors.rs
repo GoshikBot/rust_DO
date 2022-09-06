@@ -6,7 +6,6 @@ use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use anyhow::Result;
 use base::entities::candle::{BasicCandleProperties, CandleId};
 use base::entities::order::{BasicOrderProperties, OrderType};
-use base::entities::TARGET_LOGGER_ENV;
 use base::entities::{CandleType, Item};
 use base::helpers::{points_to_price, price_to_points};
 use base::params::{ParamValue, StrategyParams};
@@ -152,7 +151,6 @@ impl CorridorsImpl {
         if corridor_candles.is_empty() {
             if candle_can_be_corridor_leader(&current_candle.props) {
                 log::debug!(
-                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                     "new leader of the small corridor near the level: level — ({:?}), leader — {:?}",
                     level, current_candle.props.as_ref()
                 );
@@ -170,7 +168,6 @@ impl CorridorsImpl {
                 .get_point_param_value(StepPointParam::MaxDistanceFromCorridorLeadingCandlePinsPct),
         ) {
             log::debug!(
-                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                 "new candle of the small corridor near the level: level — ({:?}), new_candle — {:?}, \
                 corridor_candles — {:?}", level, current_candle.props.as_ref(),
                 corridor_candles
@@ -276,7 +273,6 @@ impl CorridorsImpl {
 
         if orderings.contains(&current_candle_edge_price.cmp(&edge_of_corridor_range)) {
             log::debug!(
-                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                 "new candle of the big corridor near the level: level — {:?}, current_candle — {:?}",
                 level, current_candle
             );
@@ -288,9 +284,10 @@ impl CorridorsImpl {
             )?;
         } else {
             log::debug!(
-                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                 "current candle is out of the range of the big corridor near the level: \
-                level — {:?}, current_candle — {:?}", level, current_candle
+                level — {:?}, current_candle — {:?}",
+                level,
+                current_candle
             );
 
             working_level_store.clear_working_level_corridor(&level.id, CorridorType::Big)?;

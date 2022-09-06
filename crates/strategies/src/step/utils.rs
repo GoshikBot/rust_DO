@@ -1,3 +1,4 @@
+use crate::step::utils::angle_utils::AngleUtils;
 use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::corridors::Corridors;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
@@ -25,7 +26,7 @@ pub mod order_utils;
 pub mod stores;
 pub mod trading_limiter;
 
-pub struct StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>
+pub struct StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
 where
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -33,6 +34,7 @@ where
     OrUt: OrderUtils,
     BCor: BasicCorridorUtils,
     Cor: Corridors,
+    Ang: AngleUtils,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -43,13 +45,14 @@ where
     order_utils: PhantomData<OrUt>,
     basic_corridor_utils: PhantomData<BCor>,
     corridors: PhantomData<Cor>,
+    angle_utils: PhantomData<Ang>,
     pub add_entity_to_chart_traces: D,
     pub trading_engine: E,
     pub exclude_weekend_and_holidays: X,
 }
 
-impl<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>
-    StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>
+impl<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
+    StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
 where
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -57,6 +60,7 @@ where
     OrUt: OrderUtils,
     BCor: BasicCorridorUtils,
     Cor: Corridors,
+    Ang: AngleUtils,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -73,6 +77,7 @@ where
             order_utils: PhantomData,
             basic_corridor_utils: PhantomData,
             corridors: PhantomData,
+            angle_utils: PhantomData,
             add_entity_to_chart_traces,
             trading_engine,
             exclude_weekend_and_holidays,

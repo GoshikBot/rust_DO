@@ -18,6 +18,7 @@ use trading_apis::MetaapiMarketDataApi;
 
 use base::params::StrategyCsvFileParams;
 use strategies::step::step_backtesting::run_iteration;
+use strategies::step::utils::angle_utils::AngleUtilsImpl;
 use strategies::step::utils::backtesting_charts::add_entity_to_chart_traces;
 use strategies::step::utils::corridors::CorridorsImpl;
 use strategies::step::utils::entities::candle::StepCandleProperties;
@@ -132,6 +133,7 @@ fn backtest_step_strategy(strategy_properties: StrategyInitConfig) -> Result<()>
         OrderUtilsImpl,
         BasicCorridorUtilsImpl,
         CorridorsImpl,
+        AngleUtilsImpl,
         _,
         _,
         _,

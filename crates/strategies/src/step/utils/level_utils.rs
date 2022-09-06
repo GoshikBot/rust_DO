@@ -10,7 +10,6 @@ use anyhow::{Context, Result};
 use base::entities::candle::CandleVolatility;
 use base::entities::order::{BasicOrderProperties, OrderStatus, OrderType};
 use base::entities::tick::{TickPrice, TickTime};
-use base::entities::TARGET_LOGGER_ENV;
 use base::entities::{BasicTickProperties, Item};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::notifier::NotificationQueue;
@@ -181,9 +180,9 @@ impl LevelUtils for LevelUtilsImpl {
             };
 
             log::debug!(
-                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                 "current crossing value of level ({:?}) is {}",
-                level, current_crossing_value
+                level,
+                current_crossing_value
             );
 
             if current_crossing_value > dec!(0) {
@@ -195,16 +194,16 @@ impl LevelUtils for LevelUtilsImpl {
                         )?;
 
                         log::debug!(
-                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                             "max crossing value of level ({:?}) is set to {}",
-                            level, current_crossing_value
+                            level,
+                            current_crossing_value
                         );
                     }
                     Some(last_crossing_value) => {
                         log::debug!(
-                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                             "last max crossing value of level ({:?}) is {}",
-                            level, last_crossing_value
+                            level,
+                            last_crossing_value
                         );
 
                         if current_crossing_value > last_crossing_value {
@@ -214,16 +213,12 @@ impl LevelUtils for LevelUtilsImpl {
                             )?;
 
                             log::debug!(
-                                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                                 "max crossing value of level ({:?}) is updated to {}",
-                                level, current_crossing_value
+                                level,
+                                current_crossing_value
                             );
                         } else {
-                            log::debug!(
-                                target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                                "max crossing value of level ({:?}) is not updated",
-                                level
-                            );
+                            log::debug!("max crossing value of level ({:?}) is not updated", level);
                         }
                     }
                 }
@@ -295,10 +290,7 @@ impl LevelUtils for LevelUtilsImpl {
                     current_tick.bid,
                     distance_from_level_for_its_deletion,
                 ) {
-                    log::debug!(
-                        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                        "level ({:?}) is expired by distance", converted_level
-                    );
+                    log::debug!("level ({:?}) is expired by distance", converted_level);
 
                     match &mut entity {
                         StatisticsNotifier::Backtesting(statistics) => {
@@ -314,10 +306,7 @@ impl LevelUtils for LevelUtilsImpl {
 
                     remove_level = true;
                 } else {
-                    log::debug!(
-                        target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                        "level ({:?}) is NOT expired by distance", converted_level
-                    );
+                    log::debug!("level ({:?}) is NOT expired by distance", converted_level);
 
                     let level_expiration =
                         params.get_point_param_value(StepPointParam::LevelExpirationDays);
@@ -328,10 +317,7 @@ impl LevelUtils for LevelUtilsImpl {
                         level_expiration,
                         utils.exclude_weekend_and_holidays,
                     ) {
-                        log::debug!(
-                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                            "level ({:?}) is expired by time", converted_level
-                        );
+                        log::debug!("level ({:?}) is expired by time", converted_level);
 
                         match &mut entity {
                             StatisticsNotifier::Backtesting(statistics) => {
@@ -347,10 +333,7 @@ impl LevelUtils for LevelUtilsImpl {
 
                         remove_level = true;
                     } else {
-                        log::debug!(
-                            target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
-                            "level ({:?}) is NOT expired by time", converted_level
-                        );
+                        log::debug!("level ({:?}) is NOT expired by time", converted_level);
 
                         if level_status == WLStatus::Active {
                             let max_crossing_value = utils
@@ -369,7 +352,6 @@ impl LevelUtils for LevelUtilsImpl {
                                 current_tick.bid
                             ) {
                                 log::debug!(
-                                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                                     "level ({:?}) exceeds activation crossing distance when returned to level: {:?} >= {}",
                                     converted_level, max_crossing_value,
                                     min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion
@@ -391,7 +373,6 @@ impl LevelUtils for LevelUtilsImpl {
                                 remove_level = true;
                             } else {
                                 log::debug!(
-                                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                                     "level ({:?}) DOES NOT exceed activation crossing distance when returned to level: {:?} < {}",
                                     converted_level, max_crossing_value,
                                     min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion
@@ -438,10 +419,11 @@ impl LevelUtils for LevelUtilsImpl {
 
             if deviation_distance >= distance_from_level_for_signaling_of_moving_take_profits {
                 log::debug!(
-                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                     "move take profits of level ({:?}), because the deviation distance ({}) \
                     >= distance from level for signaling of moving take profits ({})",
-                    level, deviation_distance, distance_from_level_for_signaling_of_moving_take_profits
+                    level,
+                    deviation_distance,
+                    distance_from_level_for_signaling_of_moving_take_profits
                 );
 
                 working_level_store

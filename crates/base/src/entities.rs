@@ -84,7 +84,6 @@ pub struct Item<I, P> {
     pub props: P,
 }
 
-pub const TARGET_LOGGER_ENV: &str = "TARGET_LOGGER";
 pub const CANDLE_TIMEFRAME_ENV: &str = "CANDLE_TIMEFRAME";
 pub const TICK_TIMEFRAME_ENV: &str = "TICK_TIMEFRAME";
 

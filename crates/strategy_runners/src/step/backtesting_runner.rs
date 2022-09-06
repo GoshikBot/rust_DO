@@ -11,6 +11,7 @@ use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
+use strategies::step::utils::angle_utils::AngleUtils;
 use strategies::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use strategies::step::utils::corridors::Corridors;
 use strategies::step::utils::entities::angle::BasicAngleProperties;
@@ -59,7 +60,7 @@ fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
     (balances.real - balances.initial) / balances.initial * dec!(100)
 }
 
-pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>
+pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 
@@ -71,19 +72,33 @@ where
     OrUt: OrderUtils,
     BCor: BasicCorridorUtils,
     Cor: Corridors,
+    Ang: AngleUtils,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub timeframes: StrategyTimeframes,
     pub stores: &'a mut StepBacktestingStores<T>,
-    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
+    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
     pub params: &'a P,
 }
 
-pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X, I>(
+pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X, I>(
     historical_data: &HistoricalData<StepCandleProperties, BasicTickProperties>,
-    strategy_config: StepStrategyRunningConfig<P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
+    strategy_config: StepStrategyRunningConfig<
+        P,
+        T,
+        Hel,
+        LevUt,
+        LevCon,
+        OrUt,
+        BCor,
+        Cor,
+        Ang,
+        D,
+        E,
+        X,
+    >,
     trading_limiter: &L,
     get_candle_leading_price: &impl Fn(&BasicCandleProperties) -> CandlePrice,
     run_iteration: &I,
@@ -100,6 +115,7 @@ where
     OrUt: OrderUtils,
     BCor: BasicCorridorUtils,
     Cor: Corridors,
+    Ang: AngleUtils,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -109,7 +125,7 @@ where
         Option<StepBacktestingCandleProperties>,
         StrategySignals,
         &mut StepBacktestingStores<T>,
-        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
+        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
         &P,
     ) -> Result<()>,
 {
@@ -243,14 +259,16 @@ mod tests {
     use float_cmp::approx_eq;
     use rust_decimal_macros::dec;
     use std::fmt::Debug;
+    use strategies::step::utils::angle_utils::{ExistingDiffs, MaxMinAngles};
     use strategies::step::utils::backtesting_charts::{
         ChartTraceEntity, StepBacktestingChartTraces,
     };
     use strategies::step::utils::corridors::{Corridors, UpdateCorridorsNearWorkingLevelsUtils};
+    use strategies::step::utils::entities::angle::FullAngleProperties;
     use strategies::step::utils::entities::working_levels::{
         BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
     };
-    use strategies::step::utils::entities::StatisticsNotifier;
+    use strategies::step::utils::entities::{Diff, StatisticsNotifier};
     use strategies::step::utils::helpers::HelpersImpl;
     use strategies::step::utils::level_conditions::MinAmountOfCandles;
     use strategies::step::utils::level_utils::RemoveInvalidWorkingLevelsUtils;
@@ -551,6 +569,34 @@ mod tests {
         }
     }
 
+    struct TestAngleUtilsImpl;
+
+    impl AngleUtils for TestAngleUtilsImpl {
+        fn get_diff_between_current_and_previous_candles<C>(
+            current_candle_props: &C,
+            previous_candle_props: &C,
+        ) -> Diff
+        where
+            C: AsRef<StepCandleProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn get_new_angle<C, A>(
+            previous_candle: &Item<CandleId, C>,
+            diffs: ExistingDiffs,
+            angles: MaxMinAngles<A, C>,
+            min_distance_between_max_min_angles: ParamValue,
+            max_distance_between_max_min_angles: ParamValue,
+        ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
+        where
+            C: AsRef<StepCandleProperties> + Debug + Clone,
+            A: AsRef<BasicAngleProperties> + Debug + Clone,
+        {
+            unimplemented!()
+        }
+    }
+
     #[derive(Default)]
     struct TestTradingEngineImpl;
 
@@ -837,6 +883,7 @@ mod tests {
             TestOrderUtilsImpl,
             TestBasicCorridorUtilsImpl,
             TestCorridorsImpl,
+            TestAngleUtilsImpl,
             _,
             _,
             _,
@@ -856,12 +903,12 @@ mod tests {
             params: &step_params,
         };
 
-        fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>(
+        fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>(
             new_tick_props: BasicTickProperties,
             new_candle_props: Option<StepBacktestingCandleProperties>,
             signals: StrategySignals,
             stores: &mut StepBacktestingStores<T>,
-            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
+            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         ) -> Result<()>
         where
@@ -873,6 +920,7 @@ mod tests {
             OrUt: OrderUtils,
             BCor: BasicCorridorUtils,
             Cor: Corridors,
+            Ang: AngleUtils,
             D: Fn(
                 ChartTraceEntity,
                 &mut StepBacktestingChartTraces,

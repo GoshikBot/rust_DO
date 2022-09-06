@@ -70,7 +70,7 @@ pub struct StepStrategyTicksCandles {
     pub previous_candle: Option<CandleId>,
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct StepDiffs {
     pub current: Option<Diff>,
     pub previous: Option<Diff>,

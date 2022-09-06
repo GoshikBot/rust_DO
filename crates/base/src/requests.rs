@@ -1,4 +1,3 @@
-use crate::entities::TARGET_LOGGER_ENV;
 use crate::requests::api::SyncHttpRequest;
 use crate::requests::entities::{HttpRequestData, HttpRequestWithRetriesParams};
 use anyhow::{bail, Result};
@@ -24,9 +23,10 @@ pub fn http_request_with_retries(
             }
             Err(e) => {
                 log::error!(
-                    target: &dotenv::var(TARGET_LOGGER_ENV).unwrap(),
                     "an error occurred on a {} try to request {}: {:?}",
-                    current_request_try, req_params.req_entity_name, e
+                    current_request_try,
+                    req_params.req_entity_name,
+                    e
                 );
 
                 if current_request_try <= req_params.number_of_retries {

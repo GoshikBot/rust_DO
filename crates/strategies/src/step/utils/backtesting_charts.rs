@@ -204,6 +204,7 @@ pub fn add_entity_to_chart_traces(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::step::utils::entities::angle::AngleState;
     use base::entities::Item;
     use rust_decimal_macros::dec;
 
@@ -396,7 +397,10 @@ mod tests {
         );
 
         let new_last_broken_angle = FullAngleProperties {
-            base: BasicAngleProperties { r#type: Level::Max },
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Real,
+            },
             candle: Item {
                 id: String::from("2"),
                 props: StepBacktestingCandleProperties {

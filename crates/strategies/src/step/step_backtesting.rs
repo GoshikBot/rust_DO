@@ -1,4 +1,5 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
+use crate::step::utils::angle_utils::AngleUtils;
 use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::corridors::{
     Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
@@ -23,14 +24,13 @@ use base::entities::{BasicTickProperties, Item};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::NaiveDateTime;
-use rust_decimal_macros::dec;
 
-pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>(
+pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>(
     new_tick_props: BasicTickProperties,
     new_candle_props: Option<StepBacktestingCandleProperties>,
     signals: StrategySignals,
     stores: &mut StepBacktestingStores<T>,
-    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, D, E, X>,
+    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
     params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 ) -> Result<()>
 where
@@ -42,6 +42,7 @@ where
     OrUt: OrderUtils,
     BCor: BasicCorridorUtils,
     Cor: Corridors,
+    Ang: AngleUtils,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
@@ -182,10 +183,12 @@ where
         )?;
 
         stores.config.diffs.previous = stores.config.diffs.current;
-        // stores.config.diffs.current = stores
-        //     .main
-        //     .get_previous_candle()?
-        //     .map(|previous_candle| Diff::Greater);
+        stores.config.diffs.current = stores.main.get_previous_candle()?.map(|previous_candle| {
+            Ang::get_diff_between_current_and_previous_candles(
+                &current_candle.props,
+                &previous_candle.props,
+            )
+        });
     }
 
     Ok(())

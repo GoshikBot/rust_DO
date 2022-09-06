@@ -9,7 +9,7 @@ use base::helpers::points_to_price;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
-use strategies::step::utils::entities::angle::{AngleId, BasicAngleProperties};
+use strategies::step::utils::entities::angle::{AngleId, AngleState, BasicAngleProperties};
 use strategies::step::utils::entities::order::StepOrderProperties;
 use strategies::step::utils::entities::working_levels::{
     BacktestingWLProperties, BasicWLProperties, CorridorType, WLStatus,
@@ -73,7 +73,10 @@ fn should_remove_only_unused_items() {
     for i in 1..=10 {
         let angle_id = store
             .create_angle(
-                BasicAngleProperties { r#type: Level::Min },
+                BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
                 candles.get(i - 1).unwrap().clone(),
             )
             .unwrap()

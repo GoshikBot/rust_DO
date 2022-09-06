@@ -44,8 +44,8 @@ impl Display for StepPointParam {
 }
 
 pub enum StepRatioParam {
-    MinDistanceBetweenMaxMinAngles,
-    MaxDistanceBetweenMaxMinAnglesForTheirUpdating,
+    MinDistanceBetweenNewAndCurrentMaxMinAngles,
+    MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear,
     MinBreakDistance,
     DistanceFromLevelToFirstOrder,
     DistanceFromLevelToStopLoss,
@@ -61,11 +61,11 @@ pub enum StepRatioParam {
 impl Display for StepRatioParam {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
-            StepRatioParam::MinDistanceBetweenMaxMinAngles => {
-                write!(f, "min_distance_between_max_min_angles")
+            StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles => {
+                write!(f, "min_distance_between_new_and_current_max_min_angles")
             }
-            StepRatioParam::MaxDistanceBetweenMaxMinAnglesForTheirUpdating => {
-                write!(f, "max_distance_between_max_min_angles_for_their_updating")
+            StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear => {
+                write!(f, "min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear")
             }
             StepRatioParam::MinBreakDistance => write!(f, "min_break_distance"),
             StepRatioParam::DistanceFromLevelToFirstOrder => {
