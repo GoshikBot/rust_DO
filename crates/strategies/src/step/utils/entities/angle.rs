@@ -29,7 +29,7 @@ impl Default for BasicAngleProperties {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct FullAngleProperties<P, C> {
     pub base: P,
     pub candle: Item<CandleId, C>,

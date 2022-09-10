@@ -1,5 +1,5 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
-use crate::step::utils::angle_utils::AngleUtils;
+use crate::step::utils::angle_utils::{AngleUtils, ExistingDiffs, MaxMinAngles};
 use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::corridors::{
     Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
@@ -14,7 +14,7 @@ use crate::step::utils::level_utils::{LevelUtils, RemoveInvalidWorkingLevelsUtil
 use crate::step::utils::order_utils::{
     OrderUtils, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
 };
-use crate::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores};
+use crate::step::utils::stores::{StepBacktestingMainStore, StepBacktestingStores, StepDiffs};
 use crate::step::utils::StepBacktestingUtils;
 use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
@@ -189,6 +189,39 @@ where
                 &previous_candle.props,
             )
         });
+
+        let new_angle = match stores.config.diffs {
+            StepDiffs {
+                previous: Some(previous_diff),
+                current: Some(current_diff),
+            } => {
+                match stores.main.get_previous_candle()? {
+                    Some(previous_candle) => {
+                        Ang::get_new_angle(
+                            &previous_candle,
+                            ExistingDiffs {
+                                previous: previous_diff,
+                                current: current_diff,
+                            },
+                            MaxMinAngles {
+                                max_angle: &stores.main.get_max_angle()?,
+                                min_angle: &stores.main.get_min_angle()?,
+                            },
+                            params.get_ratio_param_value(
+                                StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles,
+                                current_candle.props.step_common.base.volatility
+                            ),
+                            params.get_ratio_param_value(
+                                StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear,
+                                current_candle.props.step_common.base.volatility
+                            ),
+                        )
+                    },
+                    None => None
+                }
+            },
+            _ => None,
+        };
     }
 
     Ok(())

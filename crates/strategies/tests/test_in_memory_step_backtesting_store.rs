@@ -15,6 +15,7 @@ use strategies::step::utils::entities::working_levels::{
     BacktestingWLProperties, BasicWLProperties, CorridorType, WLStatus,
 };
 use strategies::step::utils::stores::angle_store::StepAngleStore;
+use strategies::step::utils::stores::candle_store::StepCandleStore;
 use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use strategies::step::utils::stores::tick_store::StepTickStore;
 use strategies::step::utils::stores::working_level_store::StepWorkingLevelStore;
@@ -38,7 +39,7 @@ fn should_remove_only_unused_items() {
         .is_ok());
 
     let mut candles = Vec::new();
-    for _ in 1..=10 {
+    for _ in 1..=12 {
         let candle_id = store.create_candle(Default::default()).unwrap().id;
         candles.push(candle_id);
     }
@@ -52,21 +53,41 @@ fn should_remove_only_unused_items() {
 
     let working_level_id = store.create_working_level(Default::default()).unwrap().id;
 
-    assert!(store
+    store
         .add_candle_to_working_level_corridor(
             &working_level_id,
             candles.get(2).unwrap().clone(),
             CorridorType::Small,
         )
-        .is_ok());
+        .unwrap();
 
-    assert!(store
+    store
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            candles.get(8).unwrap().clone(),
+            CorridorType::Small,
+        )
+        .unwrap();
+
+    store
         .add_candle_to_working_level_corridor(
             &working_level_id,
             candles.get(3).unwrap().clone(),
             CorridorType::Big,
         )
-        .is_ok());
+        .unwrap();
+
+    store
+        .add_candle_to_working_level_corridor(
+            &working_level_id,
+            candles.get(9).unwrap().clone(),
+            CorridorType::Big,
+        )
+        .unwrap();
+
+    store
+        .add_candle_to_general_corridor(candles[10].clone())
+        .unwrap();
 
     let mut angles = Vec::new();
 
@@ -111,7 +132,7 @@ fn should_remove_only_unused_items() {
         .update_max_angle_before_bargaining_corridor(angles.get(7).unwrap().clone())
         .is_ok());
 
-    assert!(store.remove_unused_items().is_ok());
+    store.remove_unused_items().unwrap();
 
     let left_ticks = ticks.drain(0..2).collect::<HashSet<_>>();
 
@@ -122,7 +143,7 @@ fn should_remove_only_unused_items() {
         .collect::<HashSet<&TickId>>()
         .is_empty());
 
-    let left_candles = candles.drain(0..=7).collect::<HashSet<_>>();
+    let left_candles = candles[0..=10].iter().cloned().collect::<HashSet<_>>();
 
     assert!(store
         .get_all_candles()
@@ -138,7 +159,24 @@ fn should_remove_only_unused_items() {
         .unwrap()
         .symmetric_difference(&left_angles)
         .collect::<HashSet<&AngleId>>()
-        .is_empty())
+        .is_empty());
+
+    store
+        .clear_working_level_corridor(&working_level_id, CorridorType::Small)
+        .unwrap();
+    store
+        .clear_working_level_corridor(&working_level_id, CorridorType::Big)
+        .unwrap();
+
+    store.clear_general_corridor().unwrap();
+
+    store.remove_unused_items().unwrap();
+
+    assert!(
+        !store.get_all_candles().unwrap().contains(&candles[8])
+            && !store.get_all_candles().unwrap().contains(&candles[9])
+            && !store.get_all_candles().unwrap().contains(&candles[10])
+    );
 }
 
 #[test]
@@ -285,6 +323,27 @@ fn should_successfully_add_candle_to_working_level_corridor_and_then_clear_corri
         .get_candles_of_working_level_corridor(&working_level_id, CorridorType::Big)
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn should_correctly_update_general_corridor() {
+    let mut store = InMemoryStepBacktestingStore::default();
+
+    let candle_id = store.create_candle(Default::default()).unwrap().id;
+
+    assert!(store.get_candles_of_general_corridor().unwrap().is_empty());
+
+    store
+        .add_candle_to_general_corridor(candle_id.clone())
+        .unwrap();
+
+    let candles = store.get_candles_of_general_corridor().unwrap();
+
+    assert!(candles.len() == 1 && candles[0].id == candle_id);
+
+    store.clear_general_corridor().unwrap();
+
+    assert!(store.get_candles_of_general_corridor().unwrap().is_empty());
 }
 
 #[test]

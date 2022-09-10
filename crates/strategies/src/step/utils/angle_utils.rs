@@ -1,6 +1,10 @@
-use crate::step::utils::entities::angle::{AngleState, BasicAngleProperties, FullAngleProperties};
+use crate::step::utils::entities::angle::{
+    AngleId, AngleState, BasicAngleProperties, FullAngleProperties,
+};
 use crate::step::utils::entities::candle::StepCandleProperties;
 use crate::step::utils::entities::Diff;
+use crate::step::utils::stores::angle_store::StepAngleStore;
+use anyhow::Result;
 use base::entities::candle::CandleId;
 use base::entities::{Item, Level};
 use base::helpers::price_to_points;
@@ -20,8 +24,8 @@ where
     C: AsRef<StepCandleProperties> + Debug + Clone,
     A: AsRef<BasicAngleProperties> + Debug + Clone,
 {
-    pub max_angle: &'a Option<FullAngleProperties<A, C>>,
-    pub min_angle: &'a Option<FullAngleProperties<A, C>>,
+    pub max_angle: &'a Option<Item<AngleId, FullAngleProperties<A, C>>>,
+    pub min_angle: &'a Option<Item<AngleId, FullAngleProperties<A, C>>>,
 }
 
 impl<'a, A, C> Copy for MaxMinAngles<'a, A, C>
@@ -46,12 +50,21 @@ pub trait AngleUtils {
         previous_candle: &Item<CandleId, C>,
         diffs: ExistingDiffs,
         angles: MaxMinAngles<A, C>,
-        min_distance_between_max_min_angles: ParamValue,
-        max_distance_between_max_min_angles: ParamValue,
+        min_distance_between_new_and_current_max_and_min_angles: ParamValue,
+        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamValue,
     ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
     where
         C: AsRef<StepCandleProperties> + Debug + Clone,
         A: AsRef<BasicAngleProperties> + Debug + Clone;
+
+    fn update_angles<A, C>(
+        new_angle: FullAngleProperties<A, C>,
+        general_corridor: &[Item<CandleId, C>],
+        angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+    ) -> Result<()>
+    where
+        A: AsRef<BasicAngleProperties> + Debug + Clone,
+        C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq;
 }
 
 pub struct AngleUtilsImpl;
@@ -80,21 +93,21 @@ impl AngleUtilsImpl {
     }
 
     fn current_angle_is_crossed_by_new_one<C, A>(
-        current_angle: &FullAngleProperties<A, C>,
+        current_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         new_angle_candle_props: &C,
     ) -> bool
     where
         A: AsRef<BasicAngleProperties> + Debug + Clone,
         C: AsRef<StepCandleProperties> + Debug + Clone,
     {
-        let current_angle_is_crossed = match current_angle.base.as_ref().r#type {
+        let current_angle_is_crossed = match current_angle.props.base.as_ref().r#type {
             Level::Max => {
                 new_angle_candle_props.as_ref().leading_price
-                    > current_angle.candle.props.as_ref().leading_price
+                    > current_angle.props.candle.props.as_ref().leading_price
             }
             Level::Min => {
                 new_angle_candle_props.as_ref().leading_price
-                    < current_angle.candle.props.as_ref().leading_price
+                    < current_angle.props.candle.props.as_ref().leading_price
             }
         };
 
@@ -102,7 +115,7 @@ impl AngleUtilsImpl {
             log::debug!(
                 "current {:?} angle is crossed by the new angle: current angle: {:?},\
                  new angle candle: {:?}",
-                current_angle.base.as_ref().r#type,
+                current_angle.props.base.as_ref().r#type,
                 current_angle,
                 new_angle_candle_props,
             );
@@ -110,7 +123,7 @@ impl AngleUtilsImpl {
             log::debug!(
                 "current {:?} angle is NOT crossed by the new angle: current angle: {:?},\
                  new angle candle: {:?}",
-                current_angle.base.as_ref().r#type,
+                current_angle.props.base.as_ref().r#type,
                 current_angle,
                 new_angle_candle_props,
             );
@@ -168,6 +181,7 @@ impl AngleUtilsImpl {
                         .max_angle
                         .as_ref()
                         .unwrap()
+                        .props
                         .candle
                         .props
                         .as_ref()
@@ -180,6 +194,7 @@ impl AngleUtilsImpl {
                             .min_angle
                             .as_ref()
                             .unwrap()
+                            .props
                             .candle
                             .props
                             .as_ref()
@@ -281,12 +296,12 @@ impl AngleUtilsImpl {
                         let distance_between_new_and_current_angles =
                             price_to_points(match angle_type {
                                 Level::Min => {
-                                    max_angle.candle.props.as_ref().leading_price
+                                    max_angle.props.candle.props.as_ref().leading_price
                                         - previous_candle.props.as_ref().leading_price
                                 }
                                 Level::Max => {
                                     previous_candle.props.as_ref().leading_price
-                                        - min_angle.candle.props.as_ref().leading_price
+                                        - min_angle.props.candle.props.as_ref().leading_price
                                 }
                             });
 
@@ -301,8 +316,8 @@ impl AngleUtilsImpl {
                             );
 
                             let distance_between_current_max_min_angles = price_to_points(
-                                max_angle.candle.props.as_ref().leading_price
-                                    - min_angle.candle.props.as_ref().leading_price,
+                                max_angle.props.candle.props.as_ref().leading_price
+                                    - min_angle.props.candle.props.as_ref().leading_price,
                             );
 
                             return if distance_between_current_max_min_angles >= min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear {
@@ -363,6 +378,86 @@ impl AngleUtilsImpl {
                         },
                         candle: previous_candle.clone(),
                     });
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_angle_before_bargaining_corridor<'a, A, C>(
+        new_angle: &FullAngleProperties<A, C>,
+        general_corridor: &[Item<CandleId, C>],
+        angles: MaxMinAngles<'a, A, C>,
+    ) -> Option<&'a Item<AngleId, FullAngleProperties<A, C>>>
+    where
+        C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq,
+        A: AsRef<BasicAngleProperties> + Debug + Clone,
+    {
+        if general_corridor.contains(&new_angle.candle) {
+            log::debug!(
+                "new angle candle is in the supposed bargaining corridor:\
+                candle — {:?}, bargaining corridor — {:?}",
+                new_angle.candle,
+                general_corridor
+            );
+
+            match new_angle.base.as_ref().r#type {
+                Level::Min => {
+                    if let Some(min_angle) = angles.min_angle {
+                        if !general_corridor.contains(&min_angle.props.candle) {
+                            log::debug!(
+                                "the previous min angle is not the supposed bargaining corridor,\
+                                so the previous min angle can be the angle before the bargaining corridor:\
+                                previous min angle — {:?}, bargaining corridor — {:?}",
+                                min_angle,
+                                general_corridor
+                            );
+
+                            return Some(min_angle);
+                        } else {
+                            log::debug!(
+                                "the previous min angle is in the supposed bargaining corridor,\
+                                so the previous min angle cannot be the angle before the bargaining corridor:\
+                                previous min angle — {:?}, bargaining corridor — {:?}",
+                                min_angle,
+                                general_corridor
+                            );
+                        }
+                    } else {
+                        log::debug!(
+                            "the previous min angle is None, it can't be considered as the angle \
+                            before the bargaining corridor"
+                        );
+                    }
+                }
+                Level::Max => {
+                    if let Some(max_angle) = angles.max_angle {
+                        if !general_corridor.contains(&max_angle.props.candle) {
+                            log::debug!(
+                                "the previous max angle is not the supposed bargaining corridor,\
+                                so the previous max angle can be the angle before the bargaining corridor:\
+                                previous max angle — {:?}, bargaining corridor — {:?}",
+                                max_angle,
+                                general_corridor
+                            );
+
+                            return Some(max_angle);
+                        } else {
+                            log::debug!(
+                                "the previous max angle is in the supposed bargaining corridor,\
+                                so the previous max angle cannot be the angle before the bargaining corridor:\
+                                previous max angle — {:?}, bargaining corridor — {:?}",
+                                max_angle,
+                                general_corridor
+                            );
+                        }
+                    } else {
+                        log::debug!(
+                            "the previous max angle is None, it can't be considered as the angle \
+                            before the bargaining corridor"
+                        );
+                    }
                 }
             }
         }
@@ -430,14 +525,75 @@ impl AngleUtils for AngleUtilsImpl {
             ),
         }
     }
+
+    fn update_angles<A, C>(
+        new_angle: FullAngleProperties<A, C>,
+        general_corridor: &[Item<CandleId, C>],
+        angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+    ) -> Result<()>
+    where
+        A: AsRef<BasicAngleProperties> + Debug + Clone,
+        C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq,
+    {
+        let new_angle = angle_store.create_angle(new_angle.base, new_angle.candle.id)?;
+
+        match new_angle.props.base.as_ref().state {
+            AngleState::Real => {
+                let max_angle = angle_store.get_max_angle()?;
+                let min_angle = angle_store.get_min_angle()?;
+
+                let new_angle_before_bargaining_corridor =
+                    Self::get_angle_before_bargaining_corridor(
+                        &new_angle.props,
+                        general_corridor,
+                        MaxMinAngles {
+                            max_angle: &max_angle,
+                            min_angle: &min_angle,
+                        },
+                    );
+
+                if let Some(new_angle_before_bargaining_corridor) =
+                    new_angle_before_bargaining_corridor
+                {
+                    match new_angle_before_bargaining_corridor
+                        .props
+                        .base
+                        .as_ref()
+                        .r#type
+                    {
+                        Level::Min => angle_store.update_min_angle_before_bargaining_corridor(
+                            new_angle_before_bargaining_corridor.id.clone(),
+                        )?,
+                        Level::Max => angle_store.update_max_angle_before_bargaining_corridor(
+                            new_angle_before_bargaining_corridor.id.clone(),
+                        )?,
+                    }
+                }
+
+                match new_angle.props.base.as_ref().r#type {
+                    Level::Min => angle_store.update_min_angle(new_angle.id.clone())?,
+                    Level::Max => angle_store.update_max_angle(new_angle.id.clone())?,
+                }
+            }
+            AngleState::Virtual => match new_angle.props.base.as_ref().r#type {
+                Level::Min => angle_store.update_virtual_min_angle(new_angle.id)?,
+                Level::Max => angle_store.update_virtual_max_angle(new_angle.id)?,
+            },
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+    use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use crate::step::utils::stores::StepDiffs;
     use base::entities::candle::BasicCandleProperties;
     use base::entities::CandlePrices;
+    use base::stores::candle_store::BasicCandleStore;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -824,22 +980,25 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.37000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -895,22 +1054,25 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
@@ -956,22 +1118,25 @@ mod tests {
 
         let angles = MaxMinAngles {
             max_angle: &None,
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1027,22 +1192,25 @@ mod tests {
 
         let angles = MaxMinAngles {
             max_angle: &None,
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1086,41 +1254,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.37900),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.37900),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37900),
                         },
-                        leading_price: dec!(1.37900),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1175,41 +1349,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.38100),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1253,41 +1433,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.38100),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1342,41 +1528,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.38100),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.37000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.37000),
                         },
-                        leading_price: dec!(1.37000),
                     },
                 },
             }),
@@ -1432,22 +1624,25 @@ mod tests {
 
         let angles = MaxMinAngles {
             max_angle: &None,
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38100),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
@@ -1503,22 +1698,25 @@ mod tests {
 
         let angles = MaxMinAngles {
             max_angle: &None,
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38100),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
@@ -1562,22 +1760,25 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
@@ -1633,22 +1834,25 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
@@ -1693,41 +1897,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38100),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38100),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38100),
                         },
-                        leading_price: dec!(1.38100),
                     },
                 },
             }),
@@ -1782,41 +1992,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38000),
                         },
-                        leading_price: dec!(1.38000),
                     },
                 },
             }),
@@ -1860,41 +2076,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38000),
                         },
-                        leading_price: dec!(1.38000),
                     },
                 },
             }),
@@ -1949,41 +2171,47 @@ mod tests {
         };
 
         let angles = MaxMinAngles {
-            max_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Max,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("3"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                high: dec!(1.39000),
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("3"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.39000),
                         },
-                        leading_price: dec!(1.39000),
                     },
                 },
             }),
-            min_angle: &Some(FullAngleProperties {
-                base: BasicAngleProperties {
-                    r#type: Level::Min,
-                    state: AngleState::Real,
-                },
-                candle: Item {
-                    id: String::from("2"),
-                    props: StepCandleProperties {
-                        base: BasicCandleProperties {
-                            prices: CandlePrices {
-                                low: dec!(1.38000),
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38000),
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            leading_price: dec!(1.38000),
                         },
-                        leading_price: dec!(1.38000),
                     },
                 },
             }),
@@ -2012,5 +2240,430 @@ mod tests {
             .unwrap(),
             expected_new_angle
         );
+    }
+
+    // update_angles configs to test:
+    // - new virtual min angle
+    // - new virtual max angle
+    //
+    // - new real min angle, new angle is NOT in the bargaining corridor
+    // - new real min angle, new angle is in the bargaining corridor, previous min angle doesn't exist,
+    // - new real min angle, new angle is in the bargaining corridor, previous min angle exists,
+    //   previous min angle is in the bargaining corridor
+    // - new real min angle, new angle is in the bargaining corridor, previous min angle exists,
+    //   previous min angle is NOT in the bargaining corridor
+    //
+    // - new real max angle, new angle is NOT in the bargaining corridor
+    // - new real max angle, new angle is in the bargaining corridor, previous max angle doesn't exist,
+    // - new real max angle, new angle is in the bargaining corridor, previous max angle exists,
+    //   previous max angle is in the bargaining corridor
+    // - new real max angle, new angle is in the bargaining corridor, previous max angle exists,
+    //   previous max angle is NOT in the bargaining corridor
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_virtual_min_angle__should_update_virtual_min_angle() {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Min,
+                state: AngleState::Virtual,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
+
+        assert_eq!(
+            store.get_virtual_min_angle().unwrap().unwrap().props,
+            new_angle
+        );
+
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_virtual_max_angle__should_update_virtual_max_angle() {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Virtual,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
+
+        assert_eq!(
+            store.get_virtual_max_angle().unwrap().unwrap().props,
+            new_angle
+        );
+
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_min_angle_and_new_angle_is_not_in_bargaining_corridor__should_update_min_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Min,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
+
+        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_max_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_min_angle_and_new_angle_is_in_bargaining_corridor_and_previous_min_angle_does_not_exist__should_update_min_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Min,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone()];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_max_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_min_angle_and_new_angle_is_in_bargaining_corridor_and_previous_min_angle_exists_and_previous_min_angle_is_in_bargaining_corridor__should_update_min_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+
+        let previous_angle = store
+            .create_angle(
+                BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                previous_angle_candle.id.clone(),
+            )
+            .unwrap();
+
+        store.update_min_angle(previous_angle.id).unwrap();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Min,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone(), previous_angle_candle];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_max_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_min_angle_and_new_angle_is_in_bargaining_corridor_and_previous_min_angle_exists_and_previous_min_angle_is_not_in_bargaining_corridor__should_update_real_min_angle_and_min_angle_before_bargaining_corridor(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+
+        let previous_angle = store
+            .create_angle(
+                BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                previous_angle_candle.id,
+            )
+            .unwrap();
+
+        store.update_min_angle(previous_angle.id.clone()).unwrap();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Min,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone()];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_max_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert_eq!(
+            store
+                .get_min_angle_before_bargaining_corridor()
+                .unwrap()
+                .unwrap(),
+            previous_angle
+        );
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_max_angle_and_new_angle_is_not_in_bargaining_corridor__should_update_max_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
+
+        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_max_angle_and_new_angle_is_in_bargaining_corridor_and_previous_max_angle_does_not_exist__should_update_max_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone()];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_max_angle_and_new_angle_is_in_bargaining_corridor_and_previous_max_angle_exists_and_previous_max_angle_is_in_bargaining_corridor__should_update_max_angle(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+
+        let previous_angle = store
+            .create_angle(
+                BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                previous_angle_candle.id.clone(),
+            )
+            .unwrap();
+
+        store.update_max_angle(previous_angle.id).unwrap();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone(), previous_angle_candle];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+
+        assert!(store
+            .get_max_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn update_angles__new_real_max_angle_and_new_angle_is_in_bargaining_corridor_and_previous_max_angle_exists_and_previous_max_angle_is_not_in_bargaining_corridor__should_update_real_max_angle_and_max_angle_before_bargaining_corridor(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+
+        let previous_angle = store
+            .create_angle(
+                BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                previous_angle_candle.id,
+            )
+            .unwrap();
+
+        store.update_max_angle(previous_angle.id.clone()).unwrap();
+
+        let new_angle = FullAngleProperties {
+            base: BasicAngleProperties {
+                r#type: Level::Max,
+                state: AngleState::Real,
+            },
+            candle: store.create_candle(Default::default()).unwrap(),
+        };
+
+        let general_corridor = vec![new_angle.candle.clone()];
+
+        AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
+
+        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+
+        assert!(store.get_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_min_angle().unwrap().is_none());
+        assert!(store.get_virtual_max_angle().unwrap().is_none());
+
+        assert_eq!(
+            store
+                .get_max_angle_before_bargaining_corridor()
+                .unwrap()
+                .unwrap(),
+            previous_angle
+        );
+
+        assert!(store
+            .get_min_angle_before_bargaining_corridor()
+            .unwrap()
+            .is_none());
     }
 }

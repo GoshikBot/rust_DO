@@ -595,6 +595,18 @@ mod tests {
         {
             unimplemented!()
         }
+
+        fn update_angles<A, C>(
+            new_angle: FullAngleProperties<A, C>,
+            general_corridor: &[Item<CandleId, C>],
+            angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+        ) -> Result<()>
+        where
+            A: AsRef<BasicAngleProperties> + Debug + Clone,
+            C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq,
+        {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]

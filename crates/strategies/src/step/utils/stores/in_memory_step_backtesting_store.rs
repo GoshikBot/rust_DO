@@ -22,6 +22,7 @@ use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
     working_levels::WLId,
 };
+use crate::step::utils::stores::candle_store::StepCandleStore;
 use crate::step::utils::stores::{
     StepBacktestingMainStore, StepStrategyAngles, StepStrategyTicksCandles,
 };
@@ -67,7 +68,7 @@ pub struct InMemoryStepBacktestingStore {
 
     working_level_small_corridors: HashMap<WLId, Vec<CandleId>>,
     working_level_big_corridors: HashMap<WLId, Vec<CandleId>>,
-    corridor_candles: HashSet<CandleId>,
+    general_corridor: Vec<CandleId>,
 
     working_level_chain_of_orders: HashMap<WLId, HashSet<OrderId>>,
     orders: HashMap<OrderId, Item<OrderId, StepOrderProperties>>,
@@ -261,6 +262,49 @@ impl BasicCandleStore for InMemoryStepBacktestingStore {
         }
 
         self.strategy_ticks_candles.previous_candle = Some(new_candle);
+        Ok(())
+    }
+}
+
+impl StepCandleStore for InMemoryStepBacktestingStore {
+    fn get_candles_of_general_corridor(
+        &self,
+    ) -> Result<Vec<Item<CandleId, Self::CandleProperties>>> {
+        let candles = self.general_corridor
+            .iter()
+            .map(|candle_id| {
+                self.get_candle_by_id(candle_id)?
+                    .context(format!("no candle with an id {}", candle_id))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(candles)
+    }
+
+    fn add_candle_to_general_corridor(&mut self, candle_id: CandleId) -> Result<()> {
+        match self.candles.get_mut(&candle_id) {
+            None => bail!("a candle with an id {} doesn't exist", candle_id),
+            Some(candle) => {
+                candle.props.ref_count += 1;
+            }
+        }
+
+        if self.general_corridor.contains(&candle_id) {
+            bail!("a candle with an id {} already exists in the corridor", candle_id);
+        }
+
+        self.general_corridor.push(candle_id);
+
+        Ok(())
+    }
+
+    fn clear_general_corridor(&mut self) -> Result<()> {
+        for candle in self.general_corridor.iter() {
+            self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
+        }
+        
+        self.general_corridor.clear();
+        
         Ok(())
     }
 }
@@ -746,7 +790,11 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             CorridorType::Small => &mut self.working_level_small_corridors,
             CorridorType::Big => &mut self.working_level_big_corridors,
         };
-
+        
+        for candle in working_level_corridors.get(working_level_id).unwrap().iter() {
+            self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
+        }
+        
         working_level_corridors.remove(working_level_id);
 
         Ok(())
@@ -784,8 +832,6 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
         if candles.contains(&candle_id) {
             bail!("a candle with an id {} already exists in a {:?} corridor of a working level with id {}", candle_id, corridor_type, working_level_id);
         }
-
-        self.corridor_candles.insert(candle_id.clone());
 
         candles.push(candle_id);
 

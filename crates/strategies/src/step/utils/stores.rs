@@ -15,6 +15,7 @@ use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
 
 pub mod angle_store;
+pub mod candle_store;
 pub mod in_memory_step_backtesting_store;
 pub mod in_memory_step_realtime_config_store;
 pub mod step_realtime_config_store;
