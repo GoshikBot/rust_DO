@@ -5,6 +5,7 @@ use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::entities::working_levels::BacktestingWLProperties;
 use crate::step::utils::entities::Diff;
 use crate::step::utils::stores::angle_store::StepAngleStore;
+use crate::step::utils::stores::candle_store::StepCandleStore;
 use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
 use crate::step::utils::stores::tick_store::StepTickStore;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
@@ -17,8 +18,6 @@ use base::stores::tick_store::BasicTickStore;
 pub mod angle_store;
 pub mod candle_store;
 pub mod in_memory_step_backtesting_store;
-pub mod in_memory_step_realtime_config_store;
-pub mod step_realtime_config_store;
 pub mod tick_store;
 pub mod working_level_store;
 
@@ -33,7 +32,7 @@ where
 
 pub trait StepBacktestingMainStore:
     StepTickStore<TickProperties = BasicTickProperties>
-    + BasicCandleStore<CandleProperties = StepBacktestingCandleProperties>
+    + StepCandleStore<CandleProperties = StepBacktestingCandleProperties>
     + StepAngleStore<
         AngleProperties = BasicAngleProperties,
         CandleProperties = StepBacktestingCandleProperties,
@@ -77,12 +76,17 @@ pub struct StepDiffs {
     pub previous: Option<Diff>,
 }
 
-pub struct StepBacktestingConfig {
+#[derive(Default)]
+pub struct StepConfig {
     pub tendency: Tendency,
     pub tendency_changed_on_crossing_bargaining_corridor: bool,
     pub second_level_after_bargaining_tendency_change_is_created: bool,
     pub skip_creating_new_working_level: bool,
     pub diffs: StepDiffs,
+}
+
+pub struct StepBacktestingConfig {
+    pub base: StepConfig,
     pub trading_engine: BacktestingTradingEngineConfig,
     pub traces: StepBacktestingChartTraces,
 }
@@ -90,11 +94,7 @@ pub struct StepBacktestingConfig {
 impl StepBacktestingConfig {
     pub fn default(total_amount_of_candles: AmountOfCandles) -> Self {
         Self {
-            tendency: Default::default(),
-            tendency_changed_on_crossing_bargaining_corridor: false,
-            second_level_after_bargaining_tendency_change_is_created: false,
-            skip_creating_new_working_level: false,
-            diffs: Default::default(),
+            base: Default::default(),
             trading_engine: Default::default(),
             traces: StepBacktestingChartTraces::new(total_amount_of_candles),
         }

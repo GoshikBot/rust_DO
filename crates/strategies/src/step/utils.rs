@@ -1,5 +1,5 @@
 use crate::step::utils::angle_utils::AngleUtils;
-use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::backtesting_charts::{ChartIndex, ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::corridors::Corridors;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::helpers::Helpers;
@@ -35,7 +35,7 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
@@ -61,7 +61,7 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {

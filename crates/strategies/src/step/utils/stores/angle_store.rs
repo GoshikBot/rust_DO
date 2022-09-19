@@ -28,7 +28,7 @@ pub trait StepAngleStore {
 
     fn update_angle_of_second_level_after_bargaining_tendency_change(
         &mut self,
-        new_angle: AngleId,
+        new_angle: Option<AngleId>,
     ) -> Result<()>;
 
     fn get_tendency_change_angle(

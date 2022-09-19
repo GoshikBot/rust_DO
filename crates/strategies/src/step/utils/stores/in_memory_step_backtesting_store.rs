@@ -4,8 +4,8 @@ use anyhow::{bail, Context, Result};
 use rust_decimal_macros::dec;
 
 use base::entities::order::{OrderId, OrderStatus, OrderType};
-use base::entities::Item;
 use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
+use base::entities::{Item, Tendency};
 use base::helpers::{points_to_price, PriceValue};
 use base::params::ParamValue;
 use base::stores::candle_store::BasicCandleStore;
@@ -21,10 +21,11 @@ use crate::step::utils::entities::working_levels::{
 use crate::step::utils::entities::{
     angle::{AngleId, BasicAngleProperties},
     working_levels::WLId,
+    Diff,
 };
 use crate::step::utils::stores::candle_store::StepCandleStore;
 use crate::step::utils::stores::{
-    StepBacktestingMainStore, StepStrategyAngles, StepStrategyTicksCandles,
+    StepBacktestingMainStore, StepDiffs, StepStrategyAngles, StepStrategyTicksCandles,
 };
 
 use super::angle_store::StepAngleStore;
@@ -75,6 +76,12 @@ pub struct InMemoryStepBacktestingStore {
 
     strategy_angles: StepStrategyAngles,
     strategy_ticks_candles: StepStrategyTicksCandles,
+
+    tendency: Tendency,
+    tendency_changed_on_crossing_bargaining_corridor: bool,
+    second_level_after_bargaining_tendency_change_is_created: bool,
+    skip_creating_new_working_level: bool,
+    diffs: StepDiffs,
 }
 
 impl StepBacktestingMainStore for InMemoryStepBacktestingStore {}
@@ -270,7 +277,8 @@ impl StepCandleStore for InMemoryStepBacktestingStore {
     fn get_candles_of_general_corridor(
         &self,
     ) -> Result<Vec<Item<CandleId, Self::CandleProperties>>> {
-        let candles = self.general_corridor
+        let candles = self
+            .general_corridor
             .iter()
             .map(|candle_id| {
                 self.get_candle_by_id(candle_id)?
@@ -290,7 +298,10 @@ impl StepCandleStore for InMemoryStepBacktestingStore {
         }
 
         if self.general_corridor.contains(&candle_id) {
-            bail!("a candle with an id {} already exists in the corridor", candle_id);
+            bail!(
+                "a candle with an id {} already exists in the corridor",
+                candle_id
+            );
         }
 
         self.general_corridor.push(candle_id);
@@ -302,9 +313,9 @@ impl StepCandleStore for InMemoryStepBacktestingStore {
         for candle in self.general_corridor.iter() {
             self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
         }
-        
+
         self.general_corridor.clear();
-        
+
         Ok(())
     }
 }
@@ -394,12 +405,14 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
 
     fn update_angle_of_second_level_after_bargaining_tendency_change(
         &mut self,
-        new_angle: AngleId,
+        new_angle: Option<AngleId>,
     ) -> Result<()> {
-        match self.angles.get_mut(&new_angle) {
-            None => bail!("an angle with an id {} doesn't exist", new_angle),
-            Some(angle) => {
-                angle.props.ref_count += 1;
+        if let Some(new_angle) = &new_angle {
+            match self.angles.get_mut(new_angle) {
+                None => bail!("an angle with an id {} doesn't exist", new_angle),
+                Some(angle) => {
+                    angle.props.ref_count += 1;
+                }
             }
         }
 
@@ -411,7 +424,7 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
         }
 
         self.strategy_angles
-            .angle_of_second_level_after_bargaining_tendency_change = Some(new_angle);
+            .angle_of_second_level_after_bargaining_tendency_change = new_angle;
         Ok(())
     }
 
@@ -790,11 +803,15 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             CorridorType::Small => &mut self.working_level_small_corridors,
             CorridorType::Big => &mut self.working_level_big_corridors,
         };
-        
-        for candle in working_level_corridors.get(working_level_id).unwrap().iter() {
+
+        for candle in working_level_corridors
+            .get(working_level_id)
+            .unwrap()
+            .iter()
+        {
             self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
         }
-        
+
         working_level_corridors.remove(working_level_id);
 
         Ok(())

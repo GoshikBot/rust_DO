@@ -106,9 +106,9 @@ fn should_remove_only_unused_items() {
     }
 
     assert!(store
-        .update_angle_of_second_level_after_bargaining_tendency_change(
+        .update_angle_of_second_level_after_bargaining_tendency_change(Some(
             angles.get(0).unwrap().clone()
-        )
+        ))
         .is_ok());
     assert!(store
         .update_tendency_change_angle(angles.get(1).unwrap().clone())
@@ -527,7 +527,7 @@ fn should_return_error_when_inserting_nonexistent_entity() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
     assert!(store
-        .update_angle_of_second_level_after_bargaining_tendency_change(String::from("1"))
+        .update_angle_of_second_level_after_bargaining_tendency_change(Some(String::from("1")))
         .is_err());
     assert!(store
         .update_tendency_change_angle(String::from("1"))

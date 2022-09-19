@@ -1,4 +1,6 @@
-use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::backtesting_charts::{
+    ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
+};
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::working_levels::{BacktestingWLProperties, CorridorType};
 use crate::step::utils::entities::{Mode, MODE_ENV};
@@ -54,7 +56,7 @@ pub trait OrderUtils {
         W: BasicOrderStore<OrderProperties = StepOrderProperties>
             + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
         T: TradingEngine,
-        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
         R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
         P: Fn(TickPrice, OrderPrice, OrderType) -> bool;
 }
@@ -208,7 +210,7 @@ impl OrderUtils for OrderUtilsImpl {
         W: BasicOrderStore<OrderProperties = StepOrderProperties>
             + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
         T: TradingEngine,
-        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+        C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
         R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
         P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
     {
@@ -308,7 +310,7 @@ impl OrderUtils for OrderUtilsImpl {
                                 working_level_chart_index,
                             },
                             &mut stores.config.traces,
-                            current_candle,
+                            current_candle.chart_index,
                         );
 
                         (utils.add_entity_to_chart_traces)(
@@ -317,7 +319,7 @@ impl OrderUtils for OrderUtilsImpl {
                                 working_level_chart_index,
                             },
                             &mut stores.config.traces,
-                            current_candle,
+                            current_candle.chart_index,
                         );
                     }
                 }
@@ -336,7 +338,7 @@ type DistanceBetweenOrders = Decimal;
 pub struct UpdateOrdersBacktestingUtils<'a, T, C, R, W, P>
 where
     T: TradingEngine,
-    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     W: StepWorkingLevelStore,
     R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
     P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
@@ -351,7 +353,7 @@ where
 impl<'a, T, C, R, W, P> UpdateOrdersBacktestingUtils<'a, T, C, R, W, P>
 where
     T: TradingEngine,
-    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     W: StepWorkingLevelStore,
     R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
     P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
@@ -1279,7 +1281,7 @@ mod tests {
         let add_entity_to_chart_traces =
             |entity: ChartTraceEntity,
              _chart_traces: &mut StepBacktestingChartTraces,
-             _current_candle: &StepBacktestingCandleProperties| {
+             _current_candle_index: ChartIndex| {
                 match entity {
                     ChartTraceEntity::StopLoss { .. } => {
                         *number_of_stop_loss_entities.borrow_mut() += 1
@@ -1449,7 +1451,7 @@ mod tests {
         let add_entity_to_chart_traces =
             |entity: ChartTraceEntity,
              _chart_traces: &mut StepBacktestingChartTraces,
-             _current_candle: &StepBacktestingCandleProperties| {
+             _current_candle_index: ChartIndex| {
                 match entity {
                     ChartTraceEntity::StopLoss { .. } => {
                         *number_of_stop_loss_entities.borrow_mut() += 1

@@ -2,13 +2,14 @@ use crate::step::utils::entities::angle::{
     AngleId, AngleState, BasicAngleProperties, FullAngleProperties,
 };
 use crate::step::utils::entities::candle::StepCandleProperties;
-use crate::step::utils::entities::Diff;
+use crate::step::utils::entities::{Diff, MaxMinAngles};
 use crate::step::utils::stores::angle_store::StepAngleStore;
 use anyhow::Result;
 use base::entities::candle::CandleId;
 use base::entities::{Item, Level};
 use base::helpers::price_to_points;
 use base::params::ParamValue;
+use std::cmp;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
@@ -16,23 +17,6 @@ use std::fmt::Debug;
 pub struct ExistingDiffs {
     pub current: Diff,
     pub previous: Diff,
-}
-
-#[derive(Debug, Clone)]
-pub struct MaxMinAngles<'a, A, C>
-where
-    C: AsRef<StepCandleProperties> + Debug + Clone,
-    A: AsRef<BasicAngleProperties> + Debug + Clone,
-{
-    pub max_angle: &'a Option<Item<AngleId, FullAngleProperties<A, C>>>,
-    pub min_angle: &'a Option<Item<AngleId, FullAngleProperties<A, C>>>,
-}
-
-impl<'a, A, C> Copy for MaxMinAngles<'a, A, C>
-where
-    A: AsRef<BasicAngleProperties> + Debug + Clone,
-    C: AsRef<StepCandleProperties> + Debug + Clone,
-{
 }
 
 pub trait AngleUtils {
@@ -65,6 +49,14 @@ pub trait AngleUtils {
     where
         A: AsRef<BasicAngleProperties> + Debug + Clone,
         C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq;
+
+    fn get_crossed_angle<'a, A, C>(
+        angles: MaxMinAngles<'a, A, C>,
+        current_candle: &C,
+    ) -> Option<&'a Item<AngleId, FullAngleProperties<A, C>>>
+    where
+        C: AsRef<StepCandleProperties> + Debug + Clone,
+        A: AsRef<BasicAngleProperties> + Debug + Clone;
 }
 
 pub struct AngleUtilsImpl;
@@ -583,16 +575,49 @@ impl AngleUtils for AngleUtilsImpl {
 
         Ok(())
     }
+
+    fn get_crossed_angle<'a, A, C>(
+        angles: MaxMinAngles<'a, A, C>,
+        current_candle: &C,
+    ) -> Option<&'a Item<AngleId, FullAngleProperties<A, C>>>
+    where
+        C: AsRef<StepCandleProperties> + Debug + Clone,
+        A: AsRef<BasicAngleProperties> + Debug + Clone,
+    {
+        if let Some(min_angle) = angles.min_angle {
+            // in case of the gap the min angle can be crossed by the current candle open price
+            let current_candle_lowest_price = cmp::min(
+                current_candle.as_ref().base.prices.open,
+                current_candle.as_ref().base.prices.close,
+            );
+
+            if current_candle_lowest_price < min_angle.props.candle.props.as_ref().leading_price {
+                return Some(min_angle);
+            }
+        }
+
+        if let Some(max_angle) = angles.max_angle {
+            // in case of the gap the max angle can be crossed by the current candle open price
+            let current_candle_highest_price = cmp::max(
+                current_candle.as_ref().base.prices.open,
+                current_candle.as_ref().base.prices.close,
+            );
+
+            if current_candle_highest_price > max_angle.props.candle.props.as_ref().leading_price {
+                return Some(max_angle);
+            }
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-    use crate::step::utils::stores::StepDiffs;
     use base::entities::candle::BasicCandleProperties;
-    use base::entities::CandlePrices;
+    use base::entities::{CandlePrices, CandleType};
     use base::stores::candle_store::BasicCandleStore;
     use rust_decimal_macros::dec;
 
@@ -2665,5 +2690,465 @@ mod tests {
             .get_min_angle_before_bargaining_corridor()
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__angles_do_not_exist__should_return_none() {
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            max_angle: &None,
+            min_angle: &None,
+        };
+
+        assert!(
+            AngleUtilsImpl::get_crossed_angle(angles, &StepCandleProperties::default()).is_none()
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__angles_exist_but_not_crossed__should_return_none() {
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("1"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.39000),
+                        },
+                    },
+                },
+            }),
+            min_angle: &Some(Item {
+                id: String::from("2"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("2"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.38000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.38000),
+                        },
+                    },
+                },
+            }),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    open: dec!(1.38300),
+                    close: dec!(1.38500),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(AngleUtilsImpl::get_crossed_angle(angles, &current_candle).is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__min_angle_is_crossed_and_max_angle_does_not_exist__should_return_min_angle(
+    ) {
+        let min_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            max_angle: &None,
+            min_angle: &Some(min_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    open: dec!(1.38100),
+                    close: dec!(1.37999),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &min_angle
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__min_angle_is_crossed_and_max_angle_exists__should_return_min_angle() {
+        let min_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("1"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.39000),
+                        },
+                    },
+                },
+            }),
+            min_angle: &Some(min_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    open: dec!(1.38100),
+                    close: dec!(1.37999),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &min_angle
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__min_angle_is_crossed_by_gap__should_return_min_angle() {
+        let min_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            max_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Max,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("1"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    high: dec!(1.39000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.39000),
+                        },
+                    },
+                },
+            }),
+            min_angle: &Some(min_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    close: dec!(1.39000),
+                    open: dec!(1.37999),
+                    ..Default::default()
+                },
+                r#type: CandleType::Green,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &min_angle
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__max_angle_is_crossed_and_min_angle_does_not_exist__should_return_max_angle(
+    ) {
+        let max_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            min_angle: &None,
+            max_angle: &Some(max_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    close: dec!(1.38001),
+                    open: dec!(1.37900),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &max_angle
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__max_angle_is_crossed_and_min_angle_exist__should_return_max_angle() {
+        let max_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("1"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.37000),
+                        },
+                    },
+                },
+            }),
+            max_angle: &Some(max_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    open: dec!(1.37900),
+                    close: dec!(1.38001),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &max_angle
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_crossed_angle__max_angle_is_crossed_by_gap__should_return_max_angle() {
+        let max_angle = Item {
+            id: String::from("2"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: Item {
+                    id: String::from("2"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let angles: MaxMinAngles<BasicAngleProperties, StepCandleProperties> = MaxMinAngles {
+            min_angle: &Some(Item {
+                id: String::from("1"),
+                props: FullAngleProperties {
+                    base: BasicAngleProperties {
+                        r#type: Level::Min,
+                        state: AngleState::Real,
+                    },
+                    candle: Item {
+                        id: String::from("1"),
+                        props: StepCandleProperties {
+                            base: BasicCandleProperties {
+                                prices: CandlePrices {
+                                    low: dec!(1.37000),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            leading_price: dec!(1.37000),
+                        },
+                    },
+                },
+            }),
+            max_angle: &Some(max_angle.clone()),
+        };
+
+        let current_candle = StepCandleProperties {
+            base: BasicCandleProperties {
+                prices: CandlePrices {
+                    close: dec!(1.37000),
+                    open: dec!(1.38001),
+                    ..Default::default()
+                },
+                r#type: CandleType::Red,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(
+            AngleUtilsImpl::get_crossed_angle(angles, &current_candle).unwrap(),
+            &max_angle
+        );
     }
 }

@@ -12,7 +12,9 @@ use base::stores::order_store::BasicOrderStore;
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
 use strategies::step::utils::angle_utils::AngleUtils;
-use strategies::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use strategies::step::utils::backtesting_charts::{
+    ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
+};
 use strategies::step::utils::corridors::Corridors;
 use strategies::step::utils::entities::angle::BasicAngleProperties;
 use strategies::step::utils::entities::candle::{
@@ -73,7 +75,7 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
@@ -116,7 +118,7 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 
@@ -259,24 +261,31 @@ mod tests {
     use float_cmp::approx_eq;
     use rust_decimal_macros::dec;
     use std::fmt::Debug;
-    use strategies::step::utils::angle_utils::{ExistingDiffs, MaxMinAngles};
+    use strategies::step::utils::angle_utils::ExistingDiffs;
     use strategies::step::utils::backtesting_charts::{
         ChartTraceEntity, StepBacktestingChartTraces,
     };
     use strategies::step::utils::corridors::{Corridors, UpdateCorridorsNearWorkingLevelsUtils};
-    use strategies::step::utils::entities::angle::FullAngleProperties;
+    use strategies::step::utils::entities::angle::{AngleId, FullAngleProperties};
     use strategies::step::utils::entities::working_levels::{
         BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
     };
-    use strategies::step::utils::entities::{Diff, StatisticsNotifier};
+    use strategies::step::utils::entities::{
+        Diff, MaxMinAngles, StatisticsChartsNotifier, StatisticsNotifier,
+    };
     use strategies::step::utils::helpers::HelpersImpl;
     use strategies::step::utils::level_conditions::MinAmountOfCandles;
-    use strategies::step::utils::level_utils::RemoveInvalidWorkingLevelsUtils;
+    use strategies::step::utils::level_utils::{
+        RemoveInvalidWorkingLevelsUtils, UpdateTendencyAndCreateWorkingLevelUtils,
+    };
     use strategies::step::utils::order_utils::{
         OrderUtilsImpl, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
     };
+    use strategies::step::utils::stores::candle_store::StepCandleStore;
     use strategies::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
-    use strategies::step::utils::stores::{StepBacktestingConfig, StepBacktestingMainStore};
+    use strategies::step::utils::stores::{
+        StepBacktestingConfig, StepBacktestingMainStore, StepConfig,
+    };
 
     const HOUR_TO_FORBID_TRADING: u8 = 23;
     const HOURS_TO_FORBID_TRADING: [u8; 3] = [23, 0, 1];
@@ -404,6 +413,32 @@ mod tests {
         {
             unimplemented!()
         }
+
+        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B>(
+            config: &mut StepConfig,
+            store: &mut S,
+            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B>,
+            statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        ) -> Result<()>
+        where
+            S: StepAngleStore<AngleProperties = A, CandleProperties = C>
+                + StepCandleStore<CandleProperties = C>,
+            D: Fn(&str, Option<&str>, bool, bool) -> bool,
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug + PartialEq,
+            N: NotificationQueue,
+            H: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
+            B: Fn(
+                &Item<AngleId, FullAngleProperties<A, C>>,
+                &[Item<CandleId, C>],
+                &S,
+                ParamValue,
+            ) -> Result<bool>,
+        {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]
@@ -460,6 +495,41 @@ mod tests {
         fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool {
             unimplemented!()
         }
+
+        fn is_second_level_after_bargaining_tendency_change(
+            crossed_angle: &str,
+            tendency_change_angle: Option<&str>,
+            last_tendency_changed_on_crossing_bargaining_corridor: bool,
+            second_level_after_bargaining_tendency_change_is_created: bool,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_comes_out_of_bargaining_corridor<A, C>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            general_corridor: &[Item<CandleId, C>],
+            angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug + PartialEq,
+        {
+            unimplemented!()
+        }
+
+        fn appropriate_working_level<A, C>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            current_candle: &Item<CandleId, C>,
+            angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug,
+        {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]
@@ -490,11 +560,7 @@ mod tests {
             W: BasicOrderStore<OrderProperties = StepOrderProperties>
                 + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
             T: TradingEngine,
-            C: Fn(
-                ChartTraceEntity,
-                &mut StepBacktestingChartTraces,
-                &StepBacktestingCandleProperties,
-            ),
+            C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
             R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
             P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
         {
@@ -604,6 +670,17 @@ mod tests {
         where
             A: AsRef<BasicAngleProperties> + Debug + Clone,
             C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq,
+        {
+            unimplemented!()
+        }
+
+        fn get_crossed_angle<'a, A, C>(
+            angles: MaxMinAngles<'a, A, C>,
+            current_candle: &C,
+        ) -> Option<&'a Item<AngleId, FullAngleProperties<A, C>>>
+        where
+            C: AsRef<StepCandleProperties> + Debug + Clone,
+            A: AsRef<BasicAngleProperties> + Debug + Clone,
         {
             unimplemented!()
         }
@@ -883,7 +960,7 @@ mod tests {
         fn add_entity_to_chart_traces(
             _entity: ChartTraceEntity,
             _chart_traces: &mut StepBacktestingChartTraces,
-            _current_candle: &StepBacktestingCandleProperties,
+            _current_candle_index: ChartIndex,
         ) {
             unimplemented!()
         }
@@ -933,11 +1010,7 @@ mod tests {
             BCor: BasicCorridorUtils,
             Cor: Corridors,
             Ang: AngleUtils,
-            D: Fn(
-                ChartTraceEntity,
-                &mut StepBacktestingChartTraces,
-                &StepBacktestingCandleProperties,
-            ),
+            D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
             E: TradingEngine,
             X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         {

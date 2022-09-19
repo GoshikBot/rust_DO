@@ -1,21 +1,30 @@
+use crate::step::utils::backtesting_charts::{
+    ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
+};
+use crate::step::utils::entities::angle::{AngleId, BasicAngleProperties, FullAngleProperties};
+use crate::step::utils::entities::candle::{StepBacktestingCandleProperties, StepCandleProperties};
 use crate::step::utils::entities::order::StepOrderProperties;
 use crate::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use crate::step::utils::entities::working_levels::{
     LevelTime, WLMaxCrossingValue, WLPrice, WLStatus,
 };
-use crate::step::utils::entities::StatisticsNotifier;
+use crate::step::utils::entities::{StatisticsChartsNotifier, StatisticsNotifier};
 use crate::step::utils::level_conditions::LevelConditions;
+use crate::step::utils::stores::angle_store::StepAngleStore;
+use crate::step::utils::stores::candle_store::StepCandleStore;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
+use crate::step::utils::stores::StepConfig;
 use anyhow::{Context, Result};
-use base::entities::candle::CandleVolatility;
+use base::entities::candle::{CandleId, CandleVolatility};
 use base::entities::order::{BasicOrderProperties, OrderStatus, OrderType};
 use base::entities::tick::{TickPrice, TickTime};
-use base::entities::{BasicTickProperties, Item};
+use base::entities::{BasicTickProperties, Item, Level, Tendency};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::notifier::NotificationQueue;
 use base::params::{ParamValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use super::entities::working_levels::{BasicWLProperties, WLId};
@@ -74,6 +83,29 @@ pub trait LevelUtils {
     ) -> Result<()>
     where
         W: Into<BasicWLProperties>;
+
+    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B>(
+        config: &mut StepConfig,
+        store: &mut S,
+        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B>,
+        statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+    ) -> Result<()>
+    where
+        S: StepAngleStore<AngleProperties = A, CandleProperties = C>
+            + StepCandleStore<CandleProperties = C>,
+        D: Fn(&str, Option<&str>, bool, bool) -> bool,
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug + PartialEq,
+        N: NotificationQueue,
+        H: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
+        B: Fn(
+            &Item<AngleId, FullAngleProperties<A, C>>,
+            &[Item<CandleId, C>],
+            &S,
+            ParamValue,
+        ) -> Result<bool>;
 }
 
 pub struct RemoveInvalidWorkingLevelsUtils<'a, W, A, D, M, C, E, T, O>
@@ -93,6 +125,53 @@ where
     pub level_expired_by_time: &'a M,
     pub active_level_exceeds_activation_crossing_distance_when_returned_to_level: &'a C,
     pub exclude_weekend_and_holidays: &'a E,
+}
+
+pub struct UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B>
+where
+    D: Fn(&str, Option<&str>, bool, bool) -> bool,
+    A: AsRef<BasicAngleProperties> + Debug,
+    C: AsRef<StepCandleProperties> + Debug + PartialEq,
+    S: StepAngleStore<AngleProperties = A, CandleProperties = C>,
+    B: Fn(
+        &Item<AngleId, FullAngleProperties<A, C>>,
+        &[Item<CandleId, C>],
+        &S,
+        ParamValue,
+    ) -> Result<bool>,
+{
+    pub is_second_level_after_bargaining_tendency_change: &'a D,
+    pub level_comes_out_of_bargaining_corridor: &'a B,
+    angle: PhantomData<A>,
+    candle: PhantomData<C>,
+    store: PhantomData<S>,
+}
+
+impl<'a, D, A, C, S, B> UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B>
+where
+    D: Fn(&str, Option<&str>, bool, bool) -> bool,
+    A: AsRef<BasicAngleProperties> + Debug,
+    C: AsRef<StepCandleProperties> + Debug + PartialEq,
+    S: StepAngleStore<AngleProperties = A, CandleProperties = C>,
+    B: Fn(
+        &Item<AngleId, FullAngleProperties<A, C>>,
+        &[Item<CandleId, C>],
+        &S,
+        ParamValue,
+    ) -> Result<bool>,
+{
+    pub fn new(
+        is_second_level_after_bargaining_tendency_change: &'a D,
+        level_comes_out_of_bargaining_corridor: &'a B,
+    ) -> Self {
+        Self {
+            is_second_level_after_bargaining_tendency_change,
+            level_comes_out_of_bargaining_corridor,
+            angle: PhantomData,
+            candle: PhantomData,
+            store: PhantomData,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -433,6 +512,190 @@ impl LevelUtils for LevelUtilsImpl {
 
         Ok(())
     }
+
+    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B>(
+        config: &mut StepConfig,
+        store: &mut S,
+        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B>,
+        mut statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+    ) -> Result<()>
+    where
+        S: StepAngleStore<AngleProperties = A, CandleProperties = C>
+            + StepCandleStore<CandleProperties = C>,
+        D: Fn(&str, Option<&str>, bool, bool) -> bool,
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug + PartialEq,
+        N: NotificationQueue,
+        H: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
+        B: Fn(
+            &Item<AngleId, FullAngleProperties<A, C>>,
+            &[Item<CandleId, C>],
+            &S,
+            ParamValue,
+        ) -> Result<bool>,
+    {
+        let tendency_change_angle = store.get_tendency_change_angle()?;
+
+        if config.tendency == Tendency::Unknown {
+            log::debug!("previous tendency is unknown");
+
+            config.tendency = crossed_angle.props.base.as_ref().r#type.into();
+
+            log::debug!("tendency changed to {:?}", config.tendency);
+        } else {
+            let is_second_level_after_bargaining_tendency_change = (utils
+                .is_second_level_after_bargaining_tendency_change)(
+                &crossed_angle.id,
+                tendency_change_angle
+                    .as_ref()
+                    .map(|angle| angle.id.as_str()),
+                config.tendency_changed_on_crossing_bargaining_corridor,
+                config.second_level_after_bargaining_tendency_change_is_created,
+            );
+
+            if config.tendency != crossed_angle.props.base.as_ref().r#type.into()
+                || is_second_level_after_bargaining_tendency_change
+                || (tendency_change_angle.is_some()
+                    && tendency_change_angle.unwrap().id == crossed_angle.id)
+            {
+                let mut skip_creating_new_working_level = false;
+
+                if config.tendency != crossed_angle.props.base.as_ref().r#type.into() {
+                    config.tendency = crossed_angle.props.base.as_ref().r#type.into();
+
+                    if let StatisticsChartsNotifier::Backtesting { statistics, .. } =
+                        &mut statistics_charts_notifier
+                    {
+                        statistics.number_of_tendency_changes += 1;
+                    }
+
+                    log::debug!("tendency changed to {:?}", config.tendency);
+
+                    store.update_tendency_change_angle(crossed_angle.id.clone())?;
+
+                    log::debug!("set tendency change angle to {:?}", crossed_angle);
+
+                    if let StatisticsChartsNotifier::Backtesting {
+                        add_entity_to_chart_traces,
+                        chart_traces,
+                        current_candle_chart_index,
+                        ..
+                    } = &mut statistics_charts_notifier
+                    {
+                        add_entity_to_chart_traces(
+                            ChartTraceEntity::Tendency(config.tendency),
+                            chart_traces,
+                            current_candle_chart_index.to_owned(),
+                        )
+                    }
+
+                    store.update_angle_of_second_level_after_bargaining_tendency_change(None)?;
+
+                    log::debug!(
+                        "set angle of second level after bargaining tendency change to None"
+                    );
+
+                    if !(utils.level_comes_out_of_bargaining_corridor)(
+                        crossed_angle,
+                        &store.get_candles_of_general_corridor()?,
+                        store,
+                        params.get_point_param_value(
+                            StepPointParam::MinAmountOfCandlesInCorridorDefiningEdgeBargaining,
+                        ),
+                    )? {
+                        skip_creating_new_working_level = false;
+
+                        log::debug!("set skip_creating_new_working_level to false");
+
+                        config.tendency_changed_on_crossing_bargaining_corridor = false;
+
+                        log::debug!(
+                            "set tendency_changed_on_crossing_bargaining_corridor to false"
+                        );
+
+                        config.second_level_after_bargaining_tendency_change_is_created = false;
+
+                        log::debug!(
+                            "set second_level_after_bargaining_tendency_change_is_created to false"
+                        );
+                    } else {
+                        skip_creating_new_working_level = true;
+
+                        log::debug!("set skip_creating_new_working_level to true");
+
+                        config.tendency_changed_on_crossing_bargaining_corridor = true;
+
+                        log::debug!("set tendency_changed_on_crossing_bargaining_corridor to true");
+
+                        match crossed_angle.props.base.as_ref().r#type {
+                            Level::Min => {
+                                if let Some(min_angle_before_bargaining_corridor) =
+                                    store.get_min_angle_before_bargaining_corridor()?
+                                {
+                                    store.update_min_angle(
+                                        min_angle_before_bargaining_corridor.id.clone(),
+                                    )?;
+
+                                    log::debug!("set back the min angle to be the min angle before bargaining corridor: new min angle: {min_angle_before_bargaining_corridor:?}");
+                                } else {
+                                    log::debug!("min angle before bargaining corridor is None, so it cannot be set as the min angle");
+                                }
+                            }
+                            Level::Max => {
+                                if let Some(max_angle_before_bargaining_corridor) =
+                                    store.get_max_angle_before_bargaining_corridor()?
+                                {
+                                    store.update_max_angle(
+                                        max_angle_before_bargaining_corridor.id.clone(),
+                                    )?;
+
+                                    log::debug!("set back the max angle to be the max angle before bargaining corridor: new max angle: {max_angle_before_bargaining_corridor:?}");
+                                } else {
+                                    log::debug!("max angle before bargaining corridor is None, so it cannot be set as the max angle");
+                                }
+                            }
+                        }
+                    }
+                } else if is_second_level_after_bargaining_tendency_change {
+                    match store.get_angle_of_second_level_after_bargaining_tendency_change()? {
+                        None => {
+                            store.update_angle_of_second_level_after_bargaining_tendency_change(
+                                Some(crossed_angle.id.clone()),
+                            )?;
+
+                            log::debug!("set angle_of_second_level_after_bargaining_tendency_change to {crossed_angle:?}");
+
+                            skip_creating_new_working_level = false;
+
+                            log::debug!("set skip_creating_new_working_level to false");
+                        }
+                        Some(angle_of_second_level_after_bargaining_tendency_change) => {
+                            if crossed_angle.id
+                                != angle_of_second_level_after_bargaining_tendency_change.id
+                            {
+                                skip_creating_new_working_level = true;
+
+                                log::debug!(
+                                    "set skip_creating_new_working_level to true, because the crossed angle \
+                                    is NOT the angle of second level after bargaining tendency change: \
+                                    crossed angle: {crossed_angle:?}, angle of second level after bargaining \
+                                    tendency change: {angle_of_second_level_after_bargaining_tendency_change:?}" 
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if !skip_creating_new_working_level {
+                    todo!()
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -444,6 +707,7 @@ mod tests {
     use crate::step::utils::level_conditions::{LevelConditionsImpl, MinAmountOfCandles};
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use crate::step::utils::stores::StepBacktestingStatistics;
+    use base::entities::candle::CandleId;
     use base::entities::order::{BasicOrderPrices, BasicOrderProperties, OrderPrice, OrderStatus};
     use base::entities::tick::TickTime;
     use base::helpers::points_to_price;
@@ -890,7 +1154,7 @@ mod tests {
             _corridor_type: CorridorType,
             _min_amount_of_candles: MinAmountOfCandles,
         ) -> Result<bool> {
-            todo!()
+            unimplemented!()
         }
 
         fn price_is_beyond_stop_loss(
@@ -898,7 +1162,7 @@ mod tests {
             _stop_loss_price: OrderPrice,
             _working_level_type: OrderType,
         ) -> bool {
-            todo!()
+            unimplemented!()
         }
 
         fn level_expired_by_distance(
@@ -933,6 +1197,41 @@ mod tests {
 
         fn level_has_no_active_orders(level_orders: &[impl AsRef<BasicOrderProperties>]) -> bool {
             level_orders.is_empty()
+        }
+
+        fn is_second_level_after_bargaining_tendency_change(
+            crossed_angle: &str,
+            tendency_change_angle: Option<&str>,
+            last_tendency_changed_on_crossing_bargaining_corridor: bool,
+            second_level_after_bargaining_tendency_change_is_created: bool,
+        ) -> bool {
+            unimplemented!()
+        }
+
+        fn level_comes_out_of_bargaining_corridor<A, C>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            general_corridor: &[Item<CandleId, C>],
+            angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug + PartialEq,
+        {
+            unimplemented!()
+        }
+
+        fn appropriate_working_level<A, C>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            current_candle: &Item<CandleId, C>,
+            angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
+            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug,
+        {
+            unimplemented!()
         }
     }
 

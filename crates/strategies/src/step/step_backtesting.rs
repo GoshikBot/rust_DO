@@ -1,12 +1,12 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
-use crate::step::utils::angle_utils::{AngleUtils, ExistingDiffs, MaxMinAngles};
-use crate::step::utils::backtesting_charts::{ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::angle_utils::{AngleUtils, ExistingDiffs};
+use crate::step::utils::backtesting_charts::{ChartIndex, ChartTraceEntity, StepBacktestingChartTraces};
 use crate::step::utils::corridors::{
     Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
 };
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::{
-    Diff, FakeBacktestingNotificationQueue, StatisticsNotifier, StrategySignals,
+    Diff, FakeBacktestingNotificationQueue, MaxMinAngles, StatisticsNotifier, StrategySignals,
 };
 use crate::step::utils::helpers::Helpers;
 use crate::step::utils::level_conditions::LevelConditions;
@@ -43,7 +43,7 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, &StepBacktestingCandleProperties),
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
@@ -182,15 +182,16 @@ where
             params,
         )?;
 
-        stores.config.diffs.previous = stores.config.diffs.current;
-        stores.config.diffs.current = stores.main.get_previous_candle()?.map(|previous_candle| {
-            Ang::get_diff_between_current_and_previous_candles(
-                &current_candle.props,
-                &previous_candle.props,
-            )
-        });
+        stores.config.base.diffs.previous = stores.config.base.diffs.current;
+        stores.config.base.diffs.current =
+            stores.main.get_previous_candle()?.map(|previous_candle| {
+                Ang::get_diff_between_current_and_previous_candles(
+                    &current_candle.props,
+                    &previous_candle.props,
+                )
+            });
 
-        let new_angle = match stores.config.diffs {
+        let new_angle = match stores.config.base.diffs {
             StepDiffs {
                 previous: Some(previous_diff),
                 current: Some(current_diff),
@@ -222,6 +223,27 @@ where
             },
             _ => None,
         };
+
+        if let Some(new_angle) = new_angle {
+            Ang::update_angles(
+                new_angle,
+                &stores.main.get_candles_of_general_corridor()?,
+                &mut stores.main,
+            )?;
+        }
+
+        let max_angle = stores.main.get_max_angle()?;
+        let min_angle = stores.main.get_min_angle()?;
+
+        let crossed_angle = Ang::get_crossed_angle(
+            MaxMinAngles {
+                max_angle: &max_angle,
+                min_angle: &min_angle,
+            },
+            &current_candle.props,
+        );
+
+        if let Some(crossed_angle) = crossed_angle {}
     }
 
     Ok(())

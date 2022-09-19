@@ -20,11 +20,20 @@ pub enum Level {
     Max = 1,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Tendency {
     Unknown = 0,
     Up = 1,
     Down = -1,
+}
+
+impl From<Level> for Tendency {
+    fn from(level: Level) -> Self {
+        match level {
+            Level::Min => Self::Down,
+            Level::Max => Self::Up,
+        }
+    }
 }
 
 impl Default for Tendency {

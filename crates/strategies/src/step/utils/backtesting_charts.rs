@@ -7,14 +7,14 @@ use rust_decimal::Decimal;
 
 pub type ChartIndex = usize;
 
-pub enum ChartTraceEntity {
+pub enum ChartTraceEntity<'a> {
     LeadingPrice(CandlePrice),
     Tendency(Tendency),
     Balance(Balance),
 
     WorkingLevel {
-        last_broken_angle:
-            FullAngleProperties<BasicAngleProperties, StepBacktestingCandleProperties>,
+        crossed_angle:
+            &'a FullAngleProperties<BasicAngleProperties, StepBacktestingCandleProperties>,
     },
     StopLoss {
         working_level_chart_index: ChartIndex,
@@ -131,15 +131,15 @@ impl BacktestingChartTracesModifier {
 pub fn add_entity_to_chart_traces(
     entity: ChartTraceEntity,
     chart_traces: &mut StepBacktestingChartTraces,
-    current_candle: &StepBacktestingCandleProperties,
+    current_candle_chart_index: ChartIndex,
 ) {
     // the current tick time position is always the next candle index
     let current_tick_candle_index =
         // if the current candle index is last, use the current candle index as the last draw point
-        if current_candle.chart_index < chart_traces.get_total_amount_of_candles() - 1 {
-            current_candle.chart_index + 1
+        if current_candle_chart_index < chart_traces.get_total_amount_of_candles() - 1 {
+            current_candle_chart_index + 1
         } else {
-            current_candle.chart_index
+            current_candle_chart_index
         };
 
     match entity {
@@ -153,7 +153,9 @@ pub fn add_entity_to_chart_traces(
         ChartTraceEntity::Balance(current_balance) => {
             chart_traces.get_balance_trace_mut()[current_tick_candle_index] = Some(current_balance);
         }
-        ChartTraceEntity::WorkingLevel { last_broken_angle } => {
+        ChartTraceEntity::WorkingLevel {
+            crossed_angle: last_broken_angle,
+        } => {
             let price = if last_broken_angle.base.r#type == Level::Max {
                 last_broken_angle.candle.props.step_common.base.prices.high
             } else {
@@ -214,17 +216,14 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 2,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 2;
 
         let leading_price = dec!(1.38473);
 
         add_entity_to_chart_traces(
             ChartTraceEntity::LeadingPrice(leading_price),
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         assert_eq!(
@@ -232,17 +231,14 @@ mod tests {
             &[None, None, None, Some(leading_price), None]
         );
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         let new_leading_price = dec!(1.38473);
 
         add_entity_to_chart_traces(
             ChartTraceEntity::LeadingPrice(new_leading_price),
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         assert_eq!(
@@ -263,17 +259,14 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 2,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 2;
 
         let tendency = Tendency::Up;
 
         add_entity_to_chart_traces(
             ChartTraceEntity::Tendency(tendency),
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         assert_eq!(
@@ -287,17 +280,14 @@ mod tests {
             ]
         );
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         let new_tendency = Tendency::Down;
 
         add_entity_to_chart_traces(
             ChartTraceEntity::Tendency(new_tendency),
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         assert_eq!(
@@ -318,17 +308,14 @@ mod tests {
     {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 2,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 2;
 
         let balance = dec!(10_000);
 
         add_entity_to_chart_traces(
             ChartTraceEntity::Balance(balance),
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         assert_eq!(
@@ -336,17 +323,14 @@ mod tests {
             &[None, None, None, Some(balance), None]
         );
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         let new_balance = dec!(20_000);
 
         add_entity_to_chart_traces(
             ChartTraceEntity::Balance(new_balance),
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         assert_eq!(
@@ -361,7 +345,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let last_broken_angle = FullAngleProperties {
+        let crossed_angle = FullAngleProperties {
             base: Default::default(),
             candle: Item {
                 id: String::from("1"),
@@ -372,15 +356,14 @@ mod tests {
             },
         };
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 3,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 3;
 
         add_entity_to_chart_traces(
-            ChartTraceEntity::WorkingLevel { last_broken_angle },
+            ChartTraceEntity::WorkingLevel {
+                crossed_angle: &crossed_angle,
+            },
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         let expected_working_level_price = dec!(1.30939);
@@ -396,7 +379,7 @@ mod tests {
             ]
         );
 
-        let new_last_broken_angle = FullAngleProperties {
+        let new_crossed_angle = FullAngleProperties {
             base: BasicAngleProperties {
                 r#type: Level::Max,
                 state: AngleState::Real,
@@ -410,17 +393,14 @@ mod tests {
             },
         };
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         add_entity_to_chart_traces(
             ChartTraceEntity::WorkingLevel {
-                last_broken_angle: new_last_broken_angle,
+                crossed_angle: &new_crossed_angle,
             },
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         let new_expected_working_level_price = dec!(1.31078);
@@ -443,10 +423,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 3,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 3;
 
         let stop_loss_price = dec!(1.30939);
 
@@ -456,7 +433,7 @@ mod tests {
                 stop_loss_price,
             },
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         assert_eq!(
@@ -470,10 +447,7 @@ mod tests {
             ]
         );
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         let new_stop_loss_price = dec!(1.40279);
 
@@ -483,7 +457,7 @@ mod tests {
                 stop_loss_price: new_stop_loss_price,
             },
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         assert_eq!(
@@ -504,10 +478,7 @@ mod tests {
     ) {
         let mut chart_traces = StepBacktestingChartTraces::new(5);
 
-        let current_candle = StepBacktestingCandleProperties {
-            chart_index: 3,
-            ..Default::default()
-        };
+        let current_candle_chart_index = 3;
 
         let take_profit_price = dec!(1.30939);
 
@@ -517,7 +488,7 @@ mod tests {
                 take_profit_price,
             },
             &mut chart_traces,
-            &current_candle,
+            current_candle_chart_index,
         );
 
         assert_eq!(
@@ -531,10 +502,7 @@ mod tests {
             ]
         );
 
-        let new_current_candle = StepBacktestingCandleProperties {
-            chart_index: 4,
-            ..Default::default()
-        };
+        let new_current_candle_chart_index = 4;
 
         let new_take_profit_price = dec!(1.40279);
 
@@ -544,7 +512,7 @@ mod tests {
                 take_profit_price: new_take_profit_price,
             },
             &mut chart_traces,
-            &new_current_candle,
+            new_current_candle_chart_index,
         );
 
         assert_eq!(
