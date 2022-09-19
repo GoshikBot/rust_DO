@@ -89,6 +89,15 @@ pub trait LevelConditions {
     where
         A: AsRef<BasicAngleProperties> + Debug,
         C: AsRef<StepCandleProperties> + Debug;
+
+    fn working_level_exists<A, C, W>(
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+    ) -> Result<bool>
+    where
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug,
+        W: AsRef<BasicWLProperties>;
 }
 
 #[derive(Default)]
@@ -565,6 +574,61 @@ impl LevelConditions for LevelConditionsImpl {
 
         Ok(false)
     }
+
+    fn working_level_exists<A, C, W>(
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+    ) -> Result<bool>
+    where
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug,
+        W: AsRef<BasicWLProperties>,
+    {
+        let level_is_present_in_created_working_levels = working_level_store
+            .get_created_working_levels()?
+            .iter()
+            .any(|level| {
+                level.props.as_ref().price
+                    == crossed_angle.props.candle.props.as_ref().leading_price
+                    && level.props.as_ref().time
+                        == crossed_angle.props.candle.props.as_ref().base.time
+            });
+
+        if level_is_present_in_created_working_levels {
+            log::debug!(
+                "the working level on the current crossed angle is already present in the created \
+                working levels: crossed angle — {crossed_angle:?}"
+            );
+
+            return Ok(true);
+        }
+
+        let level_is_present_in_active_working_levels = working_level_store
+            .get_active_working_levels()?
+            .iter()
+            .any(|level| {
+                level.props.as_ref().price
+                    == crossed_angle.props.candle.props.as_ref().leading_price
+                    && level.props.as_ref().time
+                        == crossed_angle.props.candle.props.as_ref().base.time
+            });
+
+        if level_is_present_in_active_working_levels {
+            log::debug!(
+                "the working level on the current crossed angle is already present in the active \
+                working levels: crossed angle — {crossed_angle:?}"
+            );
+
+            return Ok(true);
+        }
+
+        log::debug!(
+            "the working level on the current crossed angle is NOT present neither in the created \
+            nor in the active working levels: crossed angle — {crossed_angle:?}"
+        );
+
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
@@ -572,7 +636,9 @@ mod tests {
     use super::*;
     use crate::step::utils::entities::angle::{BasicAngleProperties, FullAngleProperties};
     use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
-    use crate::step::utils::entities::working_levels::{WLId, WLMaxCrossingValue, WLStatus};
+    use crate::step::utils::entities::working_levels::{
+        BacktestingWLProperties, WLId, WLMaxCrossingValue, WLStatus,
+    };
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use base::entities::candle::{BasicCandleProperties, CandleId, CandleVolatility};
     use base::entities::order::OrderId;
@@ -3495,5 +3561,114 @@ mod tests {
             &params,
         )
         .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_exists__level_is_present_in_created_working_levels__should_return_true() {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let price = dec!(1.38000);
+        let time = NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0);
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price,
+                    time,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time,
+                            ..Default::default()
+                        },
+                        leading_price: price,
+                    },
+                },
+                base: BasicAngleProperties::default(),
+            },
+        };
+
+        assert!(LevelConditionsImpl::working_level_exists(&crossed_angle, &store).unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_exists__level_is_present_in_active_working_levels__should_return_true() {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        let price = dec!(1.38000);
+        let time = NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0);
+
+        let level = store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price,
+                    time,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        store.move_working_level_to_active(&level.id).unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time,
+                            ..Default::default()
+                        },
+                        leading_price: price,
+                    },
+                },
+                base: BasicAngleProperties::default(),
+            },
+        };
+
+        assert!(LevelConditionsImpl::working_level_exists(&crossed_angle, &store).unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_exists__level_is_not_present_neither_in_active_nor_in_active_working_levels__should_return_true(
+    ) {
+        let store = InMemoryStepBacktestingStore::default();
+
+        let price = dec!(1.38000);
+        let time = NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0);
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time,
+                            ..Default::default()
+                        },
+                        leading_price: price,
+                    },
+                },
+                base: BasicAngleProperties::default(),
+            },
+        };
+
+        assert!(!LevelConditionsImpl::working_level_exists(&crossed_angle, &store).unwrap());
     }
 }

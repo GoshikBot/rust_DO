@@ -414,10 +414,10 @@ mod tests {
             unimplemented!()
         }
 
-        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B>(
+        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M>(
             config: &mut StepConfig,
             store: &mut S,
-            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B>,
+            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M>,
             statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
@@ -435,6 +435,13 @@ mod tests {
                 &[Item<CandleId, C>],
                 &S,
                 ParamValue,
+            ) -> Result<bool>,
+            M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+            P: Fn(
+                &Item<AngleId, FullAngleProperties<A, C>>,
+                &Item<CandleId, C>,
+                &S,
+                &M,
             ) -> Result<bool>,
         {
             unimplemented!()
@@ -527,6 +534,18 @@ mod tests {
         where
             A: AsRef<BasicAngleProperties> + Debug,
             C: AsRef<StepCandleProperties> + Debug,
+        {
+            unimplemented!()
+        }
+
+        fn working_level_exists<A, C, W>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug,
+            W: AsRef<BasicWLProperties>,
         {
             unimplemented!()
         }
