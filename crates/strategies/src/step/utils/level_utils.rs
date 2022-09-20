@@ -84,10 +84,10 @@ pub trait LevelUtils {
     where
         W: Into<BasicWLProperties>;
 
-    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M>(
+    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M, O, K, X, L>(
         config: &mut StepConfig,
         store: &mut S,
-        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M>,
+        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M, O, K, X, L>,
         statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
@@ -112,7 +112,11 @@ pub trait LevelUtils {
             &Item<CandleId, C>,
             &S,
             &M,
-        ) -> Result<bool>;
+        ) -> Result<bool>,
+        K: AsRef<BasicWLProperties>,
+        O: StepWorkingLevelStore<WorkingLevelProperties = K>,
+        X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
+        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>;
 }
 
 pub struct RemoveInvalidWorkingLevelsUtils<'a, W, A, D, M, C, E, T, O>
@@ -134,7 +138,7 @@ where
     pub exclude_weekend_and_holidays: &'a E,
 }
 
-pub struct UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B, P, M>
+pub struct UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B, P, M, O, K, X, L>
 where
     D: Fn(&str, Option<&str>, bool, bool) -> bool,
     A: AsRef<BasicAngleProperties> + Debug,
@@ -148,17 +152,26 @@ where
     ) -> Result<bool>,
     M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     P: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &Item<CandleId, C>, &S, &M) -> Result<bool>,
+    K: AsRef<BasicWLProperties>,
+    O: StepWorkingLevelStore<WorkingLevelProperties = K>,
+    X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
+    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>,
 {
     pub is_second_level_after_bargaining_tendency_change: &'a D,
     pub level_comes_out_of_bargaining_corridor: &'a B,
     pub appropriate_working_level: &'a P,
+    pub working_level_exists: &'a X,
+    pub working_level_is_close_to_another_one: &'a L,
     angle: PhantomData<A>,
     candle: PhantomData<C>,
-    store: PhantomData<S>,
+    angle_store: PhantomData<S>,
+    working_level: PhantomData<K>,
+    working_level_store: PhantomData<O>,
     params: PhantomData<M>,
 }
 
-impl<'a, D, A, C, S, B, P, M> UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B, P, M>
+impl<'a, D, A, C, S, B, P, M, O, K, X, L>
+    UpdateTendencyAndCreateWorkingLevelUtils<'a, D, A, C, S, B, P, M, O, K, X, L>
 where
     D: Fn(&str, Option<&str>, bool, bool) -> bool,
     A: AsRef<BasicAngleProperties> + Debug,
@@ -172,20 +185,30 @@ where
     ) -> Result<bool>,
     M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     P: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &Item<CandleId, C>, &S, &M) -> Result<bool>,
+    K: AsRef<BasicWLProperties>,
+    O: StepWorkingLevelStore<WorkingLevelProperties = K>,
+    X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
+    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>,
 {
     pub fn new(
         is_second_level_after_bargaining_tendency_change: &'a D,
         level_comes_out_of_bargaining_corridor: &'a B,
         appropriate_working_level: &'a P,
+        working_level_exists: &'a X,
+        working_level_is_close_to_another_one: &'a L,
     ) -> Self {
         Self {
             is_second_level_after_bargaining_tendency_change,
             level_comes_out_of_bargaining_corridor,
             appropriate_working_level,
+            working_level_exists,
+            working_level_is_close_to_another_one,
             angle: PhantomData,
             candle: PhantomData,
-            store: PhantomData,
+            angle_store: PhantomData,
             params: PhantomData,
+            working_level: PhantomData,
+            working_level_store: PhantomData,
         }
     }
 }
@@ -529,10 +552,10 @@ impl LevelUtils for LevelUtilsImpl {
         Ok(())
     }
 
-    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M>(
+    fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M, O, K, X, L>(
         config: &mut StepConfig,
         store: &mut S,
-        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M>,
+        utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M, O, K, X, L>,
         mut statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
@@ -558,6 +581,10 @@ impl LevelUtils for LevelUtilsImpl {
             &S,
             &M,
         ) -> Result<bool>,
+        K: AsRef<BasicWLProperties>,
+        O: StepWorkingLevelStore<WorkingLevelProperties = K>,
+        X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
+        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>,
     {
         let tendency_change_angle = store.get_tendency_change_angle()?;
 
@@ -1265,6 +1292,19 @@ mod tests {
             A: AsRef<BasicAngleProperties> + Debug,
             C: AsRef<StepCandleProperties> + Debug,
             W: AsRef<BasicWLProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn working_level_is_close_to_another_one<A, C, W>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+            distance_defining_nearby_levels_of_the_same_type: ParamValue,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug,
+            W: AsRef<BasicWLProperties> + Debug,
         {
             unimplemented!()
         }

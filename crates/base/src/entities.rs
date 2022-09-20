@@ -8,6 +8,7 @@ pub use candle::{CandlePrices, CandleType};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 pub use tick::BasicTickProperties;
+use crate::entities::order::OrderType;
 
 pub const LOT: u32 = 100_000;
 
@@ -32,6 +33,15 @@ impl From<Level> for Tendency {
         match level {
             Level::Min => Self::Down,
             Level::Max => Self::Up,
+        }
+    }
+}
+
+impl From<Level> for OrderType {
+    fn from(level: Level) -> Self {
+        match level {
+            Level::Min => OrderType::Sell,
+            Level::Max => OrderType::Buy,
         }
     }
 }

@@ -414,10 +414,10 @@ mod tests {
             unimplemented!()
         }
 
-        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M>(
+        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M, O, K, X, L>(
             config: &mut StepConfig,
             store: &mut S,
-            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M>,
+            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M, O, K, X, L>,
             statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
@@ -443,6 +443,10 @@ mod tests {
                 &S,
                 &M,
             ) -> Result<bool>,
+            K: AsRef<BasicWLProperties>,
+            O: StepWorkingLevelStore<WorkingLevelProperties = K>,
+            X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
+            L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>,
         {
             unimplemented!()
         }
@@ -546,6 +550,19 @@ mod tests {
             A: AsRef<BasicAngleProperties> + Debug,
             C: AsRef<StepCandleProperties> + Debug,
             W: AsRef<BasicWLProperties>,
+        {
+            unimplemented!()
+        }
+
+        fn working_level_is_close_to_another_one<A, C, W>(
+            crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+            working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+            distance_defining_nearby_levels_of_the_same_type: ParamValue,
+        ) -> Result<bool>
+        where
+            A: AsRef<BasicAngleProperties> + Debug,
+            C: AsRef<StepCandleProperties> + Debug,
+            W: AsRef<BasicWLProperties> + Debug,
         {
             unimplemented!()
         }

@@ -2,7 +2,7 @@ use crate::step::utils::entities::angle::{AngleId, BasicAngleProperties, FullAng
 use crate::step::utils::entities::candle::StepCandleProperties;
 use crate::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use crate::step::utils::entities::working_levels::{
-    BasicWLProperties, CorridorType, LevelTime, WLMaxCrossingValue, WLPrice,
+    BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
 };
 use crate::step::utils::entities::MaxMinAngles;
 use crate::step::utils::stores::angle_store::StepAngleStore;
@@ -16,6 +16,7 @@ use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::params::{ParamValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::cmp;
 use std::fmt::Debug;
 
@@ -98,6 +99,16 @@ pub trait LevelConditions {
         A: AsRef<BasicAngleProperties> + Debug,
         C: AsRef<StepCandleProperties> + Debug,
         W: AsRef<BasicWLProperties>;
+
+    fn working_level_is_close_to_another_one<A, C, W>(
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+        distance_defining_nearby_levels_of_the_same_type: ParamValue,
+    ) -> Result<bool>
+    where
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug,
+        W: AsRef<BasicWLProperties> + Debug;
 }
 
 #[derive(Default)]
@@ -626,6 +637,62 @@ impl LevelConditions for LevelConditionsImpl {
             "the working level on the current crossed angle is NOT present neither in the created \
             nor in the active working levels: crossed angle — {crossed_angle:?}"
         );
+
+        Ok(false)
+    }
+
+    fn working_level_is_close_to_another_one<A, C, W>(
+        crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
+        working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
+        distance_defining_nearby_levels_of_the_same_type: ParamValue,
+    ) -> Result<bool>
+    where
+        A: AsRef<BasicAngleProperties> + Debug,
+        C: AsRef<StepCandleProperties> + Debug,
+        W: AsRef<BasicWLProperties> + Debug,
+    {
+        for existing_level in working_level_store
+            .get_created_working_levels()?
+            .iter()
+            .chain(working_level_store.get_active_working_levels()?.iter())
+        {
+            if OrderType::from(crossed_angle.props.base.as_ref().r#type)
+                == existing_level.props.as_ref().r#type
+            {
+                let distance_between_levels = price_to_points(
+                    match OrderType::from(crossed_angle.props.base.as_ref().r#type) {
+                        OrderType::Buy => {
+                            crossed_angle.props.candle.props.as_ref().leading_price
+                                - existing_level.props.as_ref().price
+                        }
+                        OrderType::Sell => {
+                            existing_level.props.as_ref().price
+                                - crossed_angle.props.candle.props.as_ref().leading_price
+                        }
+                    },
+                );
+
+                if distance_between_levels >= dec!(0)
+                    && distance_between_levels <= distance_defining_nearby_levels_of_the_same_type
+                {
+                    log::debug!(
+                        "the new level is close to the existing level: distance between levels — \
+                        {distance_between_levels}, distance defining nearby levels of the same type — \
+                        {distance_defining_nearby_levels_of_the_same_type}, crossed angle — {crossed_angle:?}, \
+                        existing level — {existing_level:?}",
+                    );
+
+                    return Ok(true);
+                } else {
+                    log::debug!(
+                        "the new level is NOT close to the existing level: distance between levels — \
+                        {distance_between_levels}, distance defining nearby levels of the same type — \
+                        {distance_defining_nearby_levels_of_the_same_type}, crossed angle — {crossed_angle:?}, \
+                        existing level — {existing_level:?}",
+                    );
+                }
+            }
+        }
 
         Ok(false)
     }
@@ -3670,5 +3737,305 @@ mod tests {
         };
 
         assert!(!LevelConditionsImpl::working_level_exists(&crossed_angle, &store).unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__close_to_existing_created_buy_level__should_return_true(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.37900),
+                    r#type: OrderType::Buy,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__far_from_existing_created_buy_level__should_return_false(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.37899),
+                    r#type: OrderType::Buy,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(!LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__opposite_from_existing_created_buy_level__should_return_false(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.38100),
+                    r#type: OrderType::Buy,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(!LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__close_to_existing_active_sell_level__should_return_true(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.38100),
+                    r#type: OrderType::Sell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__far_from_existing_active_sell_level__should_return_false(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.38101),
+                    r#type: OrderType::Sell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(!LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn working_level_is_close_to_another_one__opposite_from_existing_active_sell_level__should_return_false(
+    ) {
+        let mut store = InMemoryStepBacktestingStore::default();
+
+        store
+            .create_working_level(BacktestingWLProperties {
+                base: BasicWLProperties {
+                    price: dec!(1.37900),
+                    r#type: OrderType::Sell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        let crossed_angle = Item {
+            id: String::from("1"),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    ..Default::default()
+                },
+                candle: Item {
+                    id: String::from("1"),
+                    props: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        leading_price: dec!(1.38000),
+                    },
+                },
+            },
+        };
+
+        let distance_defining_nearby_levels_of_the_same_type = dec!(100);
+
+        assert!(!LevelConditionsImpl::working_level_is_close_to_another_one(
+            &crossed_angle,
+            &store,
+            distance_defining_nearby_levels_of_the_same_type,
+        )
+        .unwrap());
     }
 }
