@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 
 pub type ChartIndex = usize;
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum ChartTraceEntity<'a> {
     LeadingPrice(CandlePrice),
     Tendency(Tendency),

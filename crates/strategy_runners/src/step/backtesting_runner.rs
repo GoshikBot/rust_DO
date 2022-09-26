@@ -414,17 +414,32 @@ mod tests {
             unimplemented!()
         }
 
-        fn update_tendency_and_create_working_level<S, D, A, C, N, H, B, P, M, O, K, X, L>(
+        fn update_tendency_and_get_instruction_to_create_new_working_level<
+            S,
+            D,
+            A,
+            C,
+            N,
+            H,
+            B,
+            P,
+            M,
+            K,
+            X,
+            L,
+        >(
             config: &mut StepConfig,
             store: &mut S,
-            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M, O, K, X, L>,
+            utils: UpdateTendencyAndCreateWorkingLevelUtils<D, A, C, S, B, P, M, K, X, L>,
             statistics_charts_notifier: StatisticsChartsNotifier<N, H>,
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
-            params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-        ) -> Result<()>
+            current_candle: &Item<CandleId, C>,
+            params: &M,
+        ) -> Result<bool>
         where
             S: StepAngleStore<AngleProperties = A, CandleProperties = C>
-                + StepCandleStore<CandleProperties = C>,
+                + StepCandleStore<CandleProperties = C>
+                + StepWorkingLevelStore<WorkingLevelProperties = K>,
             D: Fn(&str, Option<&str>, bool, bool) -> bool,
             A: AsRef<BasicAngleProperties> + Debug,
             C: AsRef<StepCandleProperties> + Debug + PartialEq,
@@ -444,9 +459,8 @@ mod tests {
                 &M,
             ) -> Result<bool>,
             K: AsRef<BasicWLProperties>,
-            O: StepWorkingLevelStore<WorkingLevelProperties = K>,
-            X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O) -> Result<bool>,
-            L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &O, ParamValue) -> Result<bool>,
+            X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
+            L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>,
         {
             unimplemented!()
         }

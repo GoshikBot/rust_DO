@@ -2,13 +2,13 @@ pub mod candle;
 pub mod order;
 pub mod tick;
 
+use crate::entities::order::OrderType;
 use crate::helpers::Holiday;
 use anyhow::Result;
 pub use candle::{CandlePrices, CandleType};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 pub use tick::BasicTickProperties;
-use crate::entities::order::OrderType;
 
 pub const LOT: u32 = 100_000;
 
@@ -21,8 +21,9 @@ pub enum Level {
     Max = 1,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Tendency {
+    #[default]
     Unknown = 0,
     Up = 1,
     Down = -1,
@@ -43,12 +44,6 @@ impl From<Level> for OrderType {
             Level::Min => OrderType::Sell,
             Level::Max => OrderType::Buy,
         }
-    }
-}
-
-impl Default for Tendency {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

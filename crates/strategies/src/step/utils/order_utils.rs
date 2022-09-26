@@ -302,7 +302,8 @@ impl OrderUtils for OrderUtilsImpl {
                         .chart_index;
 
                     if add_to_chart_traces
-                        && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Debug
+                        && Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap()
+                            != Mode::Optimization
                     {
                         (utils.add_entity_to_chart_traces)(
                             ChartTraceEntity::TakeProfit {

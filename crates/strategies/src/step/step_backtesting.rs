@@ -1,16 +1,21 @@
 use super::utils::entities::params::{StepPointParam, StepRatioParam};
 use crate::step::utils::angle_utils::{AngleUtils, ExistingDiffs};
-use crate::step::utils::backtesting_charts::{ChartIndex, ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::backtesting_charts::{
+    ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
+};
 use crate::step::utils::corridors::{
     Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
 };
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::entities::{
-    Diff, FakeBacktestingNotificationQueue, MaxMinAngles, StatisticsNotifier, StrategySignals,
+    Diff, FakeBacktestingNotificationQueue, MaxMinAngles, StatisticsChartsNotifier,
+    StatisticsNotifier, StrategySignals,
 };
 use crate::step::utils::helpers::Helpers;
 use crate::step::utils::level_conditions::LevelConditions;
-use crate::step::utils::level_utils::{LevelUtils, RemoveInvalidWorkingLevelsUtils};
+use crate::step::utils::level_utils::{
+    LevelUtils, RemoveInvalidWorkingLevelsUtils, UpdateTendencyAndCreateWorkingLevelUtils,
+};
 use crate::step::utils::order_utils::{
     OrderUtils, UpdateOrdersBacktestingStores, UpdateOrdersBacktestingUtils,
 };
@@ -243,7 +248,35 @@ where
             &current_candle.props,
         );
 
-        if let Some(crossed_angle) = crossed_angle {}
+        if let Some(crossed_angle) = crossed_angle {
+            let statistics_charts_notifier: StatisticsChartsNotifier<
+                FakeBacktestingNotificationQueue,
+                _,
+            > = StatisticsChartsNotifier::Backtesting {
+                statistics: &mut stores.statistics,
+                add_entity_to_chart_traces: &utils.add_entity_to_chart_traces,
+                chart_traces: &mut stores.config.traces,
+                current_candle_chart_index: current_candle.props.chart_index,
+                crossed_angle_candle_chart_index: crossed_angle.props.candle.props.chart_index,
+            };
+
+            let create_new_working_level =
+                LevUt::update_tendency_and_get_instruction_to_create_new_working_level(
+                    &mut stores.config.base,
+                    &mut stores.main,
+                    UpdateTendencyAndCreateWorkingLevelUtils::new(
+                        &LevCon::is_second_level_after_bargaining_tendency_change,
+                        &LevCon::level_comes_out_of_bargaining_corridor,
+                        &LevCon::appropriate_working_level,
+                        &LevCon::working_level_exists,
+                        &LevCon::working_level_is_close_to_another_one,
+                    ),
+                    statistics_charts_notifier,
+                    crossed_angle,
+                    &current_candle,
+                    params,
+                )?;
+        }
     }
 
     Ok(())
