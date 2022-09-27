@@ -310,7 +310,7 @@ impl OrderUtils for OrderUtilsImpl {
                                 take_profit_price: order.props.base.prices.take_profit,
                                 working_level_chart_index,
                             },
-                            &mut stores.config.traces,
+                            &mut stores.config.chart_traces,
                             current_candle.chart_index,
                         );
 
@@ -319,7 +319,7 @@ impl OrderUtils for OrderUtilsImpl {
                                 stop_loss_price: order.props.base.prices.stop_loss,
                                 working_level_chart_index,
                             },
-                            &mut stores.config.traces,
+                            &mut stores.config.chart_traces,
                             current_candle.chart_index,
                         );
                     }

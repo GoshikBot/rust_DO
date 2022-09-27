@@ -88,7 +88,7 @@ pub struct StepConfig {
 pub struct StepBacktestingConfig {
     pub base: StepConfig,
     pub trading_engine: BacktestingTradingEngineConfig,
-    pub traces: StepBacktestingChartTraces,
+    pub chart_traces: StepBacktestingChartTraces,
 }
 
 impl StepBacktestingConfig {
@@ -96,7 +96,7 @@ impl StepBacktestingConfig {
         Self {
             base: Default::default(),
             trading_engine: Default::default(),
-            traces: StepBacktestingChartTraces::new(total_amount_of_candles),
+            chart_traces: StepBacktestingChartTraces::new(total_amount_of_candles),
         }
     }
 }

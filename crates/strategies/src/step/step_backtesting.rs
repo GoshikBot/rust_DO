@@ -4,12 +4,13 @@ use crate::step::utils::backtesting_charts::{
     ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
 };
 use crate::step::utils::corridors::{
-    Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateSmallCorridorNearLevelUtils,
+    Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateGeneralCorridorUtils,
 };
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
+use crate::step::utils::entities::working_levels::{BacktestingWLProperties, BasicWLProperties};
 use crate::step::utils::entities::{
-    Diff, FakeBacktestingNotificationQueue, MaxMinAngles, StatisticsChartsNotifier,
-    StatisticsNotifier, StrategySignals,
+    Diff, FakeBacktestingNotificationQueue, MaxMinAngles, Mode, StatisticsChartsNotifier,
+    StatisticsNotifier, StrategySignals, MODE_ENV,
 };
 use crate::step::utils::helpers::Helpers;
 use crate::step::utils::level_conditions::LevelConditions;
@@ -25,10 +26,12 @@ use anyhow::Result;
 use backtesting::trading_engine::TradingEngine;
 use base::corridor::BasicCorridorUtils;
 use base::entities::candle::CandleId;
+use base::entities::order::OrderType;
 use base::entities::{BasicTickProperties, Item};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::NaiveDateTime;
+use std::str::FromStr;
 
 pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>(
     new_tick_props: BasicTickProperties,
@@ -177,7 +180,7 @@ where
             &mut stores.main,
             &current_candle,
             UpdateCorridorsNearWorkingLevelsUtils::new(
-                UpdateSmallCorridorNearLevelUtils::new(
+                UpdateGeneralCorridorUtils::new(
                     &BCor::candle_can_be_corridor_leader,
                     &BCor::candle_is_in_corridor,
                     &BCor::crop_corridor_to_closest_leader,
@@ -255,7 +258,7 @@ where
             > = StatisticsChartsNotifier::Backtesting {
                 statistics: &mut stores.statistics,
                 add_entity_to_chart_traces: &utils.add_entity_to_chart_traces,
-                chart_traces: &mut stores.config.traces,
+                chart_traces: &mut stores.config.chart_traces,
                 current_candle_chart_index: current_candle.props.chart_index,
                 crossed_angle_candle_chart_index: crossed_angle.props.candle.props.chart_index,
             };
@@ -276,7 +279,56 @@ where
                     &current_candle,
                     params,
                 )?;
+
+            if create_new_working_level {
+                stores.main.create_working_level(BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: crossed_angle.props.candle.props.step_common.leading_price,
+                        r#type: OrderType::from(crossed_angle.props.base.r#type),
+                        time: crossed_angle.props.candle.props.step_common.base.time,
+                    },
+                    chart_index: crossed_angle.props.candle.props.chart_index,
+                })?;
+
+                stores.statistics.number_of_working_levels += 1;
+
+                if Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() != Mode::Optimization {
+                    (utils.add_entity_to_chart_traces)(
+                        ChartTraceEntity::WorkingLevel {
+                            crossed_angle: &crossed_angle.props,
+                        },
+                        &mut stores.config.chart_traces,
+                        current_candle.props.chart_index,
+                    );
+                }
+            }
         }
+
+        if Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() != Mode::Optimization {
+            (utils.add_entity_to_chart_traces)(
+                ChartTraceEntity::Tendency(stores.config.base.tendency),
+                &mut stores.config.chart_traces,
+                current_candle.props.chart_index,
+            );
+
+            (utils.add_entity_to_chart_traces)(
+                ChartTraceEntity::Balance(stores.config.trading_engine.balances.real),
+                &mut stores.config.chart_traces,
+                current_candle.props.chart_index,
+            );
+        }
+
+        Cor::update_general_corridor(
+            &current_candle,
+            &mut stores.main,
+            UpdateGeneralCorridorUtils::new(
+                &BCor::candle_can_be_corridor_leader,
+                &BCor::candle_is_in_corridor,
+                &BCor::crop_corridor_to_closest_leader,
+            ),
+            params
+                .get_point_param_value(StepPointParam::MaxDistanceFromCorridorLeadingCandlePinsPct),
+        )?;
     }
 
     Ok(())

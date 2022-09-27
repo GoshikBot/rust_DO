@@ -265,7 +265,9 @@ mod tests {
     use strategies::step::utils::backtesting_charts::{
         ChartTraceEntity, StepBacktestingChartTraces,
     };
-    use strategies::step::utils::corridors::{Corridors, UpdateCorridorsNearWorkingLevelsUtils};
+    use strategies::step::utils::corridors::{
+        Corridors, UpdateCorridorsNearWorkingLevelsUtils, UpdateGeneralCorridorUtils,
+    };
     use strategies::step::utils::entities::angle::{AngleId, FullAngleProperties};
     use strategies::step::utils::entities::working_levels::{
         BasicWLProperties, CorridorType, LevelTime, WLId, WLMaxCrossingValue, WLPrice,
@@ -646,6 +648,27 @@ mod tests {
                 &dyn Fn(&C, &C, ParamValue) -> bool,
             ) -> Option<Vec<Item<CandleId, C>>>,
             A: Fn(&[O]) -> bool,
+        {
+            unimplemented!()
+        }
+
+        fn update_general_corridor<C, L, N, R>(
+            current_candle: &Item<CandleId, C>,
+            candle_store: &mut impl StepCandleStore<CandleProperties = C>,
+            utils: UpdateGeneralCorridorUtils<C, L, N, R>,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        ) -> Result<()>
+        where
+            C: AsRef<BasicCandleProperties> + Debug,
+            L: Fn(&C) -> bool,
+            N: Fn(&C, &C, ParamValue) -> bool,
+            R: Fn(
+                &[Item<CandleId, C>],
+                &Item<CandleId, C>,
+                ParamValue,
+                &dyn Fn(&C) -> bool,
+                &dyn Fn(&C, &C, ParamValue) -> bool,
+            ) -> Option<Vec<Item<CandleId, C>>>,
         {
             unimplemented!()
         }
