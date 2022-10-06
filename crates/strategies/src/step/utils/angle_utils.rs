@@ -42,7 +42,7 @@ pub trait AngleUtils {
         A: AsRef<BasicAngleProperties> + Debug + Clone;
 
     fn update_angles<A, C>(
-        new_angle: FullAngleProperties<A, C>,
+        new_angle: Item<AngleId, FullAngleProperties<A, C>>,
         general_corridor: &[Item<CandleId, C>],
         angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
     ) -> Result<()>
@@ -519,7 +519,7 @@ impl AngleUtils for AngleUtilsImpl {
     }
 
     fn update_angles<A, C>(
-        new_angle: FullAngleProperties<A, C>,
+        new_angle: Item<AngleId, FullAngleProperties<A, C>>,
         general_corridor: &[Item<CandleId, C>],
         angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
     ) -> Result<()>
@@ -527,7 +527,11 @@ impl AngleUtils for AngleUtilsImpl {
         A: AsRef<BasicAngleProperties> + Debug + Clone,
         C: AsRef<StepCandleProperties> + Debug + Clone + PartialEq,
     {
-        let new_angle = angle_store.create_angle(new_angle.base, new_angle.candle.id)?;
+        let new_angle = angle_store.create_angle(
+            new_angle.id,
+            new_angle.props.base,
+            new_angle.props.candle.id,
+        )?;
 
         match new_angle.props.base.as_ref().state {
             AngleState::Real => {
@@ -2289,20 +2293,22 @@ mod tests {
     fn update_angles__new_virtual_min_angle__should_update_virtual_min_angle() {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Min,
-                state: AngleState::Virtual,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Virtual,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
 
-        assert_eq!(
-            store.get_virtual_min_angle().unwrap().unwrap().props,
-            new_angle
-        );
+        assert_eq!(store.get_virtual_min_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_virtual_max_angle().unwrap().is_none());
         assert!(store.get_min_angle().unwrap().is_none());
@@ -2324,20 +2330,22 @@ mod tests {
     fn update_angles__new_virtual_max_angle__should_update_virtual_max_angle() {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Max,
-                state: AngleState::Virtual,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Virtual,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
 
-        assert_eq!(
-            store.get_virtual_max_angle().unwrap().unwrap().props,
-            new_angle
-        );
+        assert_eq!(store.get_virtual_max_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_virtual_min_angle().unwrap().is_none());
         assert!(store.get_min_angle().unwrap().is_none());
@@ -2360,17 +2368,22 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Min,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
 
-        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_min_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_max_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2393,19 +2406,24 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Min,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone()];
+        let general_corridor = vec![new_angle.props.candle.clone()];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_min_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_max_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2428,10 +2446,13 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+        let previous_angle_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         let previous_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     state: AngleState::Real,
@@ -2442,19 +2463,24 @@ mod tests {
 
         store.update_min_angle(previous_angle.id).unwrap();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Min,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone(), previous_angle_candle];
+        let general_corridor = vec![new_angle.props.candle.clone(), previous_angle_candle];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_min_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_max_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2477,10 +2503,13 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+        let previous_angle_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         let previous_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     state: AngleState::Real,
@@ -2491,19 +2520,24 @@ mod tests {
 
         store.update_min_angle(previous_angle.id.clone()).unwrap();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Min,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Min,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone()];
+        let general_corridor = vec![new_angle.props.candle.clone()];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_min_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_min_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_max_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2529,17 +2563,22 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Max,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &Vec::new(), &mut store).unwrap();
 
-        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_max_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_min_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2562,19 +2601,24 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Max,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone()];
+        let general_corridor = vec![new_angle.props.candle.clone()];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_max_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_min_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2597,10 +2641,13 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+        let previous_angle_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         let previous_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     state: AngleState::Real,
@@ -2611,19 +2658,24 @@ mod tests {
 
         store.update_max_angle(previous_angle.id).unwrap();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Max,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone(), previous_angle_candle];
+        let general_corridor = vec![new_angle.props.candle.clone(), previous_angle_candle];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_max_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_min_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());
@@ -2646,10 +2698,13 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let previous_angle_candle = store.create_candle(Default::default()).unwrap();
+        let previous_angle_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         let previous_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     state: AngleState::Real,
@@ -2660,19 +2715,24 @@ mod tests {
 
         store.update_max_angle(previous_angle.id.clone()).unwrap();
 
-        let new_angle = FullAngleProperties {
-            base: BasicAngleProperties {
-                r#type: Level::Max,
-                state: AngleState::Real,
+        let new_angle = Item {
+            id: xid::new().to_string(),
+            props: FullAngleProperties {
+                base: BasicAngleProperties {
+                    r#type: Level::Max,
+                    state: AngleState::Real,
+                },
+                candle: store
+                    .create_candle(xid::new().to_string(), Default::default())
+                    .unwrap(),
             },
-            candle: store.create_candle(Default::default()).unwrap(),
         };
 
-        let general_corridor = vec![new_angle.candle.clone()];
+        let general_corridor = vec![new_angle.props.candle.clone()];
 
         AngleUtilsImpl::update_angles(new_angle.clone(), &general_corridor, &mut store).unwrap();
 
-        assert_eq!(store.get_max_angle().unwrap().unwrap().props, new_angle);
+        assert_eq!(store.get_max_angle().unwrap().unwrap(), new_angle);
 
         assert!(store.get_min_angle().unwrap().is_none());
         assert!(store.get_virtual_min_angle().unwrap().is_none());

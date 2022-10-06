@@ -12,8 +12,8 @@ pub use tick::BasicTickProperties;
 
 pub const LOT: u32 = 100_000;
 
-pub const PRICE_DECIMAL_PLACES: u32 = 5;
-pub const VOLUME_DECIMAL_PLACES: u32 = 2;
+pub const CANDLE_PRICE_DECIMAL_PLACES: u32 = 5;
+pub const SIGNIFICANT_DECIMAL_PLACES: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Level {
@@ -86,7 +86,7 @@ impl Display for Timeframe {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StrategyTimeframes {
     pub candle: Timeframe,
     pub tick: Timeframe,

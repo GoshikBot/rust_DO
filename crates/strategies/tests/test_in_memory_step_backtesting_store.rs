@@ -27,7 +27,10 @@ fn should_remove_only_unused_items() {
     let mut ticks = Vec::new();
 
     for _ in 1..=4 {
-        let tick_id = store.create_tick(Default::default()).unwrap().id;
+        let tick_id = store
+            .create_tick(xid::new().to_string(), Default::default())
+            .unwrap()
+            .id;
         ticks.push(tick_id);
     }
 
@@ -40,7 +43,10 @@ fn should_remove_only_unused_items() {
 
     let mut candles = Vec::new();
     for _ in 1..=12 {
-        let candle_id = store.create_candle(Default::default()).unwrap().id;
+        let candle_id = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap()
+            .id;
         candles.push(candle_id);
     }
 
@@ -51,7 +57,10 @@ fn should_remove_only_unused_items() {
         .update_previous_candle(candles.get(1).unwrap().clone())
         .is_ok());
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     store
         .add_candle_to_working_level_corridor(
@@ -94,6 +103,7 @@ fn should_remove_only_unused_items() {
     for i in 1..=10 {
         let angle_id = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     state: AngleState::Real,
@@ -183,7 +193,10 @@ fn should_remove_only_unused_items() {
 fn should_return_error_on_moving_working_level_to_active_if_it_is_not_present_in_created() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store
         .move_working_level_to_active(&working_level_id)
@@ -197,7 +210,10 @@ fn should_return_error_on_moving_working_level_to_active_if_it_is_not_present_in
 fn should_successfully_remove_working_level() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store
         .move_working_level_to_active(&working_level_id)
@@ -207,7 +223,10 @@ fn should_successfully_remove_working_level() {
         .update_max_crossing_value_of_working_level(&working_level_id, dec!(10))
         .is_ok());
 
-    let candle_id = store.create_candle(Default::default()).unwrap().id;
+    let candle_id = store
+        .create_candle(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -225,13 +244,18 @@ fn should_successfully_remove_working_level() {
         .move_take_profits_of_level(&working_level_id, dec!(100))
         .is_ok());
 
-    let order_id = store.create_order(Default::default()).unwrap().id;
+    let order_id = store
+        .create_order(
+            xid::new().to_string(),
+            StepOrderProperties {
+                working_level_id: working_level_id.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
 
-    assert!(store
-        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
-        .is_ok());
-
-    assert!(store.remove_working_level(&working_level_id).is_ok());
+    store.remove_working_level(&working_level_id).unwrap();
 
     assert!(!store
         .get_created_working_levels()
@@ -271,14 +295,45 @@ fn should_successfully_remove_working_level() {
 }
 
 #[test]
+fn should_successfully_get_all_working_levels() {
+    let mut store = InMemoryStepBacktestingStore::default();
+
+    let created_level = store
+        .create_working_level(String::from("1"), Default::default())
+        .unwrap();
+
+    let active_level = store
+        .create_working_level(String::from("2"), Default::default())
+        .unwrap();
+    store
+        .move_working_level_to_active(&active_level.id)
+        .unwrap();
+
+    let all_levels = store.get_all_working_levels().unwrap();
+
+    assert_eq!(all_levels.len(), 2);
+    assert!(all_levels.contains(&created_level));
+    assert!(all_levels.contains(&active_level));
+}
+
+#[test]
 fn should_successfully_add_candle_to_working_level_corridor_and_then_clear_corridor() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
-    let first_candle_id = store.create_candle(Default::default()).unwrap().id;
+    let first_candle_id = store
+        .create_candle(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
-    let second_candle_id = store.create_candle(Default::default()).unwrap().id;
+    let second_candle_id = store
+        .create_candle(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -329,7 +384,10 @@ fn should_successfully_add_candle_to_working_level_corridor_and_then_clear_corri
 fn should_correctly_update_general_corridor() {
     let mut store = InMemoryStepBacktestingStore::default();
 
-    let candle_id = store.create_candle(Default::default()).unwrap().id;
+    let candle_id = store
+        .create_candle(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store.get_candles_of_general_corridor().unwrap().is_empty());
 
@@ -350,9 +408,15 @@ fn should_correctly_update_general_corridor() {
 fn should_return_error_on_adding_candle_to_working_level_corridor_if_it_is_already_present_there() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
-    let candle_id = store.create_candle(Default::default()).unwrap().id;
+    let candle_id = store
+        .create_candle(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
     assert!(store
         .add_candle_to_working_level_corridor(
@@ -367,16 +431,24 @@ fn should_return_error_on_adding_candle_to_working_level_corridor_if_it_is_alrea
 }
 
 #[test]
-fn should_successfully_add_order_to_working_level_chain_of_orders() {
+fn should_successfully_create_order_with_existing_working_level() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
+    let working_level_id = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap()
+        .id;
 
-    let order_id = store.create_order(Default::default()).unwrap().id;
-
-    assert!(store
-        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
-        .is_ok());
+    let order_id = store
+        .create_order(
+            xid::new().to_string(),
+            StepOrderProperties {
+                working_level_id: working_level_id.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
 
     assert!(store
         .get_working_level_chain_of_orders(&working_level_id)
@@ -386,20 +458,19 @@ fn should_successfully_add_order_to_working_level_chain_of_orders() {
 }
 
 #[test]
-fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is_already_present_there(
-) {
+fn should_return_error_on_creating_order_with_nonexistent_working_level() {
     let mut store: InMemoryStepBacktestingStore = Default::default();
 
-    let working_level_id = store.create_working_level(Default::default()).unwrap().id;
-
-    let order_id = store.create_order(Default::default()).unwrap().id;
+    let working_level_id = String::from("nonexistent");
 
     assert!(store
-        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id.clone())
-        .is_ok());
-
-    assert!(store
-        .add_order_to_working_level_chain_of_orders(&working_level_id, order_id)
+        .create_order(
+            xid::new().to_string(),
+            StepOrderProperties {
+                working_level_id,
+                ..Default::default()
+            }
+        )
         .is_err());
 }
 
@@ -407,9 +478,13 @@ fn should_return_error_on_adding_order_to_working_level_chain_of_orders_if_it_is
 fn should_successfully_identify_level_status() {
     let mut store = InMemoryStepBacktestingStore::default();
 
-    let created_working_level = store.create_working_level(Default::default()).unwrap();
+    let created_working_level = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap();
 
-    let active_working_level = store.create_working_level(Default::default()).unwrap();
+    let active_working_level = store
+        .create_working_level(xid::new().to_string(), Default::default())
+        .unwrap();
     store
         .move_working_level_to_active(&active_working_level.id)
         .unwrap();
@@ -439,24 +514,30 @@ fn should_successfully_move_take_profits_of_level() {
     let mut store = InMemoryStepBacktestingStore::default();
 
     let buy_working_level_id = store
-        .create_working_level(BacktestingWLProperties {
-            base: BasicWLProperties {
-                r#type: OrderType::Buy,
+        .create_working_level(
+            xid::new().to_string(),
+            BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Buy,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        })
+        )
         .unwrap()
         .id;
 
     let sell_working_level_id = store
-        .create_working_level(BacktestingWLProperties {
-            base: BasicWLProperties {
-                r#type: OrderType::Sell,
+        .create_working_level(
+            xid::new().to_string(),
+            BacktestingWLProperties {
+                base: BasicWLProperties {
+                    r#type: OrderType::Sell,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        })
+        )
         .unwrap()
         .id;
 
@@ -464,29 +545,35 @@ fn should_successfully_move_take_profits_of_level() {
 
     for _ in 0..5 {
         store
-            .create_order(StepOrderProperties {
-                base: BasicOrderProperties {
-                    prices: BasicOrderPrices {
-                        take_profit,
+            .create_order(
+                xid::new().to_string(),
+                StepOrderProperties {
+                    base: BasicOrderProperties {
+                        prices: BasicOrderPrices {
+                            take_profit,
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
+                    working_level_id: buy_working_level_id.clone(),
                 },
-                working_level_id: buy_working_level_id.clone(),
-            })
+            )
             .unwrap();
 
         store
-            .create_order(StepOrderProperties {
-                base: BasicOrderProperties {
-                    prices: BasicOrderPrices {
-                        take_profit,
+            .create_order(
+                xid::new().to_string(),
+                StepOrderProperties {
+                    base: BasicOrderProperties {
+                        prices: BasicOrderPrices {
+                            take_profit,
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
+                    working_level_id: sell_working_level_id.clone(),
                 },
-                working_level_id: sell_working_level_id.clone(),
-            })
+            )
             .unwrap();
     }
 
@@ -554,5 +641,62 @@ fn should_return_error_when_inserting_nonexistent_entity() {
         .is_err());
     assert!(store
         .add_candle_to_working_level_corridor("1", String::from("1"), CorridorType::Small)
+        .is_err());
+}
+
+#[test]
+fn should_return_error_on_creating_entity_with_existing_id() {
+    let mut store = InMemoryStepBacktestingStore::default();
+
+    let tick_id = String::from("tick");
+    store
+        .create_tick(tick_id.clone(), Default::default())
+        .unwrap();
+    assert!(store.create_tick(tick_id, Default::default()).is_err());
+
+    let candle_id = String::from("candle");
+    store
+        .create_candle(candle_id.clone(), Default::default())
+        .unwrap();
+    assert!(store
+        .create_candle(candle_id.clone(), Default::default())
+        .is_err());
+
+    let angle_id = String::from("angle");
+    store
+        .create_angle(angle_id.clone(), Default::default(), candle_id.clone())
+        .unwrap();
+    assert!(store
+        .create_angle(angle_id, Default::default(), candle_id)
+        .is_err());
+
+    let working_level_id = String::from("working_level");
+    store
+        .create_working_level(working_level_id.clone(), Default::default())
+        .unwrap();
+    assert!(store
+        .create_working_level(working_level_id.clone(), Default::default())
+        .is_err());
+
+    let order_id = String::from("order");
+
+    store
+        .create_order(
+            order_id.clone(),
+            StepOrderProperties {
+                working_level_id: working_level_id.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert!(store
+        .create_order(
+            order_id,
+            StepOrderProperties {
+                working_level_id,
+                ..Default::default()
+            }
+        )
         .is_err());
 }

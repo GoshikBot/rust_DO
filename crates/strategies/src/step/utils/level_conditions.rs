@@ -706,6 +706,7 @@ mod tests {
     use crate::step::utils::entities::working_levels::{
         BacktestingWLProperties, WLId, WLMaxCrossingValue, WLStatus,
     };
+    use crate::step::utils::stores::candle_store::StepCandleStore;
     use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBacktestingStore;
     use base::entities::candle::{BasicCandleProperties, CandleId, CandleVolatility};
     use base::entities::order::OrderId;
@@ -714,275 +715,124 @@ mod tests {
     use chrono::NaiveDate;
     use rust_decimal_macros::dec;
 
-    struct TestWorkingLevelStore {
-        small_corridor: Vec<Item<CandleId, <Self as StepWorkingLevelStore>::CandleProperties>>,
-        big_corridor: Vec<Item<CandleId, <Self as StepWorkingLevelStore>::CandleProperties>>,
-    }
-
-    impl TestWorkingLevelStore {
-        fn default(
-            small_corridor: Vec<Item<CandleId, <Self as StepWorkingLevelStore>::CandleProperties>>,
-            big_corridor: Vec<Item<CandleId, <Self as StepWorkingLevelStore>::CandleProperties>>,
-        ) -> Self {
-            Self {
-                small_corridor,
-                big_corridor,
-            }
-        }
-    }
-
-    impl StepWorkingLevelStore for TestWorkingLevelStore {
-        type WorkingLevelProperties = ();
-        type CandleProperties = BasicCandleProperties;
-        type OrderProperties = ();
-
-        fn create_working_level(
-            &mut self,
-            _properties: Self::WorkingLevelProperties,
-        ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
-            unimplemented!()
-        }
-
-        fn get_working_level_by_id(
-            &self,
-            _id: &str,
-        ) -> Result<Option<Item<WLId, Self::WorkingLevelProperties>>> {
-            unimplemented!()
-        }
-
-        fn move_working_level_to_active(&mut self, _id: &str) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn remove_working_level(&mut self, _id: &str) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn get_created_working_levels(
-            &self,
-        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
-            unimplemented!()
-        }
-
-        fn get_active_working_levels(
-            &self,
-        ) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
-            unimplemented!()
-        }
-
-        fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
-            unimplemented!()
-        }
-
-        fn clear_working_level_corridor(
-            &mut self,
-            working_level_id: &str,
-            corridor_type: CorridorType,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn add_candle_to_working_level_corridor(
-            &mut self,
-            _working_level_id: &str,
-            _candle_id: CandleId,
-            _corridor_type: CorridorType,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn get_candles_of_working_level_corridor(
-            &self,
-            _working_level_id: &str,
-            corridor_type: CorridorType,
-        ) -> Result<Vec<Item<CandleId, Self::CandleProperties>>> {
-            Ok(match corridor_type {
-                CorridorType::Small => self.small_corridor.clone(),
-                CorridorType::Big => self.big_corridor.clone(),
-            })
-        }
-
-        fn update_max_crossing_value_of_working_level(
-            &mut self,
-            _working_level_id: &str,
-            _default_value: WLMaxCrossingValue,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn get_max_crossing_value_of_working_level(
-            &self,
-            _working_level_id: &str,
-        ) -> Result<Option<WLMaxCrossingValue>> {
-            unimplemented!()
-        }
-
-        fn move_take_profits_of_level(
-            &mut self,
-            working_level_id: &str,
-            distance_to_move_take_profits: ParamValue,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn take_profits_of_level_are_moved(&self, _working_level_id: &str) -> Result<bool> {
-            unimplemented!()
-        }
-
-        fn add_order_to_working_level_chain_of_orders(
-            &mut self,
-            _working_level_id: &str,
-            _order_id: OrderId,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn get_working_level_chain_of_orders(
-            &self,
-            _working_level_id: &str,
-        ) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
-            unimplemented!()
-        }
-    }
-
     #[test]
     #[allow(non_snake_case)]
     fn level_exceeds_amount_of_candles_in_corridor__len_of_small_corridor_is_greater_than_min_amount_of_candles__should_return_true(
     ) {
-        let small_corridor = vec![
-            Item {
-                id: String::from("1"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("2"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("3"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("4"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("5"),
-                props: BasicCandleProperties::default(),
-            },
-        ];
+        let mut store = InMemoryStepBacktestingStore::default();
 
-        let working_level_store = TestWorkingLevelStore::default(small_corridor, vec![]);
-        let level_id = "1";
+        let level = store
+            .create_working_level(xid::new().to_string(), Default::default())
+            .unwrap();
 
-        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
-            level_id,
-            &working_level_store,
-            CorridorType::Small,
-            dec!(3),
-        )
-        .unwrap();
+        for _ in 0..5 {
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
+            store
+                .add_candle_to_working_level_corridor(&level.id, candle.id, CorridorType::Small)
+                .unwrap();
+        }
 
-        assert!(result);
+        assert!(
+            LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+                &level.id,
+                &store,
+                CorridorType::Small,
+                dec!(3),
+            )
+            .unwrap()
+        );
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn level_exceeds_amount_of_candles_in_corridor__len_of_small_corridor_is_less_than_min_amount_of_candles__should_return_false(
     ) {
-        let small_corridor = vec![
-            Item {
-                id: String::from("1"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("2"),
-                props: BasicCandleProperties::default(),
-            },
-        ];
+        let mut store = InMemoryStepBacktestingStore::default();
 
-        let working_level_store = TestWorkingLevelStore::default(small_corridor, vec![]);
-        let level_id = "1";
+        let level = store
+            .create_working_level(xid::new().to_string(), Default::default())
+            .unwrap();
 
-        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
-            level_id,
-            &working_level_store,
-            CorridorType::Small,
-            dec!(3),
-        )
-        .unwrap();
+        for _ in 0..2 {
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
+            store
+                .add_candle_to_working_level_corridor(&level.id, candle.id, CorridorType::Small)
+                .unwrap();
+        }
 
-        assert!(!result);
+        assert!(
+            !LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+                &level.id,
+                &store,
+                CorridorType::Small,
+                dec!(3),
+            )
+            .unwrap()
+        );
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn level_exceeds_amount_of_candles_in_corridor__len_of_big_corridor_is_greater_than_min_amount_of_candles__should_return_true(
     ) {
-        let big_corridor = vec![
-            Item {
-                id: String::from("1"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("2"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("3"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("4"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("5"),
-                props: BasicCandleProperties::default(),
-            },
-        ];
+        let mut store = InMemoryStepBacktestingStore::default();
 
-        let working_level_store = TestWorkingLevelStore::default(vec![], big_corridor);
-        let level_id = "1";
+        let level = store
+            .create_working_level(xid::new().to_string(), Default::default())
+            .unwrap();
 
-        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
-            level_id,
-            &working_level_store,
-            CorridorType::Big,
-            dec!(3),
-        )
-        .unwrap();
+        for _ in 0..5 {
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
+            store
+                .add_candle_to_working_level_corridor(&level.id, candle.id, CorridorType::Big)
+                .unwrap();
+        }
 
-        assert!(result);
+        assert!(
+            LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+                &level.id,
+                &store,
+                CorridorType::Big,
+                dec!(3),
+            )
+            .unwrap()
+        );
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn level_exceeds_amount_of_candles_in_corridor__len_of_big_corridor_is_less_than_min_amount_of_candles__should_return_false(
     ) {
-        let big_corridor = vec![
-            Item {
-                id: String::from("1"),
-                props: BasicCandleProperties::default(),
-            },
-            Item {
-                id: String::from("2"),
-                props: BasicCandleProperties::default(),
-            },
-        ];
+        let mut store = InMemoryStepBacktestingStore::default();
 
-        let working_level_store = TestWorkingLevelStore::default(vec![], big_corridor);
-        let level_id = "1";
+        let level = store
+            .create_working_level(xid::new().to_string(), Default::default())
+            .unwrap();
 
-        let result = LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
-            level_id,
-            &working_level_store,
-            CorridorType::Big,
-            dec!(3),
-        )
-        .unwrap();
+        for _ in 0..2 {
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
+            store
+                .add_candle_to_working_level_corridor(&level.id, candle.id, CorridorType::Big)
+                .unwrap();
+        }
 
-        assert!(!result);
+        assert!(
+            !LevelConditionsImpl::level_exceeds_amount_of_candles_in_corridor(
+                &level.id,
+                &store,
+                CorridorType::Big,
+                dec!(3),
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -1435,10 +1285,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let angle = store
-            .create_angle(BasicAngleProperties::default(), candle.id)
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                candle.id,
+            )
             .unwrap();
 
         store.update_max_angle(angle.id).unwrap();
@@ -1485,10 +1342,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let angle = store
-            .create_angle(BasicAngleProperties::default(), candle.id)
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                candle.id,
+            )
             .unwrap();
 
         store.update_min_angle(angle.id).unwrap();
@@ -1535,17 +1399,31 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
-            .create_angle(BasicAngleProperties::default(), min_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                min_angle_candle.id.clone(),
+            )
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
-            .create_angle(BasicAngleProperties::default(), max_angle_candle.id)
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                max_angle_candle.id,
+            )
             .unwrap();
 
         store.update_min_angle(min_angle.id).unwrap();
@@ -1590,17 +1468,31 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
-            .create_angle(BasicAngleProperties::default(), min_angle_candle.id)
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                min_angle_candle.id,
+            )
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
-            .create_angle(BasicAngleProperties::default(), max_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                max_angle_candle.id.clone(),
+            )
             .unwrap();
 
         store.update_min_angle(min_angle.id).unwrap();
@@ -1645,17 +1537,31 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
-            .create_angle(BasicAngleProperties::default(), min_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                min_angle_candle.id.clone(),
+            )
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
-            .create_angle(BasicAngleProperties::default(), max_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                max_angle_candle.id.clone(),
+            )
             .unwrap();
 
         store.update_min_angle(min_angle.id).unwrap();
@@ -1697,10 +1603,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -1710,17 +1620,21 @@ mod tests {
             .unwrap();
 
         let max_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -1734,16 +1648,20 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.37000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.37000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -1791,10 +1709,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -1804,17 +1726,21 @@ mod tests {
             .unwrap();
 
         let max_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -1828,16 +1754,20 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.39000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.39000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -1883,17 +1813,31 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let min_angle = store
-            .create_angle(BasicAngleProperties::default(), min_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                min_angle_candle.id.clone(),
+            )
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
-            .create_angle(BasicAngleProperties::default(), max_angle_candle.id.clone())
+            .create_angle(
+                xid::new().to_string(),
+                BasicAngleProperties::default(),
+                max_angle_candle.id.clone(),
+            )
             .unwrap();
 
         store.update_min_angle(min_angle.id).unwrap();
@@ -1935,17 +1879,21 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.37000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.37000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -1955,17 +1903,21 @@ mod tests {
             .unwrap();
 
         let min_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.36000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.36000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -1979,10 +1931,14 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2030,17 +1986,21 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.37000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.37000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2050,17 +2010,21 @@ mod tests {
             .unwrap();
 
         let min_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    leading_price: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        leading_price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2074,10 +2038,14 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2184,11 +2152,15 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2235,11 +2207,15 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2287,23 +2263,27 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2313,11 +2293,15 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2367,24 +2351,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2394,20 +2382,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2457,24 +2449,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2484,20 +2480,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2547,24 +2547,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2574,20 +2578,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2597,20 +2605,24 @@ mod tests {
             .unwrap();
 
         let virtual_max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 6).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 6).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let virtual_max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2663,24 +2675,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2690,20 +2706,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2713,20 +2733,24 @@ mod tests {
             .unwrap();
 
         let virtual_max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let virtual_max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2780,24 +2804,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2807,20 +2835,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2871,24 +2903,28 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            low: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                low: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2898,20 +2934,24 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2962,11 +3002,15 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2976,23 +3020,27 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3042,20 +3090,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3065,24 +3117,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3132,20 +3188,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3155,24 +3215,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 3).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3222,20 +3286,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3245,24 +3313,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3272,20 +3344,24 @@ mod tests {
             .unwrap();
 
         let virtual_min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 6).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 6).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let virtual_min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3338,20 +3414,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3361,24 +3441,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3388,20 +3472,24 @@ mod tests {
             .unwrap();
 
         let virtual_min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let virtual_min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3455,20 +3543,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3478,24 +3570,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3546,20 +3642,24 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         let min_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            time: NaiveDate::from_ymd(2022, 4, 4).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let min_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3569,24 +3669,28 @@ mod tests {
             .unwrap();
 
         let max_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        prices: CandlePrices {
-                            high: dec!(1.38000),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            prices: CandlePrices {
+                                high: dec!(1.38000),
+                                ..Default::default()
+                            },
+                            time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
                             ..Default::default()
                         },
-                        time: NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0),
-                        ..Default::default()
+                        leading_price: dec!(1.38000),
                     },
-                    leading_price: dec!(1.38000),
+                    ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let max_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3639,14 +3743,17 @@ mod tests {
         let time = NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0);
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price,
-                    time,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price,
+                        time,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3678,14 +3785,17 @@ mod tests {
         let time = NaiveDate::from_ymd(2022, 4, 5).and_hms(0, 0, 0);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price,
-                    time,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price,
+                        time,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
@@ -3746,14 +3856,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.37900),
-                    r#type: OrderType::Buy,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.37900),
+                        r#type: OrderType::Buy,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3796,14 +3909,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.37899),
-                    r#type: OrderType::Buy,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.37899),
+                        r#type: OrderType::Buy,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3846,14 +3962,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.38100),
-                    r#type: OrderType::Buy,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.38100),
+                        r#type: OrderType::Buy,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3896,14 +4015,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.38100),
-                    r#type: OrderType::Sell,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.38100),
+                        r#type: OrderType::Sell,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3946,14 +4068,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.38101),
-                    r#type: OrderType::Sell,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.38101),
+                        r#type: OrderType::Sell,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {
@@ -3996,14 +4121,17 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::default();
 
         store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    price: dec!(1.37900),
-                    r#type: OrderType::Sell,
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        price: dec!(1.37900),
+                        r#type: OrderType::Sell,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let crossed_angle = Item {

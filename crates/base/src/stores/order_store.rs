@@ -7,6 +7,7 @@ pub trait BasicOrderStore {
 
     fn create_order(
         &mut self,
+        id: OrderId,
         properties: Self::OrderProperties,
     ) -> Result<Item<OrderId, Self::OrderProperties>>;
     fn get_order_by_id(&self, id: &str) -> Result<Option<Item<OrderId, Self::OrderProperties>>>;

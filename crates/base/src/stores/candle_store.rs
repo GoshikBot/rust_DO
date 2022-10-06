@@ -7,6 +7,7 @@ pub trait BasicCandleStore {
 
     fn create_candle(
         &mut self,
+        id: CandleId,
         properties: Self::CandleProperties,
     ) -> Result<Item<CandleId, Self::CandleProperties>>;
     fn get_candle_by_id(

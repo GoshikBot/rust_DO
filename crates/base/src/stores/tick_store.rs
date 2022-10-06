@@ -7,6 +7,7 @@ pub trait BasicTickStore {
 
     fn create_tick(
         &mut self,
+        id: TickId,
         properties: Self::TickProperties,
     ) -> Result<Item<TickId, Self::TickProperties>>;
     fn get_tick_by_id(&self, tick_id: &str) -> Result<Option<Item<TickId, Self::TickProperties>>>;

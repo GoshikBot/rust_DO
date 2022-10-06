@@ -70,13 +70,13 @@ pub struct StepStrategyTicksCandles {
     pub previous_candle: Option<CandleId>,
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct StepDiffs {
     pub current: Option<Diff>,
     pub previous: Option<Diff>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StepConfig {
     pub tendency: Tendency,
     pub tendency_changed_on_crossing_bargaining_corridor: bool,
@@ -85,6 +85,7 @@ pub struct StepConfig {
     pub diffs: StepDiffs,
 }
 
+#[derive(Debug)]
 pub struct StepBacktestingConfig {
     pub base: StepConfig,
     pub trading_engine: BacktestingTradingEngineConfig,
@@ -109,7 +110,6 @@ pub struct StepBacktestingStatistics {
     pub number_of_tendency_changes: BacktestingStatisticNumber,
 
     pub deleted_by_being_close_to_another_one: BacktestingStatisticNumber,
-    pub deleted_by_another_active_chain_of_orders: BacktestingStatisticNumber,
     pub deleted_by_expiration_by_distance: BacktestingStatisticNumber,
     pub deleted_by_expiration_by_time: BacktestingStatisticNumber,
     pub deleted_by_price_being_beyond_stop_loss: BacktestingStatisticNumber,

@@ -12,6 +12,8 @@ const DEFAULT_INITIAL_BALANCE_BACKTESTING: Balance = dec!(10_000);
 const DEFAULT_LEVERAGE_BACKTESTING: Leverage = dec!(0.01);
 const DEFAULT_SPREAD_BACKTESTING: Spread = dec!(0.00010);
 
+const TIME_PATTERN_FOR_PATH: &str = "%Y-%m-%d_%H-%M";
+
 #[derive(Debug)]
 pub enum OpenPositionBy {
     OpenPrice,
@@ -27,6 +29,7 @@ pub enum ClosePositionBy {
 
 pub type Balance = Decimal;
 
+#[derive(Debug)]
 pub struct BacktestingBalances {
     pub initial: Balance,
     pub processing: Balance,
@@ -59,6 +62,7 @@ pub type Trades = i32;
 pub type Leverage = Decimal;
 pub type Spread = Decimal;
 
+#[derive(Debug)]
 pub struct BacktestingTradingEngineConfig {
     pub balances: BacktestingBalances,
     pub units: Units,
@@ -93,4 +97,27 @@ pub struct StrategyInitConfig {
     pub timeframes: StrategyTimeframes,
     pub end_time: DateTime<Utc>,
     pub duration: Duration,
+}
+
+pub fn get_path_name_for_data_config(strategy_config: &StrategyInitConfig) -> String {
+    let StrategyInitConfig {
+        symbol,
+        timeframes:
+            StrategyTimeframes {
+                candle: candle_timeframe,
+                tick: tick_timeframe,
+            },
+        end_time,
+        duration,
+    } = strategy_config;
+
+    format!(
+        "{}_{}_{}_{}_{}_({}_weeks)",
+        symbol,
+        candle_timeframe,
+        tick_timeframe,
+        end_time.format(TIME_PATTERN_FOR_PATH),
+        duration.num_minutes(),
+        duration.num_weeks()
+    )
 }

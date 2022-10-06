@@ -1,6 +1,7 @@
 .idea
 /historical_data
 /strategy_params
+/plots
 /logs
 **/*.csv
 .vscode/

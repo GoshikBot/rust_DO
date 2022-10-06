@@ -49,7 +49,7 @@ pub trait LevelUtils {
     /// Updates the activation max crossing distance for active levels.
     /// It's required to delete invalid active levels that crossed particular distance
     /// and returned to level without getting to the first order.
-    fn update_max_crossing_value_of_active_levels<T>(
+    fn update_max_crossing_value_of_working_levels<T>(
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
         current_tick_price: TickPrice,
     ) -> Result<()>
@@ -290,7 +290,7 @@ impl LevelUtils for LevelUtilsImpl {
         Ok(())
     }
 
-    fn update_max_crossing_value_of_active_levels<T>(
+    fn update_max_crossing_value_of_working_levels<T>(
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
         current_tick_price: TickPrice,
     ) -> Result<()>
@@ -298,8 +298,9 @@ impl LevelUtils for LevelUtilsImpl {
         T: Into<BasicWLProperties>,
     {
         for level in working_level_store
-            .get_active_working_levels()?
+            .get_created_working_levels()?
             .into_iter()
+            .chain(working_level_store.get_active_working_levels()?.into_iter())
             .map(|level| Item {
                 id: level.id,
                 props: level.props.into(),
@@ -377,17 +378,7 @@ impl LevelUtils for LevelUtilsImpl {
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue,
     {
-        for level in utils
-            .working_level_store
-            .get_created_working_levels()?
-            .into_iter()
-            .chain(
-                utils
-                    .working_level_store
-                    .get_active_working_levels()?
-                    .into_iter(),
-            )
-        {
+        for level in utils.working_level_store.get_all_working_levels()? {
             let converted_level = Item {
                 id: &level.id,
                 props: level.props.as_ref(),
@@ -515,6 +506,15 @@ impl LevelUtils for LevelUtilsImpl {
             }
 
             if remove_level {
+                let chain = utils
+                    .working_level_store
+                    .get_working_level_chain_of_orders(&level.id)?;
+                for order in chain {
+                    if order.props.as_ref().status == OrderStatus::Opened {
+                        dbg!(&order.props.as_ref());
+                        dbg!(&level.props.as_ref());
+                    }
+                }
                 utils.working_level_store.remove_working_level(&level.id)?;
 
                 if let StatisticsNotifier::Backtesting(statistics) = &mut entity {
@@ -543,22 +543,24 @@ impl LevelUtils for LevelUtilsImpl {
                 props: level.props.into(),
             })
         {
-            let deviation_distance = match level.props.r#type {
-                OrderType::Buy => price_to_points(level.props.price - current_tick_price),
-                OrderType::Sell => price_to_points(current_tick_price - level.props.price),
-            };
+            if !working_level_store.take_profits_of_level_are_moved(&level.id)? {
+                let deviation_distance = match level.props.r#type {
+                    OrderType::Buy => price_to_points(level.props.price - current_tick_price),
+                    OrderType::Sell => price_to_points(current_tick_price - level.props.price),
+                };
 
-            if deviation_distance >= distance_from_level_for_signaling_of_moving_take_profits {
-                log::debug!(
-                    "move take profits of level ({:?}), because the deviation distance ({}) \
+                if deviation_distance >= distance_from_level_for_signaling_of_moving_take_profits {
+                    log::debug!(
+                        "move take profits of level ({:?}), because the deviation distance ({}) \
                     >= distance from level for signaling of moving take profits ({})",
-                    level,
-                    deviation_distance,
-                    distance_from_level_for_signaling_of_moving_take_profits
-                );
+                        level,
+                        deviation_distance,
+                        distance_from_level_for_signaling_of_moving_take_profits
+                    );
 
-                working_level_store
-                    .move_take_profits_of_level(&level.id, distance_to_move_take_profits)?;
+                    working_level_store
+                        .move_take_profits_of_level(&level.id, distance_to_move_take_profits)?;
+                }
             }
         }
 
@@ -945,7 +947,12 @@ mod tests {
         let mut working_level_ids = Vec::new();
 
         for _ in 0..4 {
-            working_level_ids.push(store.create_working_level(Default::default()).unwrap().id);
+            working_level_ids.push(
+                store
+                    .create_working_level(xid::new().to_string(), Default::default())
+                    .unwrap()
+                    .id,
+            );
         }
 
         let first_chain_of_orders_with_closed_orders: Vec<_> = (0..5)
@@ -958,13 +965,16 @@ mod tests {
                 };
 
                 store
-                    .create_order(StepOrderProperties {
-                        base: BasicOrderProperties {
-                            status,
-                            ..Default::default()
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            base: BasicOrderProperties {
+                                status,
+                                ..Default::default()
+                            },
+                            working_level_id: working_level_ids[0].clone(),
                         },
-                        ..Default::default()
-                    })
+                    )
                     .unwrap()
                     .id
             })
@@ -980,13 +990,16 @@ mod tests {
                 };
 
                 store
-                    .create_order(StepOrderProperties {
-                        base: BasicOrderProperties {
-                            status,
-                            ..Default::default()
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            base: BasicOrderProperties {
+                                status,
+                                ..Default::default()
+                            },
+                            working_level_id: working_level_ids[2].clone(),
                         },
-                        ..Default::default()
-                    })
+                    )
                     .unwrap()
                     .id
             })
@@ -994,49 +1007,35 @@ mod tests {
 
         let first_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|_| store.create_order(Default::default()).unwrap().id)
+            .map(|_| {
+                store
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            working_level_id: working_level_ids[1].clone(),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                    .id
+            })
             .collect();
 
         let second_chain_of_orders_without_closed_orders: Vec<_> = (0..5)
             .into_iter()
-            .map(|_| store.create_order(Default::default()).unwrap().id)
+            .map(|_| {
+                store
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            working_level_id: working_level_ids[3].clone(),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                    .id
+            })
             .collect();
-
-        for order_id in first_chain_of_orders_with_closed_orders {
-            store
-                .add_order_to_working_level_chain_of_orders(
-                    working_level_ids.get(0).unwrap(),
-                    order_id,
-                )
-                .unwrap();
-        }
-
-        for order_id in second_chain_of_orders_with_closed_orders {
-            store
-                .add_order_to_working_level_chain_of_orders(
-                    working_level_ids.get(2).unwrap(),
-                    order_id,
-                )
-                .unwrap();
-        }
-
-        for order_id in first_chain_of_orders_without_closed_orders {
-            store
-                .add_order_to_working_level_chain_of_orders(
-                    working_level_ids.get(1).unwrap(),
-                    order_id,
-                )
-                .unwrap();
-        }
-
-        for order_id in second_chain_of_orders_without_closed_orders {
-            store
-                .add_order_to_working_level_chain_of_orders(
-                    working_level_ids.get(3).unwrap(),
-                    order_id,
-                )
-                .unwrap();
-        }
 
         for level_id in working_level_ids.iter() {
             store.move_working_level_to_active(level_id).unwrap();
@@ -1060,21 +1059,24 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
 
         let current_tick_price = dec!(1.37000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         let expected_max_crossing_value = price_to_points(level_price - current_tick_price);
@@ -1097,21 +1099,24 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
 
         let current_tick_price = dec!(1.39000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         let expected_max_crossing_value = price_to_points(current_tick_price - level_price);
@@ -1134,21 +1139,24 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
 
         let current_tick_price = dec!(1.39000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert!(store
@@ -1166,21 +1174,24 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
 
         let current_tick_price = dec!(1.37000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert!(store
@@ -1198,14 +1209,17 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
@@ -1215,7 +1229,7 @@ mod tests {
 
         let current_tick_price = dec!(1.37000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert_eq!(
@@ -1236,14 +1250,17 @@ mod tests {
         let level_price = dec!(1.38000);
 
         let level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: level_price,
-                    ..Default::default()
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: level_price,
+                        ..Default::default()
+                    },
+                    chart_index: 0,
                 },
-                chart_index: 0,
-            })
+            )
             .unwrap();
 
         store.move_working_level_to_active(&level.id).unwrap();
@@ -1255,7 +1272,7 @@ mod tests {
 
         let current_tick_price = dec!(1.37000);
 
-        LevelUtilsImpl::update_max_crossing_value_of_active_levels(&mut store, current_tick_price)
+        LevelUtilsImpl::update_max_crossing_value_of_working_levels(&mut store, current_tick_price)
             .unwrap();
 
         assert_eq!(
@@ -1477,20 +1494,28 @@ mod tests {
 
         for i in 1..=8 {
             let level = store
-                .create_working_level(BacktestingWLProperties {
-                    base: BasicWLProperties {
-                        price: Decimal::from(i),
-                        time: NaiveDate::from_ymd(2022, 1, i).and_hms(0, 0, 0),
+                .create_working_level(
+                    xid::new().to_string(),
+                    BacktestingWLProperties {
+                        base: BasicWLProperties {
+                            price: Decimal::from(i),
+                            time: NaiveDate::from_ymd(2022, 1, i).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
-                })
+                )
                 .unwrap();
 
             if i == 4 {
-                let order = store.create_order(Default::default()).unwrap();
-                store
-                    .add_order_to_working_level_chain_of_orders(&level.id, order.id)
+                let order = store
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            working_level_id: level.id.clone(),
+                            ..Default::default()
+                        },
+                    )
                     .unwrap();
             }
 
@@ -1575,20 +1600,28 @@ mod tests {
 
         for i in 1..=8 {
             let level = store
-                .create_working_level(BacktestingWLProperties {
-                    base: BasicWLProperties {
-                        price: Decimal::from(i),
-                        time: NaiveDate::from_ymd(2022, 1, i).and_hms(0, 0, 0),
+                .create_working_level(
+                    xid::new().to_string(),
+                    BacktestingWLProperties {
+                        base: BasicWLProperties {
+                            price: Decimal::from(i),
+                            time: NaiveDate::from_ymd(2022, 1, i).and_hms(0, 0, 0),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
-                })
+                )
                 .unwrap();
 
             if i == 4 {
-                let order = store.create_order(Default::default()).unwrap();
-                store
-                    .add_order_to_working_level_chain_of_orders(&level.id, order.id)
+                let order = store
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            working_level_id: level.id.clone(),
+                            ..Default::default()
+                        },
+                    )
                     .unwrap();
             }
 
@@ -1635,32 +1668,38 @@ mod tests {
 
         for i in 0..8 {
             let level = store
-                .create_working_level(BacktestingWLProperties {
-                    base: BasicWLProperties {
-                        price: if i <= 2 { buy_wl_price } else { sell_wl_price },
-                        r#type: if i <= 2 {
-                            OrderType::Buy
-                        } else {
-                            OrderType::Sell
+                .create_working_level(
+                    xid::new().to_string(),
+                    BacktestingWLProperties {
+                        base: BasicWLProperties {
+                            price: if i <= 2 { buy_wl_price } else { sell_wl_price },
+                            r#type: if i <= 2 {
+                                OrderType::Buy
+                            } else {
+                                OrderType::Sell
+                            },
+                            ..Default::default()
                         },
                         ..Default::default()
                     },
-                    ..Default::default()
-                })
+                )
                 .unwrap();
 
             for _ in 0..3 {
                 store
-                    .create_order(StepOrderProperties {
-                        base: BasicOrderProperties {
-                            prices: BasicOrderPrices {
-                                take_profit,
+                    .create_order(
+                        xid::new().to_string(),
+                        StepOrderProperties {
+                            base: BasicOrderProperties {
+                                prices: BasicOrderPrices {
+                                    take_profit,
+                                    ..Default::default()
+                                },
                                 ..Default::default()
                             },
-                            ..Default::default()
+                            working_level_id: level.id.clone(),
                         },
-                        working_level_id: level.id.clone(),
-                    })
+                    )
                     .unwrap();
             }
 
@@ -2058,10 +2097,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2071,15 +2114,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2235,10 +2285,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2248,15 +2302,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2412,10 +2473,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2425,15 +2490,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2589,10 +2661,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2602,15 +2678,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2766,10 +2849,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2779,15 +2866,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2803,11 +2897,15 @@ mod tests {
             .unwrap();
 
         let max_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let max_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -2968,10 +3066,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -2981,15 +3083,22 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3005,11 +3114,15 @@ mod tests {
             .unwrap();
 
         let min_angle_before_bargaining_corridor_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let min_angle_before_bargaining_corridor = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3170,10 +3283,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3183,7 +3300,10 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         fn is_second_level_after_bargaining_tendency_change(
@@ -3320,10 +3440,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3333,7 +3457,10 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         fn is_second_level_after_bargaining_tendency_change(
@@ -3470,10 +3597,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Max,
                     ..Default::default()
@@ -3489,7 +3620,10 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         fn is_second_level_after_bargaining_tendency_change(
@@ -3618,10 +3752,14 @@ mod tests {
         let mut store = InMemoryStepBacktestingStore::new();
 
         let crossed_angle_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
         let crossed_angle = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3631,11 +3769,15 @@ mod tests {
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         let angle_of_second_level_after_bargaining_tendency_change = store
             .create_angle(
+                xid::new().to_string(),
                 BasicAngleProperties {
                     r#type: Level::Min,
                     ..Default::default()
@@ -3651,7 +3793,10 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties::default())
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties::default(),
+            )
             .unwrap();
 
         fn is_second_level_after_bargaining_tendency_change(

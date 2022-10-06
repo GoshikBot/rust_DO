@@ -10,10 +10,10 @@ trading_apis = { path = "../trading_apis" }
 backtesting = { path = "../backtesting" }
 strategies = { path = "../strategies" }
 base = { path = "../base" }
-plotly = "0.7.0"
+plotly = "0.8.1"
 chrono = "0.4.19"
 dotenv = "0.15.0"
-anyhow = "1.0.57"
+anyhow = { version = "1.0.57", features = ["backtrace"] }
 log4rs = { version = "1.1.1", features = ["background_rotation", "gzip"] }
 log = "0.4.17"
 rust_decimal = "1.25.0"

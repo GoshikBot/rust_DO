@@ -2,7 +2,8 @@ use crate::{BacktestingTradingEngineConfig, ClosePositionBy, OpenPositionBy, Uni
 use base::entities::order::{
     BasicOrderProperties, OrderId, OrderPrice, OrderStatus, OrderType, OrderVolume,
 };
-use base::entities::{Item, LOT};
+use base::entities::{Item, CANDLE_PRICE_DECIMAL_PLACES, LOT, SIGNIFICANT_DECIMAL_PLACES};
+use std::fmt::Debug;
 
 use anyhow::Result;
 use base::stores::order_store::BasicOrderStore;
@@ -14,11 +15,11 @@ pub trait TradingEngine {
         &self,
         order: &Item<OrderId, O>,
         by: OpenPositionBy,
-        order_store: &mut impl BasicOrderStore,
+        order_store: &mut impl BasicOrderStore<OrderProperties = O>,
         trading_config: &mut BacktestingTradingEngineConfig,
     ) -> Result<()>
     where
-        O: Into<BasicOrderProperties> + Clone;
+        O: Into<BasicOrderProperties> + Clone + Debug;
 
     fn close_position<O>(
         &self,
@@ -28,7 +29,7 @@ pub trait TradingEngine {
         trading_config: &mut BacktestingTradingEngineConfig,
     ) -> Result<()>
     where
-        O: Into<BasicOrderProperties> + Clone;
+        O: Into<BasicOrderProperties> + Clone + Debug;
 }
 
 #[derive(Default)]
@@ -54,6 +55,7 @@ impl BacktestingTradingEngine {
         if trading_config.use_spread {
             // ask price
             price += trading_config.spread / dec!(2);
+            price = price.round_dp(CANDLE_PRICE_DECIMAL_PLACES);
         }
 
         let units = (volume * Decimal::from(LOT))
@@ -61,9 +63,13 @@ impl BacktestingTradingEngine {
             .to_string()
             .parse::<Units>()
             .unwrap();
-        let trade_value = Decimal::from(units) * price;
+        let trade_value = (Decimal::from(units) * price).round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.balances.processing -= trade_value;
+        trading_config.balances.processing = trading_config
+            .balances
+            .processing
+            .round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.units += units;
         trading_config.trades += 1;
@@ -78,6 +84,7 @@ impl BacktestingTradingEngine {
         if trading_config.use_spread {
             // bid price
             price -= trading_config.spread / dec!(2);
+            price = price.round_dp(CANDLE_PRICE_DECIMAL_PLACES);
         }
 
         let units = (volume * Decimal::from(LOT))
@@ -85,9 +92,13 @@ impl BacktestingTradingEngine {
             .to_string()
             .parse::<Units>()
             .unwrap();
-        let trade_value = Decimal::from(units) * price;
+        let trade_value = (Decimal::from(units) * price).round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.balances.processing += trade_value;
+        trading_config.balances.processing = trading_config
+            .balances
+            .processing
+            .round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.units -= units;
         trading_config.trades += 1;
@@ -99,11 +110,11 @@ impl TradingEngine for BacktestingTradingEngine {
         &self,
         order: &Item<OrderId, O>,
         by: OpenPositionBy,
-        order_store: &mut impl BasicOrderStore,
+        order_store: &mut impl BasicOrderStore<OrderProperties = O>,
         trading_config: &mut BacktestingTradingEngineConfig,
     ) -> Result<()>
     where
-        O: Into<BasicOrderProperties> + Clone,
+        O: Into<BasicOrderProperties> + Clone + Debug,
     {
         let order_props = order.props.clone().into();
 
@@ -132,7 +143,7 @@ impl TradingEngine for BacktestingTradingEngine {
         trading_config: &mut BacktestingTradingEngineConfig,
     ) -> Result<()>
     where
-        O: Into<BasicOrderProperties> + Clone,
+        O: Into<BasicOrderProperties> + Clone + Debug,
     {
         let order_props = order.props.clone().into();
 
@@ -176,33 +187,18 @@ impl TradingEngine for BacktestingTradingEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BacktestingBalances;
+    use crate::{trading_engine, BacktestingBalances};
     use base::entities::order::BasicOrderPrices;
     use std::collections::HashMap;
 
     #[derive(Default)]
     struct TestOrderStore {
         orders: HashMap<OrderId, Item<OrderId, BasicOrderProperties>>,
-        id_counter: u32,
     }
 
     impl TestOrderStore {
         fn new() -> Self {
             Default::default()
-        }
-
-        fn create_order(&mut self, order_id: OrderId, props: BasicOrderProperties) {
-            self.orders.insert(
-                order_id.clone(),
-                Item {
-                    id: order_id,
-                    props,
-                },
-            );
-        }
-
-        fn get_order_by_id(&self, id: &str) -> Option<Item<OrderId, BasicOrderProperties>> {
-            self.orders.get(id).cloned()
         }
     }
 
@@ -211,26 +207,24 @@ mod tests {
 
         fn create_order(
             &mut self,
+            id: OrderId,
             properties: Self::OrderProperties,
         ) -> Result<Item<OrderId, Self::OrderProperties>> {
-            let order_id = self.id_counter.to_string();
-            self.id_counter += 1;
-
             let new_order = Item {
-                id: order_id.clone(),
+                id: id.clone(),
                 props: properties,
             };
 
-            self.orders.insert(order_id, new_order.clone());
+            self.orders.insert(id, new_order.clone());
 
             Ok(new_order)
         }
 
         fn get_order_by_id(
             &self,
-            _id: &str,
+            id: &str,
         ) -> Result<Option<Item<OrderId, Self::OrderProperties>>> {
-            unimplemented!()
+            Ok(self.orders.get(id).cloned())
         }
 
         fn get_all_orders(&self) -> Result<Vec<Item<OrderId, Self::OrderProperties>>> {
@@ -251,25 +245,29 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                status: OrderStatus::Opened,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    status: OrderStatus::Opened,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
-        order_store.create_order(
-            String::from("2"),
-            BasicOrderProperties {
-                status: OrderStatus::Closed,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("2"),
+                BasicOrderProperties {
+                    status: OrderStatus::Closed,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         assert!(trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::OpenPrice,
                 &mut order_store,
                 &mut trading_config,
@@ -280,7 +278,7 @@ mod tests {
 
         assert!(trading_engine
             .open_position(
-                &order_store.get_order_by_id("2").unwrap(),
+                &order_store.get_order_by_id("2").unwrap().unwrap(),
                 OpenPositionBy::OpenPrice,
                 &mut order_store,
                 &mut trading_config,
@@ -297,29 +295,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                prices: BasicOrderPrices {
-                    open: dec!(1.38124),
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.38124),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::OpenPrice,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(5856.13));
@@ -335,27 +335,29 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         let current_tick_price = dec!(1.20586);
 
         trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::CurrentTickPrice(current_tick_price),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(6382.27));
@@ -375,27 +377,29 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         let current_tick_price = dec!(1.20586);
 
         trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::CurrentTickPrice(current_tick_price),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(6382.42));
@@ -410,29 +414,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                prices: BasicOrderPrices {
-                    open: dec!(1.38124),
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    prices: BasicOrderPrices {
+                        open: dec!(1.38124),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::OpenPrice,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
@@ -448,27 +454,29 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         let current_tick_price = dec!(1.20586);
 
         trading_engine
             .open_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 OpenPositionBy::CurrentTickPrice(current_tick_price),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Opened);
         assert_eq!(trading_config.balances.processing, dec!(13_617.43));
@@ -483,25 +491,29 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                status: OrderStatus::Pending,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    status: OrderStatus::Pending,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
-        order_store.create_order(
-            String::from("2"),
-            BasicOrderProperties {
-                status: OrderStatus::Closed,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("2"),
+                BasicOrderProperties {
+                    status: OrderStatus::Closed,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         assert!(trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::TakeProfit,
                 &mut order_store,
                 &mut trading_config,
@@ -512,7 +524,7 @@ mod tests {
 
         assert!(trading_engine
             .close_position(
-                &order_store.get_order_by_id("2").unwrap(),
+                &order_store.get_order_by_id("2").unwrap().unwrap(),
                 ClosePositionBy::TakeProfit,
                 &mut order_store,
                 &mut trading_config,
@@ -533,22 +545,24 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    stop_loss: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        stop_loss: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         assert!(trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::StopLoss,
                 &mut order_store,
                 &mut trading_config,
@@ -565,29 +579,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    take_profit: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        take_profit: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::TakeProfit,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
@@ -603,29 +619,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    stop_loss: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        stop_loss: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::StopLoss,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
@@ -645,29 +663,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    take_profit: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        take_profit: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::TakeProfit,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.72));
@@ -684,26 +704,28 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::CurrentTickPrice(dec!(1.38124)),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(14_143.57));
@@ -719,29 +741,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    take_profit: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        take_profit: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::TakeProfit,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
@@ -757,29 +781,31 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                prices: BasicOrderPrices {
-                    stop_loss: dec!(1.38124),
-                    ..Default::default()
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    prices: BasicOrderPrices {
+                        stop_loss: dec!(1.38124),
+                        ..Default::default()
+                    },
                 },
-            },
-        );
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::StopLoss,
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
@@ -796,26 +822,28 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::CurrentTickPrice(dec!(1.38124)),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));
@@ -831,36 +859,40 @@ mod tests {
         let mut order_store = TestOrderStore::new();
         let trading_engine = BacktestingTradingEngine::new();
 
-        order_store.create_order(
-            String::from("1"),
-            BasicOrderProperties {
-                r#type: OrderType::Sell,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("1"),
+                BasicOrderProperties {
+                    r#type: OrderType::Sell,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
-        order_store.create_order(
-            String::from("2"),
-            BasicOrderProperties {
-                r#type: OrderType::Buy,
-                volume: dec!(0.03),
-                status: OrderStatus::Opened,
-                ..Default::default()
-            },
-        );
+        order_store
+            .create_order(
+                String::from("2"),
+                BasicOrderProperties {
+                    r#type: OrderType::Buy,
+                    volume: dec!(0.03),
+                    status: OrderStatus::Opened,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         trading_engine
             .close_position(
-                &order_store.get_order_by_id("1").unwrap(),
+                &order_store.get_order_by_id("1").unwrap().unwrap(),
                 ClosePositionBy::CurrentTickPrice(dec!(1.38124)),
                 &mut order_store,
                 &mut trading_config,
             )
             .unwrap();
 
-        let updated_order = order_store.get_order_by_id("1").unwrap();
+        let updated_order = order_store.get_order_by_id("1").unwrap().unwrap();
 
         assert_eq!(updated_order.props.status, OrderStatus::Closed);
         assert_eq!(trading_config.balances.processing, dec!(5_856.13));

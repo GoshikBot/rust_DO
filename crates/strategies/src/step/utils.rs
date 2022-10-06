@@ -1,5 +1,7 @@
 use crate::step::utils::angle_utils::AngleUtils;
-use crate::step::utils::backtesting_charts::{ChartIndex, ChartTraceEntity, StepBacktestingChartTraces};
+use crate::step::utils::backtesting_charts::{
+    ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
+};
 use crate::step::utils::corridors::Corridors;
 use crate::step::utils::entities::candle::StepBacktestingCandleProperties;
 use crate::step::utils::helpers::Helpers;
@@ -26,7 +28,7 @@ pub mod order_utils;
 pub mod stores;
 pub mod trading_limiter;
 
-pub struct StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
+pub struct StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>
 where
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -35,8 +37,8 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     helpers: PhantomData<Hel>,
@@ -46,13 +48,13 @@ where
     basic_corridor_utils: PhantomData<BCor>,
     corridors: PhantomData<Cor>,
     angle_utils: PhantomData<Ang>,
-    pub add_entity_to_chart_traces: D,
     pub trading_engine: E,
+    pub add_entity_to_chart_traces: D,
     pub exclude_weekend_and_holidays: X,
 }
 
-impl<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
-    StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
+impl<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, T, D, X>
+    StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, T, D, X>
 where
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -61,14 +63,14 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
+    T: TradingEngine,
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
-    E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub fn new(
         add_entity_to_chart_traces: D,
-        trading_engine: E,
         exclude_weekend_and_holidays: X,
+        trading_engine: T,
     ) -> Self {
         Self {
             helpers: PhantomData,
@@ -78,8 +80,8 @@ where
             basic_corridor_utils: PhantomData,
             corridors: PhantomData,
             angle_utils: PhantomData,
-            add_entity_to_chart_traces,
             trading_engine,
+            add_entity_to_chart_traces,
             exclude_weekend_and_holidays,
         }
     }

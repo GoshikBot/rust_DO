@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::{thread, time};
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
@@ -30,6 +31,8 @@ pub const DEFAULT_NUMBER_OF_SECONDS_TO_SLEEP_BEFORE_REQUEST_RETRY:
     SecondsToSleepBeforeRequestRetry = 1;
 
 const MAX_NUMBER_OF_CANDLES_PER_REQUEST: u64 = 1000;
+
+const SECONDS_TO_SLEEP_AFTER_BLOCK_REQUEST: u8 = 1;
 
 type MetatraderTime = String;
 
@@ -259,6 +262,10 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
             let mut block_of_candles: VecDeque<MetatraderCandleJson> = serde_json::from_str(
                 &http_request_with_retries(req_data, req_params, &self.request_api)?,
             )?;
+
+            thread::sleep(time::Duration::from_secs(
+                SECONDS_TO_SLEEP_AFTER_BLOCK_REQUEST as u64,
+            ));
 
             block_of_candles.append(&mut all_candles);
             all_candles = block_of_candles;
@@ -492,7 +499,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Self::get_items_with_filled_gaps(all_ticks, Timeframe::OneMin, |tick| tick.time)
+        Self::get_items_with_filled_gaps(all_ticks, timeframe, |tick| tick.time)
     }
 }
 

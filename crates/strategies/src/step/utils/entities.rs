@@ -25,7 +25,7 @@ pub enum Diff {
 #[derive(Debug)]
 pub struct StrategySignals {
     pub no_trading_mode: bool,
-    pub cancel_all_orders: bool,
+    pub close_all_orders: bool,
 }
 
 pub type StrategyPerformance = Decimal;

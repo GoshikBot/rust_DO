@@ -30,20 +30,19 @@ use base::entities::order::OrderType;
 use base::entities::{BasicTickProperties, Item};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
-use chrono::NaiveDateTime;
+use chrono::{Datelike, NaiveDateTime};
 use std::str::FromStr;
 
-pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>(
+pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>(
     new_tick_props: BasicTickProperties,
     new_candle_props: Option<StepBacktestingCandleProperties>,
     signals: StrategySignals,
     stores: &mut StepBacktestingStores<T>,
-    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
+    utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>,
     params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
 ) -> Result<()>
 where
     T: StepBacktestingMainStore,
-
     Hel: Helpers,
     LevUt: LevelUtils,
     LevCon: LevelConditions,
@@ -51,11 +50,13 @@ where
     BCor: BasicCorridorUtils,
     Cor: Corridors,
     Ang: AngleUtils,
-    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
+    D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
-    let current_tick = stores.main.create_tick(new_tick_props)?;
+    let current_tick = stores
+        .main
+        .create_tick(xid::new().to_string(), new_tick_props)?;
 
     if let Some(current_tick) = stores.main.get_current_tick()? {
         stores.main.update_previous_tick(current_tick.id)?;
@@ -65,7 +66,9 @@ where
 
     let (current_candle, new_candle_appeared) = match new_candle_props {
         Some(candle_props) => {
-            let current_candle = stores.main.create_candle(candle_props)?;
+            let current_candle = stores
+                .main
+                .create_candle(xid::new().to_string(), candle_props)?;
 
             if let Some(current_candle) = stores.main.get_current_candle()? {
                 stores.main.update_previous_candle(current_candle.id)?;
@@ -79,6 +82,19 @@ where
         }
         None => (stores.main.get_current_candle()?, false),
     };
+
+    if let Some(current_candle) = &current_candle {
+        if signals.close_all_orders {
+            OrUt::close_all_orders_backtesting(
+                current_tick.props.bid,
+                current_candle.props.chart_index,
+                &mut stores.main,
+                &mut stores.config,
+                &utils.trading_engine,
+                &utils.add_entity_to_chart_traces,
+            )?;
+        }
+    }
 
     let created_working_levels = stores.main.get_created_working_levels()?;
 
@@ -105,15 +121,10 @@ where
             )?;
 
             for order_props in chain_of_orders {
-                let order = stores.main.create_order(order_props)?;
                 stores
                     .main
-                    .add_order_to_working_level_chain_of_orders(&crossed_level.id, order.id)?;
+                    .create_order(xid::new().to_string(), order_props)?;
             }
-
-            stores
-                .main
-                .move_working_level_to_active(&crossed_level.id)?;
         }
     }
 
@@ -134,12 +145,13 @@ where
                 &utils.add_entity_to_chart_traces,
                 &LevCon::level_exceeds_amount_of_candles_in_corridor,
                 &LevCon::price_is_beyond_stop_loss,
+                &LevCon::level_has_no_active_orders,
             ),
             signals.no_trading_mode,
         )?;
     }
 
-    LevUt::update_max_crossing_value_of_active_levels(&mut stores.main, current_tick.props.bid)?;
+    LevUt::update_max_crossing_value_of_working_levels(&mut stores.main, current_tick.props.bid)?;
 
     if let Some(current_candle) = &current_candle {
         LevUt::remove_invalid_working_levels(
@@ -218,23 +230,26 @@ where
                             },
                             params.get_ratio_param_value(
                                 StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles,
-                                current_candle.props.step_common.base.volatility
+                                current_candle.props.step_common.base.volatility,
                             ),
                             params.get_ratio_param_value(
                                 StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear,
-                                current_candle.props.step_common.base.volatility
+                                current_candle.props.step_common.base.volatility,
                             ),
                         )
-                    },
+                    }
                     None => None
                 }
-            },
+            }
             _ => None,
         };
 
         if let Some(new_angle) = new_angle {
             Ang::update_angles(
-                new_angle,
+                Item {
+                    id: xid::new().to_string(),
+                    props: new_angle,
+                },
                 &stores.main.get_candles_of_general_corridor()?,
                 &mut stores.main,
             )?;
@@ -281,14 +296,17 @@ where
                 )?;
 
             if create_new_working_level {
-                stores.main.create_working_level(BacktestingWLProperties {
-                    base: BasicWLProperties {
-                        price: crossed_angle.props.candle.props.step_common.leading_price,
-                        r#type: OrderType::from(crossed_angle.props.base.r#type),
-                        time: crossed_angle.props.candle.props.step_common.base.time,
+                stores.main.create_working_level(
+                    xid::new().to_string(),
+                    BacktestingWLProperties {
+                        base: BasicWLProperties {
+                            price: crossed_angle.props.candle.props.step_common.leading_price,
+                            r#type: OrderType::from(crossed_angle.props.base.r#type),
+                            time: crossed_angle.props.candle.props.step_common.base.time,
+                        },
+                        chart_index: crossed_angle.props.candle.props.chart_index,
                     },
-                    chart_index: crossed_angle.props.candle.props.chart_index,
-                })?;
+                )?;
 
                 stores.statistics.number_of_working_levels += 1;
 

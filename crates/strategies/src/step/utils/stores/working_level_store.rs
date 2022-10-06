@@ -14,6 +14,7 @@ pub trait StepWorkingLevelStore {
 
     fn create_working_level(
         &mut self,
+        id: WLId,
         properties: Self::WorkingLevelProperties,
     ) -> Result<Item<WLId, Self::WorkingLevelProperties>>;
     fn get_working_level_by_id(
@@ -26,6 +27,7 @@ pub trait StepWorkingLevelStore {
 
     fn get_created_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
     fn get_active_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
+    fn get_all_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>>;
 
     fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>>;
 
@@ -66,12 +68,6 @@ pub trait StepWorkingLevelStore {
     ) -> Result<()>;
 
     fn take_profits_of_level_are_moved(&self, working_level_id: &str) -> Result<bool>;
-
-    fn add_order_to_working_level_chain_of_orders(
-        &mut self,
-        working_level_id: &str,
-        order_id: OrderId,
-    ) -> Result<()>;
 
     fn get_working_level_chain_of_orders(
         &self,

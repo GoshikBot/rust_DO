@@ -429,27 +429,11 @@ impl Corridors for CorridorsImpl {
         for level in working_level_store
             .get_created_working_levels()?
             .into_iter()
-            .chain(working_level_store.get_active_working_levels()?.into_iter())
             .map(|level| Item {
                 id: level.id,
                 props: level.props.into(),
             })
         {
-            if working_level_store
-                .get_working_level_status(&level.id)?
-                .unwrap()
-                == WLStatus::Active
-                && !(utils.level_has_no_active_orders)(
-                    &working_level_store
-                        .get_working_level_chain_of_orders(&level.id)?
-                        .into_iter()
-                        .map(|order| order.props)
-                        .collect::<Vec<_>>(),
-                )
-            {
-                continue;
-            }
-
             Self::update_small_corridor_near_level(
                 &level,
                 current_candle,
@@ -623,9 +607,6 @@ mod tests {
     // 9.  corridor is NOT empty && candle is NOT in corridor && candle is greater than distance
     //     && new corridor is empty
     //
-    // - 10. active working level with active orders
-    // - 11. active working level without active orders
-    //
     // - big corridor:
     // 1.  buy level && green candle && candle is in the range of the corridor
     // 2.  buy level && neutral candle && candle is in the range of the corridor
@@ -647,32 +628,38 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Green,
-                        prices: CandlePrices {
-                            close: dec!(1.38199),
-                            low: dec!(1.38029),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Green,
+                            prices: CandlePrices {
+                                close: dec!(1.38199),
+                                low: dec!(1.38029),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
@@ -728,32 +715,38 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Neutral,
-                        prices: CandlePrices {
-                            close: dec!(1.38199),
-                            low: dec!(1.38029),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Neutral,
+                            prices: CandlePrices {
+                                close: dec!(1.38199),
+                                low: dec!(1.38029),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -809,17 +802,22 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
-        let corridor_candle = store.create_candle(Default::default()).unwrap();
+        let corridor_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
         store
             .add_candle_to_working_level_corridor(
                 &working_level.id,
@@ -829,21 +827,24 @@ mod tests {
             .unwrap();
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Red,
-                        prices: CandlePrices {
-                            open: dec!(1.38199),
-                            low: dec!(1.38031),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Red,
+                            prices: CandlePrices {
+                                open: dec!(1.38199),
+                                low: dec!(1.38031),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -899,18 +900,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..3 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -929,21 +935,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Green,
-                        prices: CandlePrices {
-                            close: dec!(1.38201),
-                            low: dec!(1.38029),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Green,
+                            prices: CandlePrices {
+                                close: dec!(1.38201),
+                                low: dec!(1.38029),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
@@ -999,18 +1008,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..2 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -1029,21 +1043,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Neutral,
-                        prices: CandlePrices {
-                            close: dec!(1.38201),
-                            low: dec!(1.38029),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Neutral,
+                            prices: CandlePrices {
+                                close: dec!(1.38201),
+                                low: dec!(1.38029),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
@@ -1099,18 +1116,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Buy,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Buy,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..2 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -1129,21 +1151,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Red,
-                        prices: CandlePrices {
-                            open: dec!(1.38201),
-                            low: dec!(1.38029),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Red,
+                            prices: CandlePrices {
+                                open: dec!(1.38201),
+                                low: dec!(1.38029),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -1199,18 +1224,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..2 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -1221,21 +1251,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Green,
-                        prices: CandlePrices {
-                            open: dec!(1.37801),
-                            high: dec!(1.37971),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Green,
+                            prices: CandlePrices {
+                                open: dec!(1.37801),
+                                high: dec!(1.37971),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -1246,7 +1279,9 @@ mod tests {
         let mut new_corridor = Vec::new();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             new_corridor.push(candle);
         }
 
@@ -1299,18 +1334,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..2 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -1321,21 +1361,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Neutral,
-                        prices: CandlePrices {
-                            open: dec!(1.37801),
-                            high: dec!(1.37969),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Neutral,
+                            prices: CandlePrices {
+                                open: dec!(1.37801),
+                                high: dec!(1.37969),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -1346,7 +1389,9 @@ mod tests {
         let mut new_corridor = Vec::new();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             new_corridor.push(candle);
         }
 
@@ -1399,18 +1444,23 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..2 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store
                 .add_candle_to_working_level_corridor(
                     &working_level.id,
@@ -1421,21 +1471,24 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Red,
-                        prices: CandlePrices {
-                            close: dec!(1.37801),
-                            high: dec!(1.37969),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Red,
+                            prices: CandlePrices {
+                                close: dec!(1.37801),
+                                high: dec!(1.37969),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -1488,288 +1541,27 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn update_corridors_near_working_levels__inactive_level_and_level_with_active_orders_sell_level_and_green_candle_and_candle_is_not_in_the_range_of_big_corridor__should_not_update_corridors_of_active_level_with_active_orders_and_should_clear_big_corridor(
-    ) {
-        let mut store = InMemoryStepBacktestingStore::new();
-        let inactive_working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        let active_working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        store
-            .move_working_level_to_active(&active_working_level.id)
-            .unwrap();
-
-        let mut big_corridor = Vec::new();
-
-        for _ in 0..3 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
-            big_corridor.push(corridor_candle.clone());
-
-            store
-                .add_candle_to_working_level_corridor(
-                    &inactive_working_level.id,
-                    corridor_candle.id.clone(),
-                    CorridorType::Big,
-                )
-                .unwrap();
-
-            store
-                .add_candle_to_working_level_corridor(
-                    &active_working_level.id,
-                    corridor_candle.id,
-                    CorridorType::Big,
-                )
-                .unwrap();
-        }
-
-        let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Green,
-                        prices: CandlePrices {
-                            open: dec!(1.37799),
-                            high: dec!(1.37971),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
-        let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
-                                     _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
-
-        let crop_corridor_to_the_closest_leader =
-            |_: &[Item<CandleId, StepBacktestingCandleProperties>],
-             _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
-             _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
-             _: &dyn Fn(
-                &StepBacktestingCandleProperties,
-                &StepBacktestingCandleProperties,
-                ParamValue,
-            ) -> bool| None;
-
-        let level_has_no_active_orders = |_: &[StepOrderProperties]| false;
-
-        let params = TestParams::default();
-
-        CorridorsImpl::update_corridors_near_working_levels(
-            &mut store,
-            &current_candle,
-            UpdateCorridorsNearWorkingLevelsUtils::new(
-                UpdateGeneralCorridorUtils::new(
-                    &candle_can_be_corridor_leader,
-                    &candle_is_in_corridor,
-                    &crop_corridor_to_the_closest_leader,
-                ),
-                &level_has_no_active_orders,
-            ),
-            &params,
-        )
-        .unwrap();
-
-        let small_corridor_of_inactive_level = store
-            .get_candles_of_working_level_corridor(&inactive_working_level.id, CorridorType::Small)
-            .unwrap();
-
-        let small_corridor_of_active_level = store
-            .get_candles_of_working_level_corridor(&active_working_level.id, CorridorType::Small)
-            .unwrap();
-
-        assert!(
-            small_corridor_of_inactive_level.len() == 1
-                && small_corridor_of_inactive_level.contains(&current_candle)
-        );
-        assert!(small_corridor_of_active_level.is_empty());
-
-        let big_corridor_of_inactive_level = store
-            .get_candles_of_working_level_corridor(&inactive_working_level.id, CorridorType::Big)
-            .unwrap();
-
-        let big_corridor_of_active_level = store
-            .get_candles_of_working_level_corridor(&active_working_level.id, CorridorType::Big)
-            .unwrap();
-
-        assert!(big_corridor_of_inactive_level.is_empty());
-        assert_eq!(big_corridor_of_active_level, big_corridor);
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn update_corridors_near_working_levels__inactive_level_and_level_without_active_orders_sell_level_and_neutral_candle_and_candle_is_not_in_the_range_of_big_corridor__should_update_corridors_of_active_level_without_active_orders_and_should_clear_big_corridor(
-    ) {
-        let mut store = InMemoryStepBacktestingStore::new();
-        let inactive_working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        let active_working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        store
-            .move_working_level_to_active(&active_working_level.id)
-            .unwrap();
-
-        for _ in 0..3 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
-
-            store
-                .add_candle_to_working_level_corridor(
-                    &inactive_working_level.id,
-                    corridor_candle.id.clone(),
-                    CorridorType::Big,
-                )
-                .unwrap();
-
-            store
-                .add_candle_to_working_level_corridor(
-                    &active_working_level.id,
-                    corridor_candle.id,
-                    CorridorType::Big,
-                )
-                .unwrap();
-        }
-
-        let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Neutral,
-                        prices: CandlePrices {
-                            open: dec!(1.37799),
-                            high: dec!(1.37971),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap();
-
-        let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
-        let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
-                                     _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
-
-        let crop_corridor_to_the_closest_leader =
-            |_: &[Item<CandleId, StepBacktestingCandleProperties>],
-             _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
-             _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
-             _: &dyn Fn(
-                &StepBacktestingCandleProperties,
-                &StepBacktestingCandleProperties,
-                ParamValue,
-            ) -> bool| None;
-
-        let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
-
-        let params = TestParams::default();
-
-        CorridorsImpl::update_corridors_near_working_levels(
-            &mut store,
-            &current_candle,
-            UpdateCorridorsNearWorkingLevelsUtils::new(
-                UpdateGeneralCorridorUtils::new(
-                    &candle_can_be_corridor_leader,
-                    &candle_is_in_corridor,
-                    &crop_corridor_to_the_closest_leader,
-                ),
-                &level_has_no_active_orders,
-            ),
-            &params,
-        )
-        .unwrap();
-
-        let small_corridor_of_inactive_level = store
-            .get_candles_of_working_level_corridor(&inactive_working_level.id, CorridorType::Small)
-            .unwrap();
-
-        let small_corridor_of_active_level = store
-            .get_candles_of_working_level_corridor(&active_working_level.id, CorridorType::Small)
-            .unwrap();
-
-        assert!(
-            small_corridor_of_inactive_level.len() == 1
-                && small_corridor_of_inactive_level.contains(&current_candle)
-        );
-        assert!(
-            small_corridor_of_active_level.len() == 1
-                && small_corridor_of_active_level.contains(&current_candle)
-        );
-
-        let big_corridor_of_inactive_level = store
-            .get_candles_of_working_level_corridor(&inactive_working_level.id, CorridorType::Big)
-            .unwrap();
-
-        let big_corridor_of_active_level = store
-            .get_candles_of_working_level_corridor(&active_working_level.id, CorridorType::Big)
-            .unwrap();
-
-        assert!(big_corridor_of_inactive_level.is_empty());
-        assert!(big_corridor_of_active_level.is_empty());
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
     fn update_corridors_near_working_levels__sell_level_and_red_candle_and_candle_is_not_in_the_range_of_big_corridor__should_clear_big_corridor(
     ) {
         let mut store = InMemoryStepBacktestingStore::new();
         let working_level = store
-            .create_working_level(BacktestingWLProperties {
-                base: BasicWLProperties {
-                    r#type: OrderType::Sell,
-                    price: dec!(1.38000),
+            .create_working_level(
+                xid::new().to_string(),
+                BacktestingWLProperties {
+                    base: BasicWLProperties {
+                        r#type: OrderType::Sell,
+                        price: dec!(1.38000),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         for _ in 0..3 {
-            let corridor_candle = store.create_candle(Default::default()).unwrap();
+            let corridor_candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
 
             store
                 .add_candle_to_working_level_corridor(
@@ -1781,20 +1573,23 @@ mod tests {
         }
 
         let current_candle = store
-            .create_candle(StepBacktestingCandleProperties {
-                step_common: StepCandleProperties {
-                    base: BasicCandleProperties {
-                        r#type: CandleType::Red,
-                        prices: CandlePrices {
-                            close: dec!(1.37799),
+            .create_candle(
+                xid::new().to_string(),
+                StepBacktestingCandleProperties {
+                    step_common: StepCandleProperties {
+                        base: BasicCandleProperties {
+                            r#type: CandleType::Red,
+                            prices: CandlePrices {
+                                close: dec!(1.37799),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     ..Default::default()
                 },
-                ..Default::default()
-            })
+            )
             .unwrap();
 
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
@@ -1856,7 +1651,9 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
@@ -1903,7 +1700,9 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
@@ -1947,14 +1746,18 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
             .unwrap();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store.add_candle_to_general_corridor(candle.id).unwrap();
         }
 
@@ -1999,14 +1802,18 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
             .unwrap();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store.add_candle_to_general_corridor(candle.id).unwrap();
         }
 
@@ -2019,7 +1826,9 @@ mod tests {
         let mut new_cropped_corridor = Vec::new();
 
         for _ in 0..2 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             new_cropped_corridor.push(candle);
         }
 
@@ -2058,14 +1867,18 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
             .unwrap();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store.add_candle_to_general_corridor(candle.id).unwrap();
         }
 
@@ -2110,14 +1923,18 @@ mod tests {
     ) {
         let mut store = InMemoryStepBacktestingStore::default();
 
-        let current_candle = store.create_candle(Default::default()).unwrap();
+        let current_candle = store
+            .create_candle(xid::new().to_string(), Default::default())
+            .unwrap();
 
         store
             .update_current_candle(current_candle.id.clone())
             .unwrap();
 
         for _ in 0..3 {
-            let candle = store.create_candle(Default::default()).unwrap();
+            let candle = store
+                .create_candle(xid::new().to_string(), Default::default())
+                .unwrap();
             store.add_candle_to_general_corridor(candle.id).unwrap();
         }
 

@@ -9,6 +9,7 @@ use csv::Reader;
 use serde::{Deserialize, Serialize};
 
 use crate::entities::candle::CandleVolatility;
+use crate::entities::SIGNIFICANT_DECIMAL_PLACES;
 
 pub type ParamName = String;
 pub type CsvParamValue = String;
@@ -70,13 +71,17 @@ where
                 .context("empty string setting value was got")?
                 .is_alphabetic()
             {
-                let numeric_setting_value =
-                    (&param.value[..param.value.len() - 1]).parse::<ParamValue>()?;
+                let numeric_setting_value = param.value[..param.value.len() - 1]
+                    .parse::<ParamValue>()?
+                    .round_dp(SIGNIFICANT_DECIMAL_PLACES);
                 params
                     .ratio_param_values
                     .insert(param.name, numeric_setting_value);
             } else {
-                let numeric_setting_value = param.value.parse::<ParamValue>()?;
+                let numeric_setting_value = param
+                    .value
+                    .parse::<ParamValue>()?
+                    .round_dp(SIGNIFICANT_DECIMAL_PLACES);
                 params
                     .point_param_values
                     .insert(param.name, numeric_setting_value);
@@ -112,6 +117,6 @@ where
             .get(&name.to_string())
             .unwrap_or_else(|| panic!("a ratio param with a name {} is not found", name));
 
-        ratio_value * Decimal::from(volatility)
+        (ratio_value * Decimal::from(volatility)).round_dp(SIGNIFICANT_DECIMAL_PLACES)
     }
 }

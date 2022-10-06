@@ -1,4 +1,4 @@
-use crate::{HistoricalData, StrategyInitConfig};
+use crate::{get_path_name_for_data_config, HistoricalData, StrategyInitConfig};
 use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleSize, CandleVolatility};
 use base::entities::tick::TickPrice;
 use base::entities::{BasicTickProperties, CandlePrices, CandleType, StrategyTimeframes};
@@ -10,7 +10,6 @@ use std::fs;
 use std::path::PathBuf;
 
 const TIME_PATTERN_FOR_SERIALIZATION: &str = "%Y-%m-%d %H:%M";
-const TIME_PATTERN_FOR_PATH: &str = "%Y-%m-%d_%H-%M";
 
 const CANDLES_CSV_FILE_NAME: &str = "candles.csv";
 const TICKS_CSV_FILE_NAME: &str = "ticks.csv";
@@ -40,36 +39,13 @@ struct Tick {
     bid: Option<TickPrice>,
 }
 
-fn get_directory_name_for_data_config(strategy_config: &StrategyInitConfig) -> String {
-    let StrategyInitConfig {
-        symbol,
-        timeframes:
-            StrategyTimeframes {
-                candle: candle_timeframe,
-                tick: tick_timeframe,
-            },
-        end_time,
-        duration,
-    } = strategy_config;
-
-    format!(
-        "{}_{}_{}_{}_{}_({}_weeks)",
-        symbol,
-        candle_timeframe,
-        tick_timeframe,
-        end_time.format(TIME_PATTERN_FOR_PATH),
-        duration.num_minutes(),
-        duration.num_weeks()
-    )
-}
-
 fn get_paths_for_historical_data<P: Into<PathBuf>>(
     directory: P,
     strategy_config: &StrategyInitConfig,
 ) -> HistoricalDataPaths {
     let mut directory = directory.into();
 
-    let directory_for_candles_and_ticks = get_directory_name_for_data_config(strategy_config);
+    let directory_for_candles_and_ticks = get_path_name_for_data_config(strategy_config);
     directory.push(directory_for_candles_and_ticks);
 
     let mut candles_file_path = directory.clone();

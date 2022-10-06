@@ -4,7 +4,10 @@ use anyhow::{bail, Context, Result};
 use rust_decimal_macros::dec;
 
 use base::entities::order::{OrderId, OrderStatus, OrderType};
-use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties};
+use base::entities::{
+    candle::CandleId, tick::TickId, BasicTickProperties, CANDLE_PRICE_DECIMAL_PLACES,
+    SIGNIFICANT_DECIMAL_PLACES,
+};
 use base::entities::{Item, Tendency};
 use base::helpers::{points_to_price, PriceValue};
 use base::params::ParamValue;
@@ -91,9 +94,12 @@ impl BasicTickStore for InMemoryStepBacktestingStore {
 
     fn create_tick(
         &mut self,
+        id: TickId,
         properties: Self::TickProperties,
     ) -> Result<Item<TickId, Self::TickProperties>> {
-        let id = xid::new().to_string();
+        if self.ticks.contains_key(&id) {
+            bail!("a tick with an id {} already exists", id);
+        }
 
         let new_tick = Item {
             id: id.clone(),
@@ -180,9 +186,12 @@ impl BasicCandleStore for InMemoryStepBacktestingStore {
 
     fn create_candle(
         &mut self,
+        id: CandleId,
         properties: Self::CandleProperties,
     ) -> Result<Item<CandleId, Self::CandleProperties>> {
-        let id = xid::new().to_string();
+        if self.candles.contains_key(&id) {
+            bail!("a candle with an id {} already exists", id);
+        }
 
         let new_candle = Item {
             id: id.clone(),
@@ -326,10 +335,15 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
 
     fn create_angle(
         &mut self,
+        id: AngleId,
         props: Self::AngleProperties,
         candle_id: CandleId,
     ) -> Result<Item<AngleId, FullAngleProperties<Self::AngleProperties, Self::CandleProperties>>>
     {
+        if self.angles.contains_key(&id) {
+            bail!("an angle with an id {} already exists", id);
+        }
+
         let candle = match self.candles.get_mut(&candle_id) {
             None => bail!("a candle with an id {} doesn't exist", candle_id),
             Some(candle) => {
@@ -340,8 +354,6 @@ impl StepAngleStore for InMemoryStepBacktestingStore {
                 }
             }
         };
-
-        let id = xid::new().to_string();
 
         let new_angle = Item {
             id: id.clone(),
@@ -657,9 +669,22 @@ impl BasicOrderStore for InMemoryStepBacktestingStore {
 
     fn create_order(
         &mut self,
+        id: OrderId,
         properties: Self::OrderProperties,
     ) -> Result<Item<OrderId, Self::OrderProperties>> {
-        let id = xid::new().to_string();
+        if self.orders.contains_key(&id) {
+            bail!("an order with an id {} already exists", id);
+        }
+
+        if !self
+            .working_levels
+            .contains_key(&properties.working_level_id)
+        {
+            bail!(
+                "a working level with an id {} doesn't exist",
+                properties.working_level_id
+            );
+        }
 
         let new_order = Item {
             id: id.clone(),
@@ -667,6 +692,13 @@ impl BasicOrderStore for InMemoryStepBacktestingStore {
         };
 
         self.orders.insert(id.clone(), new_order.clone());
+
+        let set_of_orders = self
+            .working_level_chain_of_orders
+            .entry(new_order.props.working_level_id.clone())
+            .or_default();
+
+        set_of_orders.insert(id.clone());
 
         Ok(new_order)
     }
@@ -698,9 +730,12 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
 
     fn create_working_level(
         &mut self,
+        id: WLId,
         properties: Self::WorkingLevelProperties,
     ) -> Result<Item<WLId, Self::WorkingLevelProperties>> {
-        let id = xid::new().to_string();
+        if self.working_levels.contains_key(&id) {
+            bail!("a working level with an id {} already exists", id);
+        }
 
         let new_working_level = Item {
             id: id.clone(),
@@ -777,6 +812,10 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             .collect::<Result<_, _>>()
     }
 
+    fn get_all_working_levels(&self) -> Result<Vec<Item<WLId, Self::WorkingLevelProperties>>> {
+        Ok(self.working_levels.values().cloned().collect())
+    }
+
     fn get_working_level_status(&self, id: &str) -> Result<Option<WLStatus>> {
         if self.created_working_levels.contains(id) {
             Ok(Some(WLStatus::Created))
@@ -804,12 +843,11 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
             CorridorType::Big => &mut self.working_level_big_corridors,
         };
 
-        for candle in working_level_corridors
-            .get(working_level_id)
-            .unwrap()
-            .iter()
-        {
-            self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
+        let corridor_candles = working_level_corridors.get(working_level_id);
+        if let Some(corridor_candles) = corridor_candles {
+            for candle in corridor_candles.iter() {
+                self.candles.get_mut(candle).unwrap().props.ref_count -= 1;
+            }
         }
 
         working_level_corridors.remove(working_level_id);
@@ -940,13 +978,17 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
 
         let orders = self.get_working_level_chain_of_orders(working_level_id)?;
         for order in orders {
-            self.orders
+            let take_profit = &mut self
+                .orders
                 .get_mut(&order.id)
                 .unwrap()
                 .props
                 .base
                 .prices
-                .take_profit += factor * distance_to_move_take_profits;
+                .take_profit;
+
+            *take_profit += factor * distance_to_move_take_profits;
+            *take_profit = take_profit.round_dp(CANDLE_PRICE_DECIMAL_PLACES);
         }
 
         Ok(())
@@ -956,35 +998,6 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
         Ok(self
             .working_levels_with_moved_take_profits
             .contains(working_level_id))
-    }
-
-    fn add_order_to_working_level_chain_of_orders(
-        &mut self,
-        working_level_id: &str,
-        order_id: OrderId,
-    ) -> Result<()> {
-        if !self.working_levels.contains_key(working_level_id) {
-            bail!(
-                "a working level with an id {} doesn't exist",
-                working_level_id
-            );
-        }
-
-        if !self.orders.contains_key(&order_id) {
-            bail!("an order with an id {} doesn't exist", order_id);
-        }
-
-        let set_of_orders = self
-            .working_level_chain_of_orders
-            .entry(working_level_id.to_string())
-            .or_default();
-
-        let did_not_exist = set_of_orders.insert(order_id.clone());
-        if !did_not_exist {
-            bail!("an order with an id {} already exists in a chain of orders of a working level with an id {}", order_id, working_level_id);
-        }
-
-        Ok(())
     }
 
     fn get_working_level_chain_of_orders(

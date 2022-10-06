@@ -8,7 +8,7 @@ use base::entities::BasicTickProperties;
 
 use crate::HistoricalData;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 struct Candle {
     index: usize,
     time: NaiveDateTime,
@@ -34,12 +34,13 @@ fn find_tick_with_time<'a>(
 fn find_candle_around_tick<'a>(
     first_tick_time: NaiveDateTime,
     candle_iterator: impl Iterator<Item = &'a Option<BasicCandleProperties>>,
+    appropriate_candle_time: impl Fn(NaiveDateTime, NaiveDateTime) -> bool,
 ) -> Option<Candle> {
     candle_iterator
         .enumerate()
         .find_map(|(i, candle)| match candle.as_ref() {
             Some(candle) => {
-                if candle.time >= first_tick_time {
+                if appropriate_candle_time(candle.time, first_tick_time) {
                     Some(Candle {
                         index: i,
                         time: candle.time,
@@ -154,30 +155,58 @@ fn find_edge_intersection(
     historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
     edge: Edge,
 ) -> Result<TickCandle> {
-    let first_candle_time = historical_data
-        .candles
-        .first()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .time;
-    let first_tick_time = historical_data
-        .ticks
-        .first()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .time;
+    let first_candle_time = match edge {
+        Edge::Front => {
+            historical_data
+                .candles
+                .first()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .time
+        }
+        Edge::Back => {
+            historical_data
+                .candles
+                .last()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .time
+        }
+    };
 
-    return match first_tick_time.cmp(&first_candle_time) {
+    let first_tick_time = match edge {
+        Edge::Front => {
+            historical_data
+                .ticks
+                .first()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .time
+        }
+        Edge::Back => historical_data.ticks.last().unwrap().as_ref().unwrap().time,
+    };
+
+    let first_items_comparison = match edge {
+        Edge::Front => first_tick_time.cmp(&first_candle_time),
+        Edge::Back => first_candle_time.cmp(&first_tick_time),
+    };
+
+    return match first_items_comparison {
         Ordering::Greater => {
             let candle_around_first_tick = match edge {
-                Edge::Front => {
-                    find_candle_around_tick(first_tick_time, historical_data.candles.iter())
-                }
-                Edge::Back => {
-                    find_candle_around_tick(first_tick_time, historical_data.candles.iter().rev())
-                }
+                Edge::Front => find_candle_around_tick(
+                    first_tick_time,
+                    historical_data.candles.iter(),
+                    |candle_time, tick_time| candle_time >= tick_time,
+                ),
+                Edge::Back => find_candle_around_tick(
+                    first_tick_time,
+                    historical_data.candles.iter().rev(),
+                    |candle_time, tick_time| candle_time <= tick_time,
+                ),
             }
             .context("no candle around a first tick was found")?;
 

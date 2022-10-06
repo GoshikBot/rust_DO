@@ -4,7 +4,7 @@ use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::corridor::BasicCorridorUtils;
 use base::entities::candle::{BasicCandleProperties, CandlePrice};
-use base::entities::{BasicTickProperties, StrategyTimeframes};
+use base::entities::{BasicTickProperties, StrategyTimeframes, SIGNIFICANT_DECIMAL_PLACES};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use base::stores::candle_store::BasicCandleStore;
@@ -59,15 +59,14 @@ fn update_number_of_iterations_to_next_candle(
 }
 
 fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
-    (balances.real - balances.initial) / balances.initial * dec!(100)
+    ((balances.real - balances.initial) / balances.initial * dec!(100))
+        .round_dp(SIGNIFICANT_DECIMAL_PLACES)
 }
 
 pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
-
     T: StepBacktestingMainStore,
-
     Hel: Helpers,
     LevUt: LevelUtils,
     LevCon: LevelConditions,
@@ -81,7 +80,7 @@ where
 {
     pub timeframes: StrategyTimeframes,
     pub stores: &'a mut StepBacktestingStores<T>,
-    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
+    pub utils: &'a StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>,
     pub params: &'a P,
 }
 
@@ -108,9 +107,7 @@ pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     L: TradingLimiter,
-
     T: StepBacktestingMainStore,
-
     Hel: Helpers,
     LevUt: LevelUtils,
     LevCon: LevelConditions,
@@ -121,13 +118,12 @@ where
     D: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
-
     I: Fn(
         BasicTickProperties,
         Option<StepBacktestingCandleProperties>,
         StrategySignals,
         &mut StepBacktestingStores<T>,
-        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
+        &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>,
         &P,
     ) -> Result<()>,
 {
@@ -186,7 +182,7 @@ where
                 },
                 StrategySignals {
                     no_trading_mode,
-                    cancel_all_orders,
+                    close_all_orders: cancel_all_orders,
                 },
                 strategy_config.stores,
                 strategy_config.utils,
@@ -373,7 +369,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn update_max_crossing_value_of_active_levels<T>(
+        fn update_max_crossing_value_of_working_levels<T>(
             working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
             current_tick_price: TickPrice,
         ) -> Result<()>
@@ -600,21 +596,46 @@ mod tests {
             unimplemented!()
         }
 
-        fn update_orders_backtesting<T, C, R, W, P>(
+        fn update_orders_backtesting<T, C, R, W, P, A>(
             current_tick: &BasicTickProperties,
             current_candle: &StepBacktestingCandleProperties,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
             stores: UpdateOrdersBacktestingStores<W>,
-            utils: UpdateOrdersBacktestingUtils<T, C, R, W, P>,
+            utils: UpdateOrdersBacktestingUtils<T, C, R, W, P, A>,
             no_trading_mode: bool,
         ) -> Result<()>
         where
             W: BasicOrderStore<OrderProperties = StepOrderProperties>
-                + StepWorkingLevelStore<WorkingLevelProperties = BacktestingWLProperties>,
+                + StepWorkingLevelStore<
+                    WorkingLevelProperties = BacktestingWLProperties,
+                    OrderProperties = StepOrderProperties,
+                >,
             T: TradingEngine,
             C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
             R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
             P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
+            A: Fn(&[StepOrderProperties]) -> bool,
+        {
+            unimplemented!()
+        }
+
+        fn close_all_orders_backtesting<S>(
+            current_tick_price: TickPrice,
+            current_candle_chart_index: ChartIndex,
+            store: &mut S,
+            config: &mut StepBacktestingConfig,
+            trading_engine: &impl TradingEngine,
+            add_entity_to_chart_traces: &impl Fn(
+                ChartTraceEntity,
+                &mut StepBacktestingChartTraces,
+                ChartIndex,
+            ),
+        ) -> Result<()>
+        where
+            S: StepWorkingLevelStore<
+                    WorkingLevelProperties = BacktestingWLProperties,
+                    OrderProperties = StepOrderProperties,
+                > + BasicOrderStore<OrderProperties = StepOrderProperties>,
         {
             unimplemented!()
         }
@@ -736,7 +757,7 @@ mod tests {
         }
 
         fn update_angles<A, C>(
-            new_angle: FullAngleProperties<A, C>,
+            new_angle: Item<AngleId, FullAngleProperties<A, C>>,
             general_corridor: &[Item<CandleId, C>],
             angle_store: &mut impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
         ) -> Result<()>
@@ -1051,8 +1072,8 @@ mod tests {
             _,
         > = StepBacktestingUtils::new(
             add_entity_to_chart_traces,
-            TestTradingEngineImpl::default(),
             exclude_weekend_and_holidays,
+            TestTradingEngineImpl::default(),
         );
 
         let strategy_config = StepStrategyRunningConfig {
@@ -1070,12 +1091,11 @@ mod tests {
             new_candle_props: Option<StepBacktestingCandleProperties>,
             signals: StrategySignals,
             stores: &mut StepBacktestingStores<T>,
-            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>,
+            utils: &StepBacktestingUtils<Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         ) -> Result<()>
         where
             T: StepBacktestingMainStore,
-
             Hel: Helpers,
             LevUt: LevelUtils,
             LevCon: LevelConditions,
@@ -1087,7 +1107,7 @@ mod tests {
             E: TradingEngine,
             X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         {
-            if signals.cancel_all_orders {
+            if signals.close_all_orders {
                 stores.config.trading_engine.balances.real -= dec!(50.0);
             }
 
