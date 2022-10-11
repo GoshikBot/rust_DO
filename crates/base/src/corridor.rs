@@ -4,7 +4,7 @@ use rust_decimal_macros::dec;
 use crate::entities::candle::{BasicCandleProperties, CandleId};
 use crate::entities::Item;
 use crate::helpers::points_to_price;
-use crate::params::ParamValue;
+use crate::params::ParamOutputValue;
 
 #[derive(Debug, Copy, Clone)]
 enum Edge {
@@ -24,7 +24,7 @@ pub trait BasicCorridorUtils {
     fn candle_is_in_corridor<C>(
         candle: &C,
         leading_candle: &C,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
     ) -> bool
     where
         C: AsRef<BasicCandleProperties>;
@@ -35,9 +35,9 @@ pub trait BasicCorridorUtils {
     fn crop_corridor_to_closest_leader<C>(
         corridor: &[Item<CandleId, C>],
         new_candle: &Item<CandleId, C>,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
         candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
-        is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+        is_in_corridor: &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>
     where
         C: AsRef<BasicCandleProperties> + Clone;
@@ -76,7 +76,7 @@ impl BasicCorridorUtils for BasicCorridorUtilsImpl {
     fn candle_is_in_corridor<C>(
         candle: &C,
         leading_candle: &C,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
     ) -> bool
     where
         C: AsRef<BasicCandleProperties>,
@@ -93,9 +93,9 @@ impl BasicCorridorUtils for BasicCorridorUtilsImpl {
     fn crop_corridor_to_closest_leader<C>(
         corridor: &[Item<CandleId, C>],
         new_candle: &Item<CandleId, C>,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
         candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
-        is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+        is_in_corridor: &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>
     where
         C: AsRef<BasicCandleProperties> + Clone,
@@ -344,7 +344,7 @@ mod tests {
         let is_in_corridor =
             |_candle: &BasicCandleProperties,
              _leading_candle: &BasicCandleProperties,
-             _max_distance_from_corridor_leading_candle_pins_pct: ParamValue| {
+             _max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue| {
                 *number_of_calls_to_is_in_corridor.borrow_mut() += 1;
                 *number_of_calls_to_is_in_corridor.borrow() > 1
             };

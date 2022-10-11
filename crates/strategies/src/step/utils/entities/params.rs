@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 
+#[derive(Debug, Copy, Clone)]
 pub enum StepPointParam {
     MaxDistanceFromCorridorLeadingCandlePinsPct,
     AmountOfOrders,
@@ -43,6 +44,7 @@ impl Display for StepPointParam {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum StepRatioParam {
     MinDistanceBetweenNewAndCurrentMaxMinAngles,
     MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear,

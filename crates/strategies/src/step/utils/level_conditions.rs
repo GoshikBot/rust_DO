@@ -13,14 +13,14 @@ use base::entities::order::{BasicOrderProperties, OrderPrice, OrderStatus, Order
 use base::entities::tick::{TickPrice, TickTime};
 use base::entities::{Item, Level, DEFAULT_HOLIDAYS};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
-use base::params::{ParamValue, StrategyParams};
+use base::params::{ParamOutputValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp;
 use std::fmt::Debug;
 
-pub type MinAmountOfCandles = ParamValue;
+pub type MinAmountOfCandles = ParamOutputValue;
 
 pub trait LevelConditions {
     /// Checks whether the level exceeds the amount of candles in the corridor
@@ -41,13 +41,13 @@ pub trait LevelConditions {
     fn level_expired_by_distance(
         level_price: WLPrice,
         current_tick_price: TickPrice,
-        distance_from_level_for_its_deletion: ParamValue,
+        distance_from_level_for_its_deletion: ParamOutputValue,
     ) -> bool;
 
     fn level_expired_by_time(
         level_time: LevelTime,
         current_tick_time: TickTime,
-        level_expiration: ParamValue,
+        level_expiration: ParamOutputValue,
         exclude_weekend_and_holidays: &impl Fn(
             NaiveDateTime,
             NaiveDateTime,
@@ -58,7 +58,7 @@ pub trait LevelConditions {
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
         level: &impl AsRef<BasicWLProperties>,
         max_crossing_value: Option<WLMaxCrossingValue>,
-        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
         current_tick_price: TickPrice,
     ) -> bool;
 
@@ -75,7 +75,7 @@ pub trait LevelConditions {
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         general_corridor: &[Item<CandleId, C>],
         angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-        min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+        min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
     ) -> Result<bool>
     where
         A: AsRef<BasicAngleProperties> + Debug,
@@ -103,7 +103,7 @@ pub trait LevelConditions {
     fn working_level_is_close_to_another_one<A, C, W>(
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-        distance_defining_nearby_levels_of_the_same_type: ParamValue,
+        distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
     ) -> Result<bool>
     where
         A: AsRef<BasicAngleProperties> + Debug,
@@ -124,7 +124,7 @@ impl LevelConditions for LevelConditionsImpl {
         let corridor =
             working_level_store.get_candles_of_working_level_corridor(level_id, corridor_type)?;
 
-        Ok(ParamValue::from(corridor.len()) >= min_amount_of_candles)
+        Ok(ParamOutputValue::from(corridor.len()) >= min_amount_of_candles)
     }
 
     fn price_is_beyond_stop_loss(
@@ -139,7 +139,7 @@ impl LevelConditions for LevelConditionsImpl {
     fn level_expired_by_distance(
         level_price: WLPrice,
         current_tick_price: TickPrice,
-        distance_from_level_for_its_deletion: ParamValue,
+        distance_from_level_for_its_deletion: ParamOutputValue,
     ) -> bool {
         log::debug!(
             "level_expired_by_distance: level price is {}, current tick price is {}, \
@@ -156,7 +156,7 @@ impl LevelConditions for LevelConditionsImpl {
     fn level_expired_by_time(
         level_time: LevelTime,
         current_tick_time: TickTime,
-        level_expiration: ParamValue,
+        level_expiration: ParamOutputValue,
         exclude_weekend_and_holidays: &impl Fn(
             NaiveDateTime,
             NaiveDateTime,
@@ -181,7 +181,7 @@ impl LevelConditions for LevelConditionsImpl {
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
         level: &impl AsRef<BasicWLProperties>,
         max_crossing_value: Option<WLMaxCrossingValue>,
-        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
         current_tick_price: TickPrice,
     ) -> bool {
         let level = level.as_ref();
@@ -233,13 +233,13 @@ impl LevelConditions for LevelConditionsImpl {
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         general_corridor: &[Item<CandleId, C>],
         angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-        min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+        min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
     ) -> Result<bool>
     where
         A: AsRef<BasicAngleProperties> + Debug,
         C: AsRef<StepCandleProperties> + Debug + PartialEq,
     {
-        if ParamValue::from(general_corridor.len())
+        if ParamOutputValue::from(general_corridor.len())
             >= min_amount_of_candles_in_corridor_defining_edge_bargaining
         {
             log::debug!(
@@ -644,7 +644,7 @@ impl LevelConditions for LevelConditionsImpl {
     fn working_level_is_close_to_another_one<A, C, W>(
         crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
         working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-        distance_defining_nearby_levels_of_the_same_type: ParamValue,
+        distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
     ) -> Result<bool>
     where
         A: AsRef<BasicAngleProperties> + Debug,
@@ -2129,7 +2129,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, name: Self::PointParam) -> ParamOutputValue {
             unimplemented!()
         }
 
@@ -2137,7 +2137,7 @@ mod tests {
             &self,
             name: Self::RatioParam,
             volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             match name {
                 StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles => dec!(100),
                 StepRatioParam::MinBreakDistance => dec!(30),

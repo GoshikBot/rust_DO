@@ -59,6 +59,7 @@ pub enum Timeframe {
     ThirtyMin = 30,
     FifteenMin = 15,
     OneMin = 1,
+    FiveMin = 5,
 }
 
 impl FromStr for Timeframe {
@@ -67,6 +68,7 @@ impl FromStr for Timeframe {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match input {
             "1m" => Ok(Self::OneMin),
+            "5m" => Ok(Self::FiveMin),
             "15m" => Ok(Self::FifteenMin),
             "30m" => Ok(Self::ThirtyMin),
             "1h" => Ok(Self::Hour),
@@ -82,6 +84,7 @@ impl Display for Timeframe {
             Timeframe::ThirtyMin => write!(f, "30m"),
             Timeframe::FifteenMin => write!(f, "15m"),
             Timeframe::OneMin => write!(f, "1m"),
+            Timeframe::FiveMin => write!(f, "5m"),
         }
     }
 }

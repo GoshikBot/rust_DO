@@ -1,4 +1,4 @@
-use base::params::{StrategyCsvFileParams, StrategyCsvParam, StrategyParams};
+use base::params::{StrategyMultiSourcingParams, StrategyParam, StrategyParams};
 use csv::Writer;
 use rust_decimal_macros::dec;
 use std::fmt::{Display, Formatter};
@@ -32,15 +32,15 @@ impl Display for RatioParam {
 }
 
 #[test]
-fn get_point_and_ratio_settings_existing_settings_successfully() {
+fn should_get_params_from_csv_file_successfully() {
     let dir = tempfile::tempdir().unwrap();
 
-    let settings = vec![
-        StrategyCsvParam {
+    let params = vec![
+        StrategyParam {
             name: String::from("max_distance_from_corridor_leading_candle_pins_pct"),
             value: String::from("12.5"),
         },
-        StrategyCsvParam {
+        StrategyParam {
             name: String::from("min_distance_between_max_min_angles"),
             value: String::from("4.3k"),
         },
@@ -49,21 +49,48 @@ fn get_point_and_ratio_settings_existing_settings_successfully() {
     let settings_file_path = dir.path().join("settings.csv");
 
     let mut writer = Writer::from_path(&settings_file_path).unwrap();
-    for setting in settings {
+    for setting in params {
         writer.serialize(setting).unwrap();
     }
     writer.flush().unwrap();
 
-    let settings: StrategyCsvFileParams<PointParam, RatioParam> =
-        StrategyCsvFileParams::new(&settings_file_path).unwrap();
+    let params: StrategyMultiSourcingParams<PointParam, RatioParam> =
+        StrategyMultiSourcingParams::from_csv(&settings_file_path).unwrap();
 
     assert_eq!(
-        settings.get_point_param_value(PointParam::MaxDistanceFromCorridorLeadingCandlePinsPct),
+        params.get_point_param_value(PointParam::MaxDistanceFromCorridorLeadingCandlePinsPct),
         dec!(12.5)
     );
 
     assert_eq!(
-        settings.get_ratio_param_value(RatioParam::MinDistanceBetweenMaxMinAngles, 10),
+        params.get_ratio_param_value(RatioParam::MinDistanceBetweenMaxMinAngles, 10),
+        dec!(43.0)
+    )
+}
+
+#[test]
+fn should_get_params_from_vec_successfully() {
+    let params = vec![
+        StrategyParam {
+            name: String::from("max_distance_from_corridor_leading_candle_pins_pct"),
+            value: String::from("12.5"),
+        },
+        StrategyParam {
+            name: String::from("min_distance_between_max_min_angles"),
+            value: String::from("4.3k"),
+        },
+    ];
+
+    let params: StrategyMultiSourcingParams<PointParam, RatioParam> =
+        StrategyMultiSourcingParams::from_vec(params).unwrap();
+
+    assert_eq!(
+        params.get_point_param_value(PointParam::MaxDistanceFromCorridorLeadingCandlePinsPct),
+        dec!(12.5)
+    );
+
+    assert_eq!(
+        params.get_ratio_param_value(RatioParam::MinDistanceBetweenMaxMinAngles, 10),
         dec!(43.0)
     )
 }

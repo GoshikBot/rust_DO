@@ -8,7 +8,7 @@ use anyhow::Result;
 use base::entities::candle::CandleId;
 use base::entities::{Item, Level};
 use base::helpers::price_to_points;
-use base::params::ParamValue;
+use base::params::ParamOutputValue;
 use std::cmp;
 use std::cmp::Ordering;
 use std::fmt::Debug;
@@ -34,8 +34,8 @@ pub trait AngleUtils {
         previous_candle: &Item<CandleId, C>,
         diffs: ExistingDiffs,
         angles: MaxMinAngles<A, C>,
-        min_distance_between_new_and_current_max_and_min_angles: ParamValue,
-        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamValue,
+        min_distance_between_new_and_current_max_and_min_angles: ParamOutputValue,
+        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamOutputValue,
     ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
     where
         C: AsRef<StepCandleProperties> + Debug + Clone,
@@ -129,8 +129,8 @@ impl AngleUtilsImpl {
         previous_candle: &Item<CandleId, C>,
         diffs: ExistingDiffs,
         angles: MaxMinAngles<A, C>,
-        min_distance_between_new_and_current_angles: ParamValue,
-        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamValue,
+        min_distance_between_new_and_current_angles: ParamOutputValue,
+        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamOutputValue,
     ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
     where
         C: AsRef<StepCandleProperties> + Debug + Clone,
@@ -489,8 +489,8 @@ impl AngleUtils for AngleUtilsImpl {
         previous_candle: &Item<CandleId, C>,
         diffs: ExistingDiffs,
         angles: MaxMinAngles<A, C>,
-        min_distance_between_new_and_current_angles: ParamValue,
-        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamValue,
+        min_distance_between_new_and_current_angles: ParamOutputValue,
+        min_distance_between_current_max_and_min_angles_for_new_inner_angle_to_appear: ParamOutputValue,
     ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
     where
         C: AsRef<StepCandleProperties> + Debug + Clone,

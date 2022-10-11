@@ -78,9 +78,9 @@ checksum = "983cd8b9d4b02a6dc6ffa557262eb5858a27a0038ffffe21a0f133eaa819a164"
 
 [[package]]
 name = "argmin"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b92d550a445ac6bfbe0cd4c5ce368600ac28fc4f5b712f105a8d18821c99a5bf"
+checksum = "5698c8cd3510117a4e6b96749a8061ba7dce1a19578ce4ecdb12dd36d94a7f8d"
 dependencies = [
  "anyhow",
  "argmin-math",
@@ -101,9 +101,9 @@ dependencies = [
 
 [[package]]
 name = "argmin-math"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "895db29c12aeeac001553325dc7325b27441dd10b448909e61d38f7cbeec9b89"
+checksum = "75f2b0dada81340718682df780c9a696b090b6ef7e83c3dcc770af6de9302995"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -2077,7 +2077,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with_macros",
- "time 0.3.14",
+ "time 0.3.15",
 ]
 
 [[package]]
@@ -2182,7 +2182,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slog",
- "time 0.3.14",
+ "time 0.3.15",
 ]
 
 [[package]]
@@ -2195,14 +2195,14 @@ dependencies = [
  "slog",
  "term",
  "thread_local",
- "time 0.3.14",
+ "time 0.3.15",
 ]
 
 [[package]]
 name = "smallvec"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd0db749597d91ff862fd1d55ea87f7855a744a8425a64695b6fca237d1dad1"
+checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 
 [[package]]
 name = "snap"
@@ -2249,6 +2249,17 @@ dependencies = [
  "argmin",
  "argmin-math",
  "argmin_testfunctions",
+ "backtesting",
+ "base",
+ "chrono",
+ "dotenv",
+ "rand",
+ "rand_xoshiro",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "strategies",
+ "strategy_runners",
+ "trading_apis",
 ]
 
 [[package]]
@@ -2424,9 +2435,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.14"
+version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c3f9a28b618c3a6b9251b6908e9c99e04b9e5c02e6581ccbb67d59c34ef7f9b"
+checksum = "d634a985c4d4238ec39cacaed2e7ae552fbd3c476b552c1deac3021b7d7eaf0c"
 dependencies = [
  "itoa 1.0.3",
  "libc",

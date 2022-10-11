@@ -582,7 +582,7 @@ mod tests {
     use base::entities::order::{OrderId, OrderPrice};
     use base::entities::tick::{TickPrice, TickTime};
     use base::helpers::{Holiday, NumberOfDaysToExclude};
-    use base::params::ParamValue;
+    use base::params::ParamOutputValue;
     use chrono::{NaiveDateTime, Utc};
     use rust_decimal_macros::dec;
     use std::cell::RefCell;
@@ -604,7 +604,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, name: Self::PointParam) -> ParamOutputValue {
             match name {
                 StepPointParam::MaxDistanceFromCorridorLeadingCandlePinsPct => unreachable!(),
                 StepPointParam::AmountOfOrders => dec!(5.0),
@@ -620,7 +620,7 @@ mod tests {
             &self,
             name: Self::RatioParam,
             volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             let value = match name {
                 StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles => unreachable!(),
                 StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear => unreachable!(),
@@ -784,7 +784,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamOutputValue {
             dec!(1)
         }
 
@@ -792,7 +792,7 @@ mod tests {
             &self,
             _name: Self::RatioParam,
             _volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             dec!(1)
         }
     }

@@ -9,7 +9,7 @@ use base::entities::candle::{BasicCandleProperties, CandleId};
 use base::entities::order::{BasicOrderProperties, OrderType};
 use base::entities::{CandleType, Item};
 use base::helpers::{points_to_price, price_to_points};
-use base::params::{ParamValue, StrategyParams};
+use base::params::{ParamOutputValue, StrategyParams};
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -33,13 +33,13 @@ pub trait Corridors {
 
         C: AsRef<BasicCandleProperties> + Debug,
         L: Fn(&C) -> bool,
-        N: Fn(&C, &C, ParamValue) -> bool,
+        N: Fn(&C, &C, ParamOutputValue) -> bool,
         R: Fn(
             &[Item<CandleId, C>],
             &Item<CandleId, C>,
-            ParamValue,
+            ParamOutputValue,
             &dyn Fn(&C) -> bool,
-            &dyn Fn(&C, &C, ParamValue) -> bool,
+            &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>,
 
         A: Fn(&[O]) -> bool;
@@ -50,18 +50,18 @@ pub trait Corridors {
         current_candle: &Item<CandleId, C>,
         candle_store: &mut impl StepCandleStore<CandleProperties = C>,
         utils: UpdateGeneralCorridorUtils<C, L, N, R>,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
     ) -> Result<()>
     where
         C: AsRef<BasicCandleProperties> + Debug,
         L: Fn(&C) -> bool,
-        N: Fn(&C, &C, ParamValue) -> bool,
+        N: Fn(&C, &C, ParamOutputValue) -> bool,
         R: Fn(
             &[Item<CandleId, C>],
             &Item<CandleId, C>,
-            ParamValue,
+            ParamOutputValue,
             &dyn Fn(&C) -> bool,
-            &dyn Fn(&C, &C, ParamValue) -> bool,
+            &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>;
 }
 
@@ -69,13 +69,13 @@ pub struct UpdateGeneralCorridorUtils<'a, C, L, N, R>
 where
     C: AsRef<BasicCandleProperties> + Debug,
     L: Fn(&C) -> bool,
-    N: Fn(&C, &C, ParamValue) -> bool,
+    N: Fn(&C, &C, ParamOutputValue) -> bool,
     R: Fn(
         &[Item<CandleId, C>],
         &Item<CandleId, C>,
-        ParamValue,
+        ParamOutputValue,
         &dyn Fn(&C) -> bool,
-        &dyn Fn(&C, &C, ParamValue) -> bool,
+        &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>,
 {
     pub candle_can_be_corridor_leader: &'a L,
@@ -88,13 +88,13 @@ impl<'a, C, L, N, R> UpdateGeneralCorridorUtils<'a, C, L, N, R>
 where
     C: AsRef<BasicCandleProperties> + Debug,
     L: Fn(&C) -> bool,
-    N: Fn(&C, &C, ParamValue) -> bool,
+    N: Fn(&C, &C, ParamOutputValue) -> bool,
     R: Fn(
         &[Item<CandleId, C>],
         &Item<CandleId, C>,
-        ParamValue,
+        ParamOutputValue,
         &dyn Fn(&C) -> bool,
-        &dyn Fn(&C, &C, ParamValue) -> bool,
+        &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>,
 {
     pub fn new(
@@ -131,13 +131,13 @@ impl CorridorsImpl {
         C: AsRef<BasicCandleProperties> + Debug,
 
         L: Fn(&C) -> bool,
-        N: Fn(&C, &C, ParamValue) -> bool,
+        N: Fn(&C, &C, ParamOutputValue) -> bool,
         R: Fn(
             &[Item<CandleId, C>],
             &Item<CandleId, C>,
-            ParamValue,
+            ParamOutputValue,
             &dyn Fn(&C) -> bool,
-            &dyn Fn(&C, &C, ParamValue) -> bool,
+            &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>,
     {
         let level = Item {
@@ -208,7 +208,8 @@ impl CorridorsImpl {
             )?;
         } else if (distance_from_candle_to_level
             <= distance_from_level_to_corridor_before_activation_crossing_of_level
-            && ParamValue::from(corridor_candles.len()) < min_amount_of_candles_in_small_corridor)
+            && ParamOutputValue::from(corridor_candles.len())
+                < min_amount_of_candles_in_small_corridor)
             || distance_from_candle_to_level
                 > distance_from_level_to_corridor_before_activation_crossing_of_level
         {
@@ -275,7 +276,7 @@ impl CorridorsImpl {
         level: &Item<WLId, W>,
         current_candle: &Item<CandleId, C>,
         working_level_store: &mut impl StepWorkingLevelStore<CandleProperties = C>,
-        range_of_big_corridor_near_level: ParamValue,
+        range_of_big_corridor_near_level: ParamOutputValue,
     ) -> Result<()>
     where
         W: AsRef<BasicWLProperties> + Debug,
@@ -353,13 +354,13 @@ where
     O: AsRef<BasicOrderProperties>,
 
     L: Fn(&C) -> bool,
-    N: Fn(&C, &C, ParamValue) -> bool,
+    N: Fn(&C, &C, ParamOutputValue) -> bool,
     R: Fn(
         &[Item<CandleId, C>],
         &Item<CandleId, C>,
-        ParamValue,
+        ParamOutputValue,
         &dyn Fn(&C) -> bool,
-        &dyn Fn(&C, &C, ParamValue) -> bool,
+        &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>,
 
     A: Fn(&[O]) -> bool,
@@ -374,14 +375,14 @@ where
     C: AsRef<BasicCandleProperties> + Debug,
     O: AsRef<BasicOrderProperties>,
 
-    N: Fn(&C, &C, ParamValue) -> bool,
+    N: Fn(&C, &C, ParamOutputValue) -> bool,
     L: Fn(&C) -> bool,
     R: Fn(
         &[Item<CandleId, C>],
         &Item<CandleId, C>,
-        ParamValue,
+        ParamOutputValue,
         &dyn Fn(&C) -> bool,
-        &dyn Fn(&C, &C, ParamValue) -> bool,
+        &dyn Fn(&C, &C, ParamOutputValue) -> bool,
     ) -> Option<Vec<Item<CandleId, C>>>,
 
     A: Fn(&[O]) -> bool,
@@ -415,13 +416,13 @@ impl Corridors for CorridorsImpl {
 
         C: AsRef<BasicCandleProperties> + Debug,
         L: Fn(&C) -> bool,
-        N: Fn(&C, &C, ParamValue) -> bool,
+        N: Fn(&C, &C, ParamOutputValue) -> bool,
         R: Fn(
             &[Item<CandleId, C>],
             &Item<CandleId, C>,
-            ParamValue,
+            ParamOutputValue,
             &dyn Fn(&C) -> bool,
-            &dyn Fn(&C, &C, ParamValue) -> bool,
+            &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>,
 
         A: Fn(&[O]) -> bool,
@@ -460,18 +461,18 @@ impl Corridors for CorridorsImpl {
         current_candle: &Item<CandleId, C>,
         candle_store: &mut impl StepCandleStore<CandleProperties = C>,
         utils: UpdateGeneralCorridorUtils<C, L, N, R>,
-        max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+        max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
     ) -> Result<()>
     where
         C: AsRef<BasicCandleProperties> + Debug,
         L: Fn(&C) -> bool,
-        N: Fn(&C, &C, ParamValue) -> bool,
+        N: Fn(&C, &C, ParamOutputValue) -> bool,
         R: Fn(
             &[Item<CandleId, C>],
             &Item<CandleId, C>,
-            ParamValue,
+            ParamOutputValue,
             &dyn Fn(&C) -> bool,
-            &dyn Fn(&C, &C, ParamValue) -> bool,
+            &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>,
     {
         let corridor_candles = candle_store.get_candles_of_general_corridor()?;
@@ -566,7 +567,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, name: Self::PointParam) -> ParamOutputValue {
             match name {
                 StepPointParam::MaxDistanceFromCorridorLeadingCandlePinsPct => dec!(20),
                 StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel => dec!(3),
@@ -578,7 +579,7 @@ mod tests {
             &self,
             name: Self::RatioParam,
             _volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             match name {
                 StepRatioParam::RangeOfBigCorridorNearLevel => dec!(200),
                 StepRatioParam::DistanceFromLevelToCorridorBeforeActivationCrossingOfLevel => {
@@ -620,7 +621,6 @@ mod tests {
     // 10. sell level && green candle && candle is NOT in the range of the corridor
     // 11. sell level && neutral candle && candle is NOT in the range of the corridor
     // 12. sell level && red candle && candle is NOT in the range of the corridor
-    //
 
     #[test]
     #[allow(non_snake_case)]
@@ -665,16 +665,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -752,16 +752,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -850,16 +850,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| true;
+                                     _: ParamOutputValue| true;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -958,16 +958,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1066,16 +1066,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| true;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1174,16 +1174,16 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1274,7 +1274,7 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let mut new_corridor = Vec::new();
 
@@ -1288,12 +1288,12 @@ mod tests {
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| Some(new_corridor.clone());
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1384,7 +1384,7 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let mut new_corridor = Vec::new();
 
@@ -1398,12 +1398,12 @@ mod tests {
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| Some(new_corridor.clone());
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1494,17 +1494,17 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1595,17 +1595,17 @@ mod tests {
         let candle_can_be_corridor_leader = |_: &StepBacktestingCandleProperties| false;
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         let level_has_no_active_orders = |_: &[StepOrderProperties]| true;
@@ -1663,17 +1663,17 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         CorridorsImpl::update_general_corridor(
@@ -1712,17 +1712,17 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         CorridorsImpl::update_general_corridor(
@@ -1765,17 +1765,17 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| true;
+                                     _: ParamOutputValue| true;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         CorridorsImpl::update_general_corridor(
@@ -1821,7 +1821,7 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let mut new_cropped_corridor = Vec::new();
 
@@ -1835,12 +1835,12 @@ mod tests {
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| Some(new_cropped_corridor.clone());
 
         CorridorsImpl::update_general_corridor(
@@ -1886,17 +1886,17 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         CorridorsImpl::update_general_corridor(
@@ -1942,17 +1942,17 @@ mod tests {
 
         let candle_is_in_corridor = |_: &StepBacktestingCandleProperties,
                                      _: &StepBacktestingCandleProperties,
-                                     _: ParamValue| false;
+                                     _: ParamOutputValue| false;
 
         let crop_corridor_to_the_closest_leader =
             |_: &[Item<CandleId, StepBacktestingCandleProperties>],
              _: &Item<CandleId, StepBacktestingCandleProperties>,
-             _: ParamValue,
+             _: ParamOutputValue,
              _: &dyn Fn(&StepBacktestingCandleProperties) -> bool,
              _: &dyn Fn(
                 &StepBacktestingCandleProperties,
                 &StepBacktestingCandleProperties,
-                ParamValue,
+                ParamOutputValue,
             ) -> bool| None;
 
         CorridorsImpl::update_general_corridor(

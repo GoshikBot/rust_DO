@@ -21,7 +21,7 @@ use base::entities::tick::{TickPrice, TickTime};
 use base::entities::{BasicTickProperties, Item, Level, Tendency};
 use base::helpers::{price_to_points, Holiday, NumberOfDaysToExclude};
 use base::notifier::NotificationQueue;
-use base::params::{ParamValue, StrategyParams};
+use base::params::{ParamOutputValue, StrategyParams};
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
 use std::fmt::Debug;
@@ -68,9 +68,9 @@ pub trait LevelUtils {
         O: AsRef<BasicOrderProperties>,
         W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
         A: Fn(&[O]) -> bool,
-        D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
-        M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
-        C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
+        D: Fn(WLPrice, TickPrice, ParamOutputValue) -> bool,
+        M: Fn(LevelTime, TickTime, ParamOutputValue, &E) -> bool,
+        C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, TickPrice) -> bool,
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue;
 
@@ -78,8 +78,8 @@ pub trait LevelUtils {
     /// deviates from the active working level on the defined amount of points.
     fn move_take_profits<W>(
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-        distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
-        distance_to_move_take_profits: ParamValue,
+        distance_from_level_for_signaling_of_moving_take_profits: ParamOutputValue,
+        distance_to_move_take_profits: ParamOutputValue,
         current_tick_price: TickPrice,
     ) -> Result<()>
     where
@@ -120,7 +120,7 @@ pub trait LevelUtils {
             &Item<AngleId, FullAngleProperties<A, C>>,
             &[Item<CandleId, C>],
             &S,
-            ParamValue,
+            ParamOutputValue,
         ) -> Result<bool>,
         M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         P: Fn(
@@ -131,7 +131,7 @@ pub trait LevelUtils {
         ) -> Result<bool>,
         K: AsRef<BasicWLProperties>,
         X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
-        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>;
+        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamOutputValue) -> Result<bool>;
 }
 
 pub struct RemoveInvalidWorkingLevelsUtils<'a, W, A, D, M, C, E, T, O>
@@ -140,9 +140,9 @@ where
     O: AsRef<BasicOrderProperties>,
     W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
     A: Fn(&[O]) -> bool,
-    D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
-    M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
-    C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
+    D: Fn(WLPrice, TickPrice, ParamOutputValue) -> bool,
+    M: Fn(LevelTime, TickTime, ParamOutputValue, &E) -> bool,
+    C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, TickPrice) -> bool,
     E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
 {
     pub working_level_store: &'a mut W,
@@ -164,13 +164,13 @@ where
         &Item<AngleId, FullAngleProperties<A, C>>,
         &[Item<CandleId, C>],
         &S,
-        ParamValue,
+        ParamOutputValue,
     ) -> Result<bool>,
     M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     P: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &Item<CandleId, C>, &S, &M) -> Result<bool>,
     K: AsRef<BasicWLProperties>,
     X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
-    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>,
+    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamOutputValue) -> Result<bool>,
 {
     pub is_second_level_after_bargaining_tendency_change: &'a D,
     pub level_comes_out_of_bargaining_corridor: &'a B,
@@ -196,13 +196,13 @@ where
         &Item<AngleId, FullAngleProperties<A, C>>,
         &[Item<CandleId, C>],
         &S,
-        ParamValue,
+        ParamOutputValue,
     ) -> Result<bool>,
     M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
     P: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &Item<CandleId, C>, &S, &M) -> Result<bool>,
     K: AsRef<BasicWLProperties>,
     X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
-    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>,
+    L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamOutputValue) -> Result<bool>,
 {
     pub fn new(
         is_second_level_after_bargaining_tendency_change: &'a D,
@@ -372,9 +372,9 @@ impl LevelUtils for LevelUtilsImpl {
         O: AsRef<BasicOrderProperties>,
         W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
         A: Fn(&[O]) -> bool,
-        D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
-        M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
-        C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
+        D: Fn(WLPrice, TickPrice, ParamOutputValue) -> bool,
+        M: Fn(LevelTime, TickTime, ParamOutputValue, &E) -> bool,
+        C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, TickPrice) -> bool,
         E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
         N: NotificationQueue,
     {
@@ -528,8 +528,8 @@ impl LevelUtils for LevelUtilsImpl {
 
     fn move_take_profits<W>(
         working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-        distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
-        distance_to_move_take_profits: ParamValue,
+        distance_from_level_for_signaling_of_moving_take_profits: ParamOutputValue,
+        distance_to_move_take_profits: ParamOutputValue,
         current_tick_price: TickPrice,
     ) -> Result<()>
     where
@@ -602,7 +602,7 @@ impl LevelUtils for LevelUtilsImpl {
             &Item<AngleId, FullAngleProperties<A, C>>,
             &[Item<CandleId, C>],
             &S,
-            ParamValue,
+            ParamOutputValue,
         ) -> Result<bool>,
         M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
         P: Fn(
@@ -613,7 +613,7 @@ impl LevelUtils for LevelUtilsImpl {
         ) -> Result<bool>,
         K: AsRef<BasicWLProperties>,
         X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
-        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>,
+        L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamOutputValue) -> Result<bool>,
     {
         let tendency_change_angle = store.get_tendency_change_angle()?;
 
@@ -835,7 +835,7 @@ mod tests {
     use base::entities::tick::TickTime;
     use base::helpers::points_to_price;
     use base::notifier::Message;
-    use base::params::ParamValue;
+    use base::params::ParamOutputValue;
     use base::stores::candle_store::BasicCandleStore;
     use base::stores::order_store::BasicOrderStore;
     use chrono::{Datelike, NaiveDate, Utc};
@@ -1308,7 +1308,7 @@ mod tests {
         fn level_expired_by_distance(
             level_price: WLPrice,
             _current_tick_price: TickPrice,
-            _distance_from_level_for_its_deletion: ParamValue,
+            _distance_from_level_for_its_deletion: ParamOutputValue,
         ) -> bool {
             level_price == dec!(1) || level_price == dec!(5)
         }
@@ -1316,7 +1316,7 @@ mod tests {
         fn level_expired_by_time(
             level_time: LevelTime,
             _current_tick_time: TickTime,
-            _level_expiration: ParamValue,
+            _level_expiration: ParamOutputValue,
             _exclude_weekend_and_holidays: &impl Fn(
                 NaiveDateTime,
                 NaiveDateTime,
@@ -1329,7 +1329,7 @@ mod tests {
         fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             level: &impl AsRef<BasicWLProperties>,
             _max_crossing_value: Option<WLMaxCrossingValue>,
-            _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+            _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
             _current_tick_price: TickPrice,
         ) -> bool {
             level.as_ref().price == dec!(7)
@@ -1352,7 +1352,7 @@ mod tests {
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             general_corridor: &[Item<CandleId, C>],
             angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -1389,7 +1389,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -1407,7 +1407,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamOutputValue {
             dec!(2)
         }
 
@@ -1415,7 +1415,7 @@ mod tests {
             &self,
             _name: Self::RatioParam,
             _volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             dec!(2)
         }
     }
@@ -1427,7 +1427,7 @@ mod tests {
     fn level_expired_by_distance(
         level_price: WLPrice,
         _current_tick_price: TickPrice,
-        _distance_from_level_for_its_deletion: ParamValue,
+        _distance_from_level_for_its_deletion: ParamOutputValue,
     ) -> bool {
         level_price == dec!(1) || level_price == dec!(5)
     }
@@ -1435,7 +1435,7 @@ mod tests {
     fn level_expired_by_time(
         level_time: LevelTime,
         _current_tick_time: TickTime,
-        _level_expiration: ParamValue,
+        _level_expiration: ParamOutputValue,
         _exclude_weekend_and_holidays: &impl Fn(
             NaiveDateTime,
             NaiveDateTime,
@@ -1448,7 +1448,7 @@ mod tests {
     fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
         level: &impl AsRef<BasicWLProperties>,
         _max_crossing_value: Option<WLMaxCrossingValue>,
-        _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+        _min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
         _current_tick_price: TickPrice,
     ) -> bool {
         level.as_ref().price == dec!(7)
@@ -1786,7 +1786,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, name: Self::PointParam) -> ParamOutputValue {
             match name {
                 StepPointParam::MinAmountOfCandlesInCorridorDefiningEdgeBargaining => dec!(5),
                 _ => unimplemented!(),
@@ -1797,7 +1797,7 @@ mod tests {
             &self,
             name: Self::RatioParam,
             _volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             match name {
                 StepRatioParam::DistanceDefiningNearbyLevelsOfTheSameType => dec!(150),
                 _ => unimplemented!(),
@@ -1825,7 +1825,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -1862,7 +1862,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -1964,7 +1964,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2001,7 +2001,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2157,7 +2157,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2194,7 +2194,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2345,7 +2345,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2382,7 +2382,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2533,7 +2533,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2570,7 +2570,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2721,7 +2721,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2758,7 +2758,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2933,7 +2933,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -2970,7 +2970,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3150,7 +3150,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3187,7 +3187,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3319,7 +3319,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3356,7 +3356,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3476,7 +3476,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3513,7 +3513,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3639,7 +3639,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3676,7 +3676,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3812,7 +3812,7 @@ mod tests {
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _general_corridor: &[Item<CandleId, C>],
             _angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            _min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -3849,7 +3849,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             _crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             _working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            _distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            _distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,

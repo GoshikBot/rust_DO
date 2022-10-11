@@ -20,6 +20,11 @@ use base::requests::http_request_with_retries;
 use crate::helpers::{from_iso_utc_str_to_utc_datetime, from_naive_str_to_naive_datetime};
 use crate::MarketDataApi;
 
+pub const AUTH_TOKEN_ENV: &str = "AUTH_TOKEN";
+pub const DEMO_ACCOUNT_ID_ENV: &str = "DEMO_ACCOUNT_ID";
+pub const MAIN_API_URL_ENV: &str = "MAIN_API_URL";
+pub const MARKET_DATA_API_URL_ENV: &str = "MARKET_DATA_API_URL";
+
 pub const HOURS_IN_DAY: u8 = 24;
 pub const DAYS_FOR_VOLATILITY: u8 = 7;
 
@@ -304,6 +309,7 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
             Timeframe::ThirtyMin => 30,
             Timeframe::FifteenMin => 15,
             Timeframe::OneMin => 1,
+            Timeframe::FiveMin => 5,
         };
 
         let mut all_items_with_filled_gaps: Vec<Option<T>> = Vec::new();
@@ -440,6 +446,10 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
                 duration.num_minutes() as u64,
                 days_for_volatility.num_minutes() as usize,
             ),
+            Timeframe::FiveMin => (
+                (duration.num_minutes() / 5) as u64,
+                (days_for_volatility.num_minutes() / 5) as usize,
+            ),
         };
 
         let all_candles = self.get_blocks_of_historical_candles(
@@ -478,8 +488,23 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         end_time: DateTime<Utc>,
         duration: Duration,
     ) -> Result<Vec<Option<BasicTickProperties>>> {
-        let volatility_window = Duration::days(DAYS_FOR_VOLATILITY as i64).num_minutes();
-        let total_amount_of_candles = (duration.num_minutes() - volatility_window + 1) as u64;
+        let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
+
+        let total_amount_of_candles = match timeframe {
+            Timeframe::Hour => (duration.num_hours() - days_for_volatility.num_hours()) as u64,
+            Timeframe::ThirtyMin => {
+                ((duration.num_hours() * 2) - (days_for_volatility.num_hours() * 2)) as u64
+            }
+            Timeframe::FifteenMin => {
+                ((duration.num_hours() * 4) - (days_for_volatility.num_hours() * 4)) as u64
+            }
+            Timeframe::OneMin => {
+                (duration.num_minutes() - days_for_volatility.num_minutes()) as u64
+            }
+            Timeframe::FiveMin => {
+                ((duration.num_minutes() / 5) - (days_for_volatility.num_minutes() / 5)) as u64
+            }
+        } + 1;
 
         let all_candles = self.get_blocks_of_historical_candles(
             symbol,

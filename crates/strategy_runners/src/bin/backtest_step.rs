@@ -14,13 +14,17 @@ use plotly::common::{Marker, Title};
 use plotly::layout::{Axis, GridPattern, LayoutGrid};
 use plotly::{Candlestick, Layout, Plot, Scatter};
 use rust_decimal_macros::dec;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
-use trading_apis::metaapi_market_data_api::{ApiData, ApiUrls};
+use trading_apis::metaapi_market_data_api::{
+    ApiData, ApiUrls, AUTH_TOKEN_ENV, DEMO_ACCOUNT_ID_ENV, MAIN_API_URL_ENV,
+    MARKET_DATA_API_URL_ENV,
+};
 use trading_apis::MetaapiMarketDataApi;
 
-use base::params::StrategyCsvFileParams;
+use base::params::StrategyMultiSourcingParams;
 use strategies::step::step_backtesting::run_iteration;
 use strategies::step::utils::angle_utils::AngleUtilsImpl;
 use strategies::step::utils::backtesting_charts::{
@@ -29,7 +33,9 @@ use strategies::step::utils::backtesting_charts::{
 use strategies::step::utils::corridors::CorridorsImpl;
 use strategies::step::utils::entities::candle::StepCandleProperties;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
-use strategies::step::utils::entities::{Mode, MODE_ENV};
+use strategies::step::utils::entities::{
+    Mode, MODE_ENV, STEP_HISTORICAL_DATA_FOLDER_ENV, STEP_PARAMS_CSV_FILE_ENV,
+};
 use strategies::step::utils::helpers::HelpersImpl;
 use strategies::step::utils::level_conditions::LevelConditionsImpl;
 use strategies::step::utils::level_utils::LevelUtilsImpl;
@@ -41,39 +47,33 @@ use strategies::step::utils::{get_candle_leading_price, StepBacktestingUtils};
 use strategy_runners::step::backtesting_runner;
 use strategy_runners::step::backtesting_runner::StepStrategyRunningConfig;
 
-const AUTH_TOKEN_ENV: &str = "AUTH_TOKEN";
-const DEMO_ACCOUNT_ID_ENV: &str = "DEMO_ACCOUNT_ID";
-const MAIN_API_URL_ENV: &str = "MAIN_API_URL";
-const MARKET_DATA_API_URL_ENV: &str = "MARKET_DATA_API_URL";
-
-const STEP_HISTORICAL_DATA_FOLDER_ENV: &str = "STEP_HISTORICAL_DATA_FOLDER";
-const STEP_PARAMS_CSV_FILE_ENV: &str = "STEP_PARAMS_CSV_FILE";
-
 const PLOT_FOLDER_ENV: &str = "PLOT_FOLDER";
 
 fn main() -> Result<()> {
     dotenv::from_filename("common.env").unwrap();
     dotenv::from_filename("step.env").unwrap();
 
-    let candle_timeframe =
-        Timeframe::from_str(&dotenv::var(CANDLE_TIMEFRAME_ENV).unwrap()).unwrap();
-    let tick_timeframe = Timeframe::from_str(&dotenv::var(TICK_TIMEFRAME_ENV).unwrap()).unwrap();
+    let candle_timeframe = "1h";
+    env::set_var(CANDLE_TIMEFRAME_ENV, candle_timeframe);
+    let candle_timeframe = Timeframe::from_str(candle_timeframe).unwrap();
 
-    let now = Instant::now();
-    let result = backtest_step_strategy(StrategyInitConfig {
+    let tick_timeframe = "5m";
+    env::set_var(TICK_TIMEFRAME_ENV, tick_timeframe);
+    let tick_timeframe = Timeframe::from_str(tick_timeframe).unwrap();
+
+    env::set_var(MODE_ENV, "debug");
+
+    backtest_step_strategy(StrategyInitConfig {
         symbol: String::from("GBPUSDm"),
         timeframes: StrategyTimeframes {
             candle: candle_timeframe,
             tick: tick_timeframe,
         },
         end_time: DateTime::from(
-            DateTime::parse_from_str("27-09-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+            DateTime::parse_from_str("10-11-2021 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
         ),
-        duration: Duration::weeks(11),
-    });
-    println!("Execution time: {}", now.elapsed().as_secs());
-
-    result
+        duration: Duration::weeks(13),
+    })
 }
 
 fn backtest_step_strategy(strategy_config: StrategyInitConfig) -> Result<()> {
@@ -131,8 +131,8 @@ fn backtest_step_strategy(strategy_config: StrategyInitConfig) -> Result<()> {
     };
 
     let step_params_csv_file = dotenv::var(STEP_PARAMS_CSV_FILE_ENV).unwrap();
-    let step_params: StrategyCsvFileParams<StepPointParam, StepRatioParam> =
-        StrategyCsvFileParams::new(step_params_csv_file)?;
+    let step_params: StrategyMultiSourcingParams<StepPointParam, StepRatioParam> =
+        StrategyMultiSourcingParams::from_csv(step_params_csv_file)?;
 
     let trading_limiter = TradingLimiterBacktesting::new();
 
@@ -162,7 +162,6 @@ fn backtest_step_strategy(strategy_config: StrategyInitConfig) -> Result<()> {
             params: &step_params,
         },
         &trading_limiter,
-        &get_candle_leading_price,
         &run_iteration,
     )?;
 

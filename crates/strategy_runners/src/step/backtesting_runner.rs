@@ -11,6 +11,8 @@ use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use chrono::NaiveDateTime;
 use rust_decimal_macros::dec;
+use std::fmt::Display;
+use std::str::FromStr;
 use strategies::step::utils::angle_utils::AngleUtils;
 use strategies::step::utils::backtesting_charts::{
     ChartIndex, ChartTraceEntity, StepBacktestingChartTraces,
@@ -23,7 +25,7 @@ use strategies::step::utils::entities::candle::{
 use strategies::step::utils::entities::order::StepOrderProperties;
 use strategies::step::utils::entities::params::{StepPointParam, StepRatioParam};
 use strategies::step::utils::entities::working_levels::BacktestingWLProperties;
-use strategies::step::utils::entities::{StrategyPerformance, StrategySignals};
+use strategies::step::utils::entities::{Mode, StrategyPerformance, StrategySignals, MODE_ENV};
 use strategies::step::utils::helpers::Helpers;
 use strategies::step::utils::level_conditions::LevelConditions;
 use strategies::step::utils::level_utils::LevelUtils;
@@ -65,7 +67,7 @@ fn strategy_performance(balances: &BacktestingBalances) -> StrategyPerformance {
 
 pub struct StepStrategyRunningConfig<'a, P, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>
 where
-    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam> + Display,
     T: StepBacktestingMainStore,
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -101,11 +103,10 @@ pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor
         X,
     >,
     trading_limiter: &L,
-    get_candle_leading_price: &impl Fn(&BasicCandleProperties) -> CandlePrice,
     run_iteration: &I,
 ) -> Result<StrategyPerformance>
 where
-    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
+    P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam> + Display,
     L: TradingLimiter,
     T: StepBacktestingMainStore,
     Hel: Helpers,
@@ -127,6 +128,10 @@ where
         &P,
     ) -> Result<()>,
 {
+    if Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Optimization {
+        println!("{}", strategy_config.params);
+    }
+
     let mut current_tick = Tick {
         index: 0,
         value: historical_data
@@ -252,11 +257,11 @@ mod tests {
     use base::entities::{Item, Timeframe};
     use base::helpers::{Holiday, NumberOfDaysToExclude};
     use base::notifier::NotificationQueue;
-    use base::params::ParamValue;
+    use base::params::ParamOutputValue;
     use chrono::{NaiveDateTime, Timelike};
     use float_cmp::approx_eq;
     use rust_decimal_macros::dec;
-    use std::fmt::Debug;
+    use std::fmt::{Debug, Formatter};
     use strategies::step::utils::angle_utils::ExistingDiffs;
     use strategies::step::utils::backtesting_charts::{
         ChartTraceEntity, StepBacktestingChartTraces,
@@ -328,7 +333,7 @@ mod tests {
         type PointParam = StepPointParam;
         type RatioParam = StepRatioParam;
 
-        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamValue {
+        fn get_point_param_value(&self, _name: Self::PointParam) -> ParamOutputValue {
             todo!()
         }
 
@@ -336,8 +341,14 @@ mod tests {
             &self,
             _name: Self::RatioParam,
             _volatility: CandleVolatility,
-        ) -> ParamValue {
+        ) -> ParamOutputValue {
             todo!()
+        }
+    }
+
+    impl Display for TestStrategyParams {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "TestStrategyParams")
         }
     }
 
@@ -391,9 +402,9 @@ mod tests {
             O: AsRef<BasicOrderProperties>,
             W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
             A: Fn(&[O]) -> bool,
-            D: Fn(WLPrice, TickPrice, ParamValue) -> bool,
-            M: Fn(LevelTime, TickTime, ParamValue, &E) -> bool,
-            C: Fn(&T, Option<WLMaxCrossingValue>, ParamValue, TickPrice) -> bool,
+            D: Fn(WLPrice, TickPrice, ParamOutputValue) -> bool,
+            M: Fn(LevelTime, TickTime, ParamOutputValue, &E) -> bool,
+            C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, TickPrice) -> bool,
             E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
             N: NotificationQueue,
         {
@@ -402,8 +413,8 @@ mod tests {
 
         fn move_take_profits<W>(
             working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            distance_from_level_for_signaling_of_moving_take_profits: ParamValue,
-            distance_to_move_take_profits: ParamValue,
+            distance_from_level_for_signaling_of_moving_take_profits: ParamOutputValue,
+            distance_to_move_take_profits: ParamOutputValue,
             current_tick_price: TickPrice,
         ) -> Result<()>
         where
@@ -447,7 +458,7 @@ mod tests {
                 &Item<AngleId, FullAngleProperties<A, C>>,
                 &[Item<CandleId, C>],
                 &S,
-                ParamValue,
+                ParamOutputValue,
             ) -> Result<bool>,
             M: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
             P: Fn(
@@ -458,7 +469,7 @@ mod tests {
             ) -> Result<bool>,
             K: AsRef<BasicWLProperties>,
             X: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S) -> Result<bool>,
-            L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamValue) -> Result<bool>,
+            L: Fn(&Item<AngleId, FullAngleProperties<A, C>>, &S, ParamOutputValue) -> Result<bool>,
         {
             unimplemented!()
         }
@@ -488,7 +499,7 @@ mod tests {
         fn level_expired_by_distance(
             level_price: WLPrice,
             current_tick_price: TickPrice,
-            distance_from_level_for_its_deletion: ParamValue,
+            distance_from_level_for_its_deletion: ParamOutputValue,
         ) -> bool {
             unimplemented!()
         }
@@ -496,7 +507,7 @@ mod tests {
         fn level_expired_by_time(
             level_time: LevelTime,
             current_tick_time: TickTime,
-            level_expiration: ParamValue,
+            level_expiration: ParamOutputValue,
             exclude_weekend_and_holidays: &impl Fn(
                 NaiveDateTime,
                 NaiveDateTime,
@@ -509,7 +520,7 @@ mod tests {
         fn active_level_exceeds_activation_crossing_distance_when_returned_to_level(
             level: &impl AsRef<BasicWLProperties>,
             max_crossing_value: Option<WLMaxCrossingValue>,
-            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamValue,
+            min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
             current_tick_price: TickPrice,
         ) -> bool {
             unimplemented!()
@@ -532,7 +543,7 @@ mod tests {
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             general_corridor: &[Item<CandleId, C>],
             angle_store: &impl StepAngleStore<AngleProperties = A, CandleProperties = C>,
-            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamValue,
+            min_amount_of_candles_in_corridor_defining_edge_bargaining: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -569,7 +580,7 @@ mod tests {
         fn working_level_is_close_to_another_one<A, C, W>(
             crossed_angle: &Item<AngleId, FullAngleProperties<A, C>>,
             working_level_store: &impl StepWorkingLevelStore<WorkingLevelProperties = W>,
-            distance_defining_nearby_levels_of_the_same_type: ParamValue,
+            distance_defining_nearby_levels_of_the_same_type: ParamOutputValue,
         ) -> Result<bool>
         where
             A: AsRef<BasicAngleProperties> + Debug,
@@ -660,13 +671,13 @@ mod tests {
             O: AsRef<BasicOrderProperties>,
             C: AsRef<BasicCandleProperties> + Debug,
             L: Fn(&C) -> bool,
-            N: Fn(&C, &C, ParamValue) -> bool,
+            N: Fn(&C, &C, ParamOutputValue) -> bool,
             R: Fn(
                 &[Item<CandleId, C>],
                 &Item<CandleId, C>,
-                ParamValue,
+                ParamOutputValue,
                 &dyn Fn(&C) -> bool,
-                &dyn Fn(&C, &C, ParamValue) -> bool,
+                &dyn Fn(&C, &C, ParamOutputValue) -> bool,
             ) -> Option<Vec<Item<CandleId, C>>>,
             A: Fn(&[O]) -> bool,
         {
@@ -677,18 +688,18 @@ mod tests {
             current_candle: &Item<CandleId, C>,
             candle_store: &mut impl StepCandleStore<CandleProperties = C>,
             utils: UpdateGeneralCorridorUtils<C, L, N, R>,
-            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
         ) -> Result<()>
         where
             C: AsRef<BasicCandleProperties> + Debug,
             L: Fn(&C) -> bool,
-            N: Fn(&C, &C, ParamValue) -> bool,
+            N: Fn(&C, &C, ParamOutputValue) -> bool,
             R: Fn(
                 &[Item<CandleId, C>],
                 &Item<CandleId, C>,
-                ParamValue,
+                ParamOutputValue,
                 &dyn Fn(&C) -> bool,
-                &dyn Fn(&C, &C, ParamValue) -> bool,
+                &dyn Fn(&C, &C, ParamOutputValue) -> bool,
             ) -> Option<Vec<Item<CandleId, C>>>,
         {
             unimplemented!()
@@ -707,7 +718,7 @@ mod tests {
         fn candle_is_in_corridor<C>(
             candle: &C,
             leading_candle: &C,
-            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
         ) -> bool
         where
             C: AsRef<BasicCandleProperties>,
@@ -718,9 +729,9 @@ mod tests {
         fn crop_corridor_to_closest_leader<C>(
             corridor: &[Item<CandleId, C>],
             new_candle: &Item<CandleId, C>,
-            max_distance_from_corridor_leading_candle_pins_pct: ParamValue,
+            max_distance_from_corridor_leading_candle_pins_pct: ParamOutputValue,
             candle_can_be_corridor_leader: &dyn Fn(&C) -> bool,
-            is_in_corridor: &dyn Fn(&C, &C, ParamValue) -> bool,
+            is_in_corridor: &dyn Fn(&C, &C, ParamOutputValue) -> bool,
         ) -> Option<Vec<Item<CandleId, C>>>
         where
             C: AsRef<BasicCandleProperties> + Clone,
@@ -746,8 +757,8 @@ mod tests {
             previous_candle: &Item<CandleId, C>,
             diffs: ExistingDiffs,
             angles: MaxMinAngles<A, C>,
-            min_distance_between_max_min_angles: ParamValue,
-            max_distance_between_max_min_angles: ParamValue,
+            min_distance_between_max_min_angles: ParamOutputValue,
+            max_distance_between_max_min_angles: ParamOutputValue,
         ) -> Option<FullAngleProperties<BasicAngleProperties, C>>
         where
             C: AsRef<StepCandleProperties> + Debug + Clone,
@@ -1122,13 +1133,10 @@ mod tests {
             Ok(())
         }
 
-        let get_candle_leading_price = |candle: &BasicCandleProperties| candle.prices.high;
-
         let strategy_performance = loop_through_historical_data(
             &historical_data,
             strategy_config,
             &trading_limiter,
-            &get_candle_leading_price,
             &run_iteration,
         )
         .unwrap();

@@ -49,6 +49,8 @@ impl FromStr for Mode {
 }
 
 pub const MODE_ENV: &str = "MODE";
+pub const STEP_HISTORICAL_DATA_FOLDER_ENV: &str = "STEP_HISTORICAL_DATA_FOLDER";
+pub const STEP_PARAMS_CSV_FILE_ENV: &str = "STEP_PARAMS_CSV_FILE";
 
 pub enum StatisticsChartsNotifier<'a, N, H>
 where

@@ -10,7 +10,7 @@ use base::entities::{
 };
 use base::entities::{Item, Tendency};
 use base::helpers::{points_to_price, PriceValue};
-use base::params::ParamValue;
+use base::params::ParamOutputValue;
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
 use base::stores::tick_store::BasicTickStore;
@@ -947,7 +947,7 @@ impl StepWorkingLevelStore for InMemoryStepBacktestingStore {
     fn move_take_profits_of_level(
         &mut self,
         working_level_id: &str,
-        distance_to_move_take_profits: ParamValue,
+        distance_to_move_take_profits: ParamOutputValue,
     ) -> Result<()> {
         let level = self
             .get_working_level_by_id(working_level_id)?
