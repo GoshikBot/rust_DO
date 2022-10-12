@@ -11,7 +11,7 @@ strategies = { path = "../strategies" }
 strategy_runners = { path = "../strategy_runners" }
 backtesting = { path = "../backtesting" }
 trading_apis = { path = "../trading_apis" }
-argmin = "0.7.0"
+argmin = { version = "0.7.0", features = ["rayon"] }
 argmin-math = "0.2.1"
 argmin_testfunctions = "0.1.1"
 rand = "0.8.5"

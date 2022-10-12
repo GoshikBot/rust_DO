@@ -46,9 +46,10 @@ use trading_apis::metaapi_market_data_api::{
     ApiData, ApiUrls, AUTH_TOKEN_ENV, DEMO_ACCOUNT_ID_ENV, MAIN_API_URL_ENV,
     MARKET_DATA_API_URL_ENV,
 };
+
 use trading_apis::MetaapiMarketDataApi;
 
-const INITIAL_TEMP: f64 = 300.;
+const INITIAL_TEMP: f64 = 100.;
 const STALL_BEST: u64 = 2000;
 const REANNEALING_BEST: u64 = 100;
 

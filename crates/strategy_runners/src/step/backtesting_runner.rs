@@ -128,10 +128,6 @@ where
         &P,
     ) -> Result<()>,
 {
-    if Mode::from_str(&dotenv::var(MODE_ENV).unwrap()).unwrap() == Mode::Optimization {
-        println!("{}", strategy_config.params);
-    }
-
     let mut current_tick = Tick {
         index: 0,
         value: historical_data

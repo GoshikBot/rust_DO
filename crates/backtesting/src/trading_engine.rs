@@ -51,7 +51,7 @@ impl BacktestingTradingEngine {
         mut price: OrderPrice,
         volume: OrderVolume,
         trading_config: &mut BacktestingTradingEngineConfig,
-    ) {
+    ) -> Result<()> {
         if trading_config.use_spread {
             // ask price
             price += trading_config.spread / dec!(2);
@@ -61,8 +61,8 @@ impl BacktestingTradingEngine {
         let units = (volume * Decimal::from(LOT))
             .trunc()
             .to_string()
-            .parse::<Units>()
-            .unwrap();
+            .parse::<Units>()?;
+
         let trade_value = (Decimal::from(units) * price).round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.balances.processing -= trade_value;
@@ -73,6 +73,8 @@ impl BacktestingTradingEngine {
 
         trading_config.units += units;
         trading_config.trades += 1;
+
+        Ok(())
     }
 
     /// Executes a sell market order.
@@ -80,7 +82,7 @@ impl BacktestingTradingEngine {
         mut price: OrderPrice,
         volume: OrderVolume,
         trading_config: &mut BacktestingTradingEngineConfig,
-    ) {
+    ) -> Result<()> {
         if trading_config.use_spread {
             // bid price
             price -= trading_config.spread / dec!(2);
@@ -90,8 +92,8 @@ impl BacktestingTradingEngine {
         let units = (volume * Decimal::from(LOT))
             .trunc()
             .to_string()
-            .parse::<Units>()
-            .unwrap();
+            .parse::<Units>()?;
+
         let trade_value = (Decimal::from(units) * price).round_dp(SIGNIFICANT_DECIMAL_PLACES);
 
         trading_config.balances.processing += trade_value;
@@ -102,6 +104,8 @@ impl BacktestingTradingEngine {
 
         trading_config.units -= units;
         trading_config.trades += 1;
+
+        Ok(())
     }
 }
 
@@ -128,8 +132,8 @@ impl TradingEngine for BacktestingTradingEngine {
         };
 
         match order_props.r#type {
-            OrderType::Buy => Self::buy_instrument(price, order_props.volume, trading_config),
-            OrderType::Sell => Self::sell_instrument(price, order_props.volume, trading_config),
+            OrderType::Buy => Self::buy_instrument(price, order_props.volume, trading_config)?,
+            OrderType::Sell => Self::sell_instrument(price, order_props.volume, trading_config)?,
         }
 
         order_store.update_order_status(&order.id, OrderStatus::Opened)
@@ -158,8 +162,8 @@ impl TradingEngine for BacktestingTradingEngine {
         };
 
         match order_props.r#type {
-            OrderType::Buy => Self::sell_instrument(price, order_props.volume, trading_config),
-            OrderType::Sell => Self::buy_instrument(price, order_props.volume, trading_config),
+            OrderType::Buy => Self::sell_instrument(price, order_props.volume, trading_config)?,
+            OrderType::Sell => Self::buy_instrument(price, order_props.volume, trading_config)?,
         }
 
         order_store.update_order_status(&order.id, OrderStatus::Closed)?;
