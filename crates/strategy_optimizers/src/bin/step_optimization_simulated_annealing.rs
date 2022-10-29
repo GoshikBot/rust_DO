@@ -12,7 +12,7 @@ use base::entities::{
     BasicTickProperties, StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV,
 };
 use base::helpers::exclude_weekend_and_holidays;
-use base::params::{StrategyMultiSourcingParams, StrategyParam};
+use base::params::{StrategyMultiSourcingParams, StrategyParam, StrategyParams};
 use base::requests::ureq::UreqRequestApi;
 use chrono::{DateTime, Duration};
 use rand::distributions::Uniform;
@@ -23,6 +23,7 @@ use rust_decimal_macros::dec;
 use std::env;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use strategies::step::step_backtesting::run_iteration;
 use strategies::step::utils::angle_utils::AngleUtilsImpl;
 use strategies::step::utils::backtesting_charts::add_entity_to_chart_traces;
@@ -50,7 +51,7 @@ use trading_apis::metaapi_market_data_api::{
 use trading_apis::MetaapiMarketDataApi;
 
 const INITIAL_TEMP: f64 = 100.;
-const STALL_BEST: u64 = 2000;
+const STALL_BEST: u64 = 20_000;
 const REANNEALING_BEST: u64 = 100;
 
 type OptimizationParamValue = f64;
@@ -167,6 +168,14 @@ impl CostFunction for StepStrategyOptimization {
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output> {
         let step_params = self.to_strategy_params(param)?;
+        println!("----------------------------------------------");
+        println!("{}", step_params);
+
+        if step_params.get_ratio_param_value(StepRatioParam::DistanceToMoveTakeProfits, 1)
+            > step_params.get_ratio_param_value(StepRatioParam::DistanceFromLevelToFirstOrder, 1)
+        {
+            return Ok(Self::Output::MAX);
+        }
 
         let mut step_stores = StepBacktestingStores {
             main: InMemoryStepBacktestingStore::new(),
@@ -281,12 +290,11 @@ fn optimize_step(
     /////////////////////////
     let result = Executor::new(operator, solver)
         .configure(|state| state.param(init_param))
-        // Optional: Attach a observer
-        // .add_observer(SlogLogger::term(), ObserverMode::Always)
+        .add_observer(SlogLogger::term(), ObserverMode::Always)
         .run()?;
 
     // Wait a second (lets the logger flush everything before printing again)
-    // std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     Ok(result)
 }
@@ -312,9 +320,9 @@ fn main() -> Result<()> {
             tick: tick_timeframe,
         },
         end_time: DateTime::from(
-            DateTime::parse_from_str("10-11-2021 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+            DateTime::parse_from_str("10-06-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
         ),
-        duration: Duration::weeks(13),
+        duration: Duration::weeks(36),
     };
 
     let params = vec![
@@ -323,7 +331,7 @@ fn main() -> Result<()> {
                 name: StepPointParam::MaxDistanceFromCorridorLeadingCandlePinsPct,
                 num_type: NumType::Float,
             },
-            value: 27.99,
+            value: 22.18,
             bounds: (20., 50.),
         },
         OptimizationInitialParam {
@@ -339,7 +347,7 @@ fn main() -> Result<()> {
                 name: StepPointParam::LevelExpirationDays,
                 num_type: NumType::Integer,
             },
-            value: 8.,
+            value: 30.,
             bounds: (3., 40.),
         },
         OptimizationInitialParam {
@@ -348,7 +356,7 @@ fn main() -> Result<()> {
                     StepPointParam::MinAmountOfCandlesInSmallCorridorBeforeActivationCrossingOfLevel,
                 num_type: NumType::Integer,
             },
-            value: 3.,
+            value: 5.,
             bounds: (3., 5.),
         },
         OptimizationInitialParam {
@@ -357,7 +365,7 @@ fn main() -> Result<()> {
                     StepPointParam::MinAmountOfCandlesInBigCorridorBeforeActivationCrossingOfLevel,
                 num_type: NumType::Integer,
             },
-            value: 25.,
+            value: 24.,
             bounds: (12., 30.),
         },
         OptimizationInitialParam {
@@ -365,7 +373,7 @@ fn main() -> Result<()> {
                 name: StepPointParam::MinAmountOfCandlesInCorridorDefiningEdgeBargaining,
                 num_type: NumType::Integer,
             },
-            value: 5.,
+            value: 10.,
             bounds: (4., 10.),
         },
         OptimizationInitialParam {
@@ -380,75 +388,75 @@ fn main() -> Result<()> {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles,
             ),
-            value: 0.81,
-            bounds: (0.6, 1.5),
+            value: 1.5,
+            bounds: (0.6, 3.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::MinDistanceBetweenCurrentMaxAndMinAnglesForNewInnerAngleToAppear,
             ),
-            value: 2.08,
+            value: 2.25,
             bounds: (2., 3.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::MinBreakDistance),
-            value: 0.29,
+            value: 0.44,
             bounds: (0.1, 0.6),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelToFirstOrder),
-            value: 0.78,
-            bounds: (0.5, 1.4),
+            value: 1.4,
+            bounds: (0.5, 2.2),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelToStopLoss),
-            value: 3.59,
+            value: 3.45,
             bounds: (2.3, 6.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::DistanceFromLevelForSignalingOfMovingTakeProfits,
             ),
-            value: 2.03,
+            value: 0.3,
             bounds: (0.1, 4.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceToMoveTakeProfits),
-            value: 0.27,
-            bounds: (0.1, 1.4),
+            value: 0.1,
+            bounds: (0.1, 0.5),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelForItsDeletion),
-            value: 24.,
+            value: 70.27,
             bounds: (9.22, 90.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::DistanceFromLevelToCorridorBeforeActivationCrossingOfLevel,
             ),
-            value: 0.36,
-            bounds: (0.17, 0.6),
+            value: 0.17,
+            bounds: (0.1, 0.6),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::DistanceDefiningNearbyLevelsOfTheSameType,
             ),
-            value: 1.61,
+            value: 0.5,
             bounds: (0.5, 2.3),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::MinDistanceOfActivationCrossingOfLevelWhenReturningToLevelForItsDeletion,
             ),
-            value: 0.6,
+            value: 0.71,
             bounds: (0.5, 1.18),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::RangeOfBigCorridorNearLevel,
             ),
-            value: 1.9,
-            bounds: (1.8, 2.5),
+            value: 1.8,
+            bounds: (1.2, 3.),
         },
     ];
 
@@ -495,7 +503,10 @@ fn main() -> Result<()> {
         ticks: historical_data.ticks,
     };
 
+    let now = Instant::now();
     let result = optimize_step(params, historical_data, strategy_config)?;
+    println!("Optimization took {} minutes", now.elapsed().as_secs() / 60);
+
     println!("Optimization result: {}", result);
 
     Ok(())

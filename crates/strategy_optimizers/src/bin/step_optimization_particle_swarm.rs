@@ -56,8 +56,8 @@ type OptimizationParamBounds = (OptimizationParamValue, OptimizationParamValue);
 
 type LowerUpperParamBounds = (Vec<OptimizationParamValue>, Vec<OptimizationParamValue>);
 
-const NUMBER_OF_PARTICLES: usize = 200;
-const MAX_NUMBER_OF_ITERATIONS: u64 = 10_000;
+const NUMBER_OF_PARTICLES: usize = 500;
+const MAX_NUMBER_OF_ITERATIONS: u64 = 100;
 
 #[derive(Debug, Clone, Copy)]
 enum OptimizationParamDescr {
@@ -166,6 +166,7 @@ impl CostFunction for StepStrategyOptimization {
             return Ok(Self::Output::MAX);
         }
 
+        println!("----------------------------------------------");
         println!("{}", step_params);
 
         let mut step_stores = StepBacktestingStores {
@@ -227,7 +228,11 @@ fn optimize_step(
 
     let result = Executor::new(cost_function, solver)
         .configure(|state| state.max_iters(MAX_NUMBER_OF_ITERATIONS))
+        .add_observer(SlogLogger::term(), ObserverMode::Always)
         .run()?;
+
+    // Wait a second (lets the logger flush everything before printing again)
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     Ok(result)
 }
@@ -253,9 +258,9 @@ fn main() -> Result<()> {
             tick: tick_timeframe,
         },
         end_time: DateTime::from(
-            DateTime::parse_from_str("10-11-2021 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
+            DateTime::parse_from_str("10-06-2022 18:00 +0000", "%d-%m-%Y %H:%M %z").unwrap(),
         ),
-        duration: Duration::weeks(13),
+        duration: Duration::weeks(36),
     };
 
     let params = vec![
@@ -314,7 +319,7 @@ fn main() -> Result<()> {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::MinDistanceBetweenNewAndCurrentMaxMinAngles,
             ),
-            bounds: (0.6, 1.5),
+            bounds: (0.6, 3.),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
@@ -328,7 +333,7 @@ fn main() -> Result<()> {
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelToFirstOrder),
-            bounds: (0.5, 1.4),
+            bounds: (0.5, 2.2),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelToStopLoss),
@@ -342,7 +347,7 @@ fn main() -> Result<()> {
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceToMoveTakeProfits),
-            bounds: (0.1, 1.4),
+            bounds: (0.1, 0.5),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(StepRatioParam::DistanceFromLevelForItsDeletion),
@@ -352,7 +357,7 @@ fn main() -> Result<()> {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::DistanceFromLevelToCorridorBeforeActivationCrossingOfLevel,
             ),
-            bounds: (0.17, 0.6),
+            bounds: (0.1, 0.6),
         },
         OptimizationInitialParam {
             descr: OptimizationParamDescr::Ratio(
@@ -370,7 +375,7 @@ fn main() -> Result<()> {
             descr: OptimizationParamDescr::Ratio(
                 StepRatioParam::RangeOfBigCorridorNearLevel,
             ),
-            bounds: (1.8, 2.5),
+            bounds: (1.2, 3.),
         },
     ];
 
