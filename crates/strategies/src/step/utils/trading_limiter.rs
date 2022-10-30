@@ -1,3 +1,4 @@
+use base::entities::tick::{HistoricalTickPrice, TickPrice};
 use base::entities::BasicTickProperties;
 use chrono::{NaiveDateTime, Timelike};
 use std::ops::Range;
@@ -8,8 +9,10 @@ const _HOURS_TO_START_CHECKING_TO_ALLOW_TRADING_REALTIME: Range<u8> = 0..23;
 const HOURS_TO_FORBID_TRADING_BACKTESTING: [u8; 3] = [23, 0, 1];
 
 pub trait TradingLimiter {
-    fn forbid_trading(&self, current_tick: &BasicTickProperties) -> bool;
-    fn allow_trading(&self, current_tick: &BasicTickProperties) -> bool;
+    type TickPrice;
+
+    fn forbid_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool;
+    fn allow_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool;
 }
 
 fn forbid_trading(current_tick_time: NaiveDateTime) -> bool {
@@ -30,14 +33,16 @@ impl TradingLimiterBacktesting {
 }
 
 impl TradingLimiter for TradingLimiterBacktesting {
-    fn forbid_trading(&self, current_tick: &BasicTickProperties) -> bool {
+    type TickPrice = HistoricalTickPrice;
+
+    fn forbid_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
         forbid_trading(current_tick.time)
     }
 
     /// Backtesting doesn't check for the appropriate spread to allow trading,
     /// so we just mark hours when we don't want to have trading. At any time
     /// beyond these hours the trading for backtesting will become allowed.
-    fn allow_trading(&self, current_tick: &BasicTickProperties) -> bool {
+    fn allow_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
         if HOURS_TO_FORBID_TRADING_BACKTESTING.contains(&(current_tick.time.time().hour() as u8)) {
             return false;
         }
@@ -56,13 +61,15 @@ impl TradingLimiterRealtime {
 }
 
 impl TradingLimiter for TradingLimiterRealtime {
-    fn forbid_trading(&self, current_tick: &BasicTickProperties) -> bool {
+    type TickPrice = TickPrice;
+
+    fn forbid_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
         forbid_trading(current_tick.time)
     }
 
     /// For realtime we mark the hour to forbid trading and denote hours
     /// to start checking for the satisfactory spread to allow trading again.
-    fn allow_trading(&self, _current_tick: &BasicTickProperties) -> bool {
+    fn allow_trading(&self, _current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
         todo!()
     }
 }
@@ -103,8 +110,7 @@ mod tests {
             )
             .map(|&n| BasicTickProperties {
                 time: NaiveDate::from_ymd(2022, 5, 25).and_hms(n as u32, 0, 0),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             })
             .collect::<Vec<_>>();
 
@@ -120,8 +126,7 @@ mod tests {
         let ticks_when_to_forbid_trading =
             HOURS_TO_FORBID_TRADING_BACKTESTING.map(|n| BasicTickProperties {
                 time: NaiveDate::from_ymd(2022, 5, 25).and_hms(n as u32, 0, 0),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             });
 
         let trading_limiter = TradingLimiterBacktesting::new();

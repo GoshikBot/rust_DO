@@ -1,5 +1,5 @@
 use base::entities::candle::BasicCandleProperties;
-use base::entities::tick::TickPrice;
+use base::entities::tick::{TickPrice, TickTime};
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;

@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use chrono::NaiveDateTime;
 
 use base::entities::candle::BasicCandleProperties;
+use base::entities::tick::HistoricalTickPrice;
 use base::entities::BasicTickProperties;
 
 use crate::HistoricalData;
@@ -15,7 +16,7 @@ struct Candle {
 }
 
 fn find_tick_with_time<'a>(
-    ticks: impl Iterator<Item = &'a Option<BasicTickProperties>>,
+    ticks: impl Iterator<Item = &'a Option<BasicTickProperties<HistoricalTickPrice>>>,
     time: NaiveDateTime,
 ) -> Option<usize> {
     ticks.enumerate().find_map(|(i, tick)| match tick.as_ref() {
@@ -71,8 +72,11 @@ fn find_next_candle<'a>(
 }
 
 fn trim_historical_data(
-    historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>,
-) -> HistoricalData<BasicCandleProperties, BasicTickProperties> {
+    historical_data: HistoricalData<
+        BasicCandleProperties,
+        BasicTickProperties<HistoricalTickPrice>,
+    >,
+) -> HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>> {
     HistoricalData {
         candles: historical_data
             .candles
@@ -114,7 +118,7 @@ fn find_timeframe_equal_times<'a, 'b, C, T>(
 ) -> Result<TickCandle>
 where
     C: Iterator<Item = &'a Option<BasicCandleProperties>> + Clone,
-    T: Iterator<Item = &'b Option<BasicTickProperties>> + Clone,
+    T: Iterator<Item = &'b Option<BasicTickProperties<HistoricalTickPrice>>> + Clone,
 {
     loop {
         let corresponding_tick_index =
@@ -152,7 +156,10 @@ fn reverse_edge_intersection_indexes(
 }
 
 fn find_edge_intersection(
-    historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+    historical_data: &HistoricalData<
+        BasicCandleProperties,
+        BasicTickProperties<HistoricalTickPrice>,
+    >,
     edge: Edge,
 ) -> Result<TickCandle> {
     let first_candle_time = match edge {
@@ -285,7 +292,10 @@ fn find_edge_intersection(
 }
 
 fn find_timeframe_intersection(
-    historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+    historical_data: &HistoricalData<
+        BasicCandleProperties,
+        BasicTickProperties<HistoricalTickPrice>,
+    >,
 ) -> Result<Intersection> {
     let front = find_edge_intersection(historical_data, Edge::Front)?;
     let back = find_edge_intersection(historical_data, Edge::Back)?;
@@ -295,8 +305,11 @@ fn find_timeframe_intersection(
 
 /// Reduces the first candle and the first tick to the same time.
 pub fn sync_candles_and_ticks(
-    historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>,
-) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties>> {
+    historical_data: HistoricalData<
+        BasicCandleProperties,
+        BasicTickProperties<HistoricalTickPrice>,
+    >,
+) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>> {
     if historical_data.candles.is_empty() || historical_data.ticks.is_empty() {
         bail!("empty collection of items for synchronization");
     }
@@ -376,53 +389,45 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 11:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 12:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 16:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 None,
@@ -449,26 +454,22 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
             ],
         };
@@ -522,61 +523,52 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 08:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 09:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 10:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 11:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 12:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 None,
                 None,
@@ -595,14 +587,12 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
             ],
         };

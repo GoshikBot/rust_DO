@@ -27,14 +27,15 @@ use backtesting::trading_engine::TradingEngine;
 use base::corridor::BasicCorridorUtils;
 use base::entities::candle::CandleId;
 use base::entities::order::OrderType;
-use base::entities::{BasicTickProperties, Item};
+use base::entities::tick::HistoricalTickPrice;
+use base::entities::{BasicTickProperties, Item, MyInto};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
 use chrono::{Datelike, NaiveDateTime};
 use std::str::FromStr;
 
 pub fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, E, D, X>(
-    new_tick_props: BasicTickProperties,
+    new_tick_props: BasicTickProperties<HistoricalTickPrice>,
     new_candle_props: Option<StepBacktestingCandleProperties>,
     signals: StrategySignals,
     stores: &mut StepBacktestingStores<T>,
@@ -98,7 +99,8 @@ where
 
     let created_working_levels = stores.main.get_created_working_levels()?;
 
-    let crossed_level = LevUt::get_crossed_level(current_tick.props.bid, &created_working_levels);
+    let crossed_level =
+        LevUt::get_crossed_level(current_tick.props.bid.into(), &created_working_levels);
 
     if let Some(crossed_level) = crossed_level {
         if stores
@@ -151,11 +153,14 @@ where
         )?;
     }
 
-    LevUt::update_max_crossing_value_of_working_levels(&mut stores.main, current_tick.props.bid)?;
+    LevUt::update_max_crossing_value_of_working_levels(
+        &mut stores.main,
+        current_tick.props.bid.into(),
+    )?;
 
     if let Some(current_candle) = &current_candle {
         LevUt::remove_invalid_working_levels(
-            &current_tick.props,
+            &current_tick.props.clone().my_into(),
             current_candle.props.step_common.base.volatility,
             RemoveInvalidWorkingLevelsUtils {
                 working_level_store: &mut stores.main,
@@ -181,7 +186,7 @@ where
                 StepRatioParam::DistanceToMoveTakeProfits,
                 current_candle.props.step_common.base.volatility,
             ),
-            current_tick.props.bid,
+            current_tick.props.bid.into(),
         )?;
     }
 

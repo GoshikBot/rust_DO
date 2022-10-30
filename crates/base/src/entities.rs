@@ -106,3 +106,20 @@ pub const TICK_TIMEFRAME_ENV: &str = "TICK_TIMEFRAME";
 
 pub const DEFAULT_HOLIDAYS: [Holiday; 2] =
     [Holiday { day: 25, month: 12 }, Holiday { day: 1, month: 1 }];
+
+pub trait MyFrom<T> {
+    fn my_from(other: T) -> Self;
+}
+
+impl<T, P> MyInto<T> for P
+where
+    T: MyFrom<P>,
+{
+    fn my_into(self) -> T {
+        T::my_from(self)
+    }
+}
+
+pub trait MyInto<T> {
+    fn my_into(self) -> T;
+}

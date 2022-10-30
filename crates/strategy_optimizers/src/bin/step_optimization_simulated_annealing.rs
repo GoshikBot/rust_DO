@@ -8,6 +8,7 @@ use backtesting::historical_data::synchronization::sync_candles_and_ticks;
 use backtesting::trading_engine::BacktestingTradingEngine;
 use backtesting::{HistoricalData, StrategyInitConfig};
 use base::corridor::BasicCorridorUtilsImpl;
+use base::entities::tick::HistoricalTickPrice;
 use base::entities::{
     BasicTickProperties, StrategyTimeframes, Timeframe, CANDLE_TIMEFRAME_ENV, TICK_TIMEFRAME_ENV,
 };
@@ -97,14 +98,17 @@ struct StepStrategyOptimization {
     /// mutability.
     rng: Arc<Mutex<Xoshiro256PlusPlus>>,
     param_descrs: Vec<OptimizationParamDescr>,
-    historical_data: HistoricalData<StepCandleProperties, BasicTickProperties>,
+    historical_data: HistoricalData<StepCandleProperties, BasicTickProperties<HistoricalTickPrice>>,
     strategy_config: StrategyInitConfig,
 }
 
 impl StepStrategyOptimization {
     pub fn new(
         params: Vec<OptimizationInitialParam>,
-        historical_data: HistoricalData<StepCandleProperties, BasicTickProperties>,
+        historical_data: HistoricalData<
+            StepCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >,
         strategy_config: StrategyInitConfig,
     ) -> (Self, Vec<OptimizationParamValue>) {
         let lower_bound = params
@@ -261,7 +265,7 @@ impl Anneal for StepStrategyOptimization {
 
 fn optimize_step(
     params: Vec<OptimizationInitialParam>,
-    historical_data: HistoricalData<StepCandleProperties, BasicTickProperties>,
+    historical_data: HistoricalData<StepCandleProperties, BasicTickProperties<HistoricalTickPrice>>,
     strategy_config: StrategyInitConfig,
 ) -> Result<StepOptimizationResult> {
     // Define cost function

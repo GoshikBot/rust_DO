@@ -13,3 +13,5 @@ target/
 
 # Environments
 **/*.env
+
+.DS_Store

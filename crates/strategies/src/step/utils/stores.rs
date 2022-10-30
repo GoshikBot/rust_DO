@@ -10,6 +10,7 @@ use crate::step::utils::stores::in_memory_step_backtesting_store::InMemoryStepBa
 use crate::step::utils::stores::tick_store::StepTickStore;
 use crate::step::utils::stores::working_level_store::StepWorkingLevelStore;
 use backtesting::BacktestingTradingEngineConfig;
+use base::entities::tick::HistoricalTickPrice;
 use base::entities::{candle::CandleId, tick::TickId, BasicTickProperties, Tendency};
 use base::stores::candle_store::BasicCandleStore;
 use base::stores::order_store::BasicOrderStore;
@@ -31,7 +32,7 @@ where
 }
 
 pub trait StepBacktestingMainStore:
-    StepTickStore<TickProperties = BasicTickProperties>
+    StepTickStore<TickProperties = BasicTickProperties<HistoricalTickPrice>>
     + StepCandleStore<CandleProperties = StepBacktestingCandleProperties>
     + StepAngleStore<
         AngleProperties = BasicAngleProperties,

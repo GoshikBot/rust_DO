@@ -10,7 +10,7 @@ use serde::Deserialize;
 use ureq::serde_json;
 
 use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleVolatility};
-use base::entities::tick::TickPrice;
+use base::entities::tick::{HistoricalTickPrice, TickPrice};
 use base::entities::{BasicTickProperties, CandlePrices, CandleType, Timeframe};
 use base::helpers::{mean, price_to_points};
 use base::requests::api::SyncHttpRequest;
@@ -357,7 +357,11 @@ impl<R: SyncHttpRequest> MetaapiMarketDataApi<R> {
 }
 
 impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
-    fn get_current_tick(&self, symbol: &str) -> Result<BasicTickProperties> {
+    type RealTickProperties = BasicTickProperties<TickPrice>;
+    type HistoricalTickProperties = BasicTickProperties<HistoricalTickPrice>;
+    type CandleProperties = BasicCandleProperties;
+
+    fn get_current_tick(&self, symbol: &str) -> Result<Self::RealTickProperties> {
         let get_current_tick_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-price",
             self.api_data.urls.main, self.api_data.account_id, symbol
@@ -394,7 +398,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         &self,
         symbol: &str,
         timeframe: Timeframe,
-    ) -> Result<BasicCandleProperties> {
+    ) -> Result<Self::CandleProperties> {
         let get_current_candle_url = format!(
             "{}/users/current/accounts/{}/symbols/{}/current-candles/{}",
             self.api_data.urls.main, self.api_data.account_id, symbol, timeframe
@@ -426,7 +430,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
-    ) -> Result<Vec<Option<BasicCandleProperties>>> {
+    ) -> Result<Vec<Option<Self::CandleProperties>>> {
         let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
 
         let (total_amount_of_candles, volatility_window) = match timeframe {
@@ -487,7 +491,7 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         timeframe: Timeframe,
         end_time: DateTime<Utc>,
         duration: Duration,
-    ) -> Result<Vec<Option<BasicTickProperties>>> {
+    ) -> Result<Vec<Option<Self::HistoricalTickProperties>>> {
         let days_for_volatility = Duration::days(DAYS_FOR_VOLATILITY as i64);
 
         let total_amount_of_candles = match timeframe {
@@ -516,10 +520,16 @@ impl<R: SyncHttpRequest> MarketDataApi for MetaapiMarketDataApi<R> {
         let all_ticks = all_candles
             .iter()
             .map(|candle| {
+                let historical_tick_price = HistoricalTickPrice {
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                };
+
                 Ok(BasicTickProperties {
                     time: from_naive_str_to_naive_datetime(&candle.broker_time)?,
-                    ask: candle.close,
-                    bid: candle.close,
+                    ask: historical_tick_price,
+                    bid: historical_tick_price,
                 })
             })
             .collect::<Result<Vec<_>>>()?;

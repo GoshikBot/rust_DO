@@ -4,6 +4,7 @@ use backtesting::trading_engine::TradingEngine;
 use backtesting::{BacktestingBalances, HistoricalData};
 use base::corridor::BasicCorridorUtils;
 use base::entities::candle::{BasicCandleProperties, CandlePrice};
+use base::entities::tick::HistoricalTickPrice;
 use base::entities::{BasicTickProperties, StrategyTimeframes, SIGNIFICANT_DECIMAL_PLACES};
 use base::helpers::{Holiday, NumberOfDaysToExclude};
 use base::params::StrategyParams;
@@ -87,7 +88,10 @@ where
 }
 
 pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X, I>(
-    historical_data: &HistoricalData<StepCandleProperties, BasicTickProperties>,
+    historical_data: &HistoricalData<
+        StepCandleProperties,
+        BasicTickProperties<HistoricalTickPrice>,
+    >,
     strategy_config: StepStrategyRunningConfig<
         P,
         T,
@@ -107,7 +111,7 @@ pub fn loop_through_historical_data<P, L, T, Hel, LevUt, LevCon, OrUt, BCor, Cor
 ) -> Result<StrategyPerformance>
 where
     P: StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam> + Display,
-    L: TradingLimiter,
+    L: TradingLimiter<TickPrice = HistoricalTickPrice>,
     T: StepBacktestingMainStore,
     Hel: Helpers,
     LevUt: LevelUtils,
@@ -120,7 +124,7 @@ where
     E: TradingEngine,
     X: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
     I: Fn(
-        BasicTickProperties,
+        BasicTickProperties<HistoricalTickPrice>,
         Option<StepBacktestingCandleProperties>,
         StrategySignals,
         &mut StepBacktestingStores<T>,
@@ -249,7 +253,7 @@ mod tests {
     use backtesting::{BacktestingTradingEngineConfig, Balance, ClosePositionBy, OpenPositionBy};
     use base::entities::candle::{CandleId, CandleVolatility};
     use base::entities::order::{BasicOrderProperties, OrderId, OrderPrice, OrderType};
-    use base::entities::tick::{TickPrice, TickTime};
+    use base::entities::tick::{TickPrice, TickTime, UniversalTickPrice};
     use base::entities::{Item, Timeframe};
     use base::helpers::{Holiday, NumberOfDaysToExclude};
     use base::notifier::NotificationQueue;
@@ -299,7 +303,9 @@ mod tests {
     }
 
     impl TradingLimiter for TestTradingLimiter {
-        fn forbid_trading(&self, current_tick: &BasicTickProperties) -> bool {
+        type TickPrice = HistoricalTickPrice;
+
+        fn forbid_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
             if current_tick.time.time().hour() as u8 == HOUR_TO_FORBID_TRADING {
                 return true;
             }
@@ -307,7 +313,7 @@ mod tests {
             false
         }
 
-        fn allow_trading(&self, current_tick: &BasicTickProperties) -> bool {
+        fn allow_trading(&self, current_tick: &BasicTickProperties<Self::TickPrice>) -> bool {
             if HOURS_TO_FORBID_TRADING.contains(&(current_tick.time.time().hour() as u8)) {
                 return false;
             }
@@ -358,7 +364,7 @@ mod tests {
 
     impl LevelUtils for TestLevelUtilsImpl {
         fn get_crossed_level<W>(
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
             created_working_levels: &[Item<WLId, W>],
         ) -> Option<&Item<WLId, W>>
         where
@@ -378,7 +384,7 @@ mod tests {
 
         fn update_max_crossing_value_of_working_levels<T>(
             working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = T>,
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
         ) -> Result<()>
         where
             T: Into<BasicWLProperties>,
@@ -387,7 +393,7 @@ mod tests {
         }
 
         fn remove_invalid_working_levels<W, A, D, M, C, E, T, N, O>(
-            current_tick: &BasicTickProperties,
+            current_tick: &BasicTickProperties<UniversalTickPrice>,
             current_volatility: CandleVolatility,
             utils: RemoveInvalidWorkingLevelsUtils<W, A, D, M, C, E, T, O>,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
@@ -398,20 +404,20 @@ mod tests {
             O: AsRef<BasicOrderProperties>,
             W: StepWorkingLevelStore<WorkingLevelProperties = T, OrderProperties = O>,
             A: Fn(&[O]) -> bool,
-            D: Fn(WLPrice, TickPrice, ParamOutputValue) -> bool,
+            D: Fn(WLPrice, UniversalTickPrice, ParamOutputValue) -> bool,
             M: Fn(LevelTime, TickTime, ParamOutputValue, &E) -> bool,
-            C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, TickPrice) -> bool,
+            C: Fn(&T, Option<WLMaxCrossingValue>, ParamOutputValue, UniversalTickPrice) -> bool,
             E: Fn(NaiveDateTime, NaiveDateTime, &[Holiday]) -> NumberOfDaysToExclude,
             N: NotificationQueue,
         {
-            unimplemented!()
+            todo!()
         }
 
         fn move_take_profits<W>(
             working_level_store: &mut impl StepWorkingLevelStore<WorkingLevelProperties = W>,
             distance_from_level_for_signaling_of_moving_take_profits: ParamOutputValue,
             distance_to_move_take_profits: ParamOutputValue,
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
         ) -> Result<()>
         where
             W: Into<BasicWLProperties>,
@@ -485,7 +491,7 @@ mod tests {
         }
 
         fn price_is_beyond_stop_loss(
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
             stop_loss_price: OrderPrice,
             working_level_type: OrderType,
         ) -> bool {
@@ -494,7 +500,7 @@ mod tests {
 
         fn level_expired_by_distance(
             level_price: WLPrice,
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
             distance_from_level_for_its_deletion: ParamOutputValue,
         ) -> bool {
             unimplemented!()
@@ -517,7 +523,7 @@ mod tests {
             level: &impl AsRef<BasicWLProperties>,
             max_crossing_value: Option<WLMaxCrossingValue>,
             min_distance_of_activation_crossing_of_level_when_returning_to_level_for_its_deletion: ParamOutputValue,
-            current_tick_price: TickPrice,
+            current_tick_price: UniversalTickPrice,
         ) -> bool {
             unimplemented!()
         }
@@ -604,7 +610,7 @@ mod tests {
         }
 
         fn update_orders_backtesting<T, C, R, W, P, A>(
-            current_tick: &BasicTickProperties,
+            current_tick: &BasicTickProperties<HistoricalTickPrice>,
             current_candle: &StepBacktestingCandleProperties,
             params: &impl StrategyParams<PointParam = StepPointParam, RatioParam = StepRatioParam>,
             stores: UpdateOrdersBacktestingStores<W>,
@@ -620,14 +626,14 @@ mod tests {
             T: TradingEngine,
             C: Fn(ChartTraceEntity, &mut StepBacktestingChartTraces, ChartIndex),
             R: Fn(&str, &W, CorridorType, MinAmountOfCandles) -> Result<bool>,
-            P: Fn(TickPrice, OrderPrice, OrderType) -> bool,
+            P: Fn(UniversalTickPrice, OrderPrice, OrderType) -> bool,
             A: Fn(&[StepOrderProperties]) -> bool,
         {
             unimplemented!()
         }
 
         fn close_all_orders_backtesting<S>(
-            current_tick_price: TickPrice,
+            current_tick_price: HistoricalTickPrice,
             current_candle_chart_index: ChartIndex,
             store: &mut S,
             config: &mut StepBacktestingConfig,
@@ -909,136 +915,114 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 18:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 19:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 19:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 20:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 20:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 21:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 22:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 22:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 23:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 23:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 00:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 00:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 01:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 None,
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 02:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 02:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 03:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 03:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 04:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 04:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 05:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 05:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("18-05-2022 06:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0),
-                    bid: dec!(0),
+                    ..Default::default()
                 }),
             ],
         };
@@ -1094,7 +1078,7 @@ mod tests {
         };
 
         fn run_iteration<T, Hel, LevUt, LevCon, OrUt, BCor, Cor, Ang, D, E, X>(
-            new_tick_props: BasicTickProperties,
+            new_tick_props: BasicTickProperties<HistoricalTickPrice>,
             new_candle_props: Option<StepBacktestingCandleProperties>,
             signals: StrategySignals,
             stores: &mut StepBacktestingStores<T>,

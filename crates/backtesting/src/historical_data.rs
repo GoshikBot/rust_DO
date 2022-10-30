@@ -2,6 +2,7 @@ use crate::historical_data::serialization::HistoricalDataSerialization;
 use crate::{HistoricalData, StrategyInitConfig};
 use anyhow::{Context, Result};
 use base::entities::candle::BasicCandleProperties;
+use base::entities::tick::{HistoricalTickPrice, TickPrice};
 use base::entities::{BasicTickProperties, StrategyTimeframes};
 use std::path::PathBuf;
 use trading_apis::MarketDataApi;
@@ -17,14 +18,18 @@ pub fn get_historical_data<S, M, P>(
     market_data_api: &M,
     serialization: &S,
     sync_candles_and_ticks: impl Fn(
-        HistoricalData<BasicCandleProperties, BasicTickProperties>,
+        HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>,
     ) -> Result<
-        HistoricalData<BasicCandleProperties, BasicTickProperties>,
+        HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>,
     >,
-) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties>>
+) -> Result<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>>
 where
     S: HistoricalDataSerialization,
-    M: MarketDataApi,
+    M: MarketDataApi<
+        CandleProperties = BasicCandleProperties,
+        RealTickProperties = BasicTickProperties<TickPrice>,
+        HistoricalTickProperties = BasicTickProperties<HistoricalTickPrice>,
+    >,
     P: Into<PathBuf> + Clone,
 {
     let StrategyInitConfig {
@@ -79,13 +84,16 @@ mod tests {
     use base::entities::candle::BasicCandleProperties;
     use base::entities::{BasicTickProperties, Timeframe};
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-    use rust_decimal_macros::dec;
     use std::cell::RefCell;
 
     struct MarketDataTestApi;
 
     impl MarketDataApi for MarketDataTestApi {
-        fn get_current_tick(&self, _symbol: &str) -> Result<BasicTickProperties> {
+        type RealTickProperties = BasicTickProperties<TickPrice>;
+        type HistoricalTickProperties = BasicTickProperties<HistoricalTickPrice>;
+        type CandleProperties = BasicCandleProperties;
+
+        fn get_current_tick(&self, _symbol: &str) -> Result<Self::RealTickProperties> {
             todo!()
         }
 
@@ -93,7 +101,7 @@ mod tests {
             &self,
             _symbol: &str,
             _timeframe: Timeframe,
-        ) -> Result<BasicCandleProperties> {
+        ) -> Result<Self::CandleProperties> {
             todo!()
         }
 
@@ -103,7 +111,7 @@ mod tests {
             _timeframe: Timeframe,
             _end_time: DateTime<Utc>,
             _duration: Duration,
-        ) -> Result<Vec<Option<BasicCandleProperties>>> {
+        ) -> Result<Vec<Option<Self::CandleProperties>>> {
             Ok(vec![
                 Some(BasicCandleProperties {
                     time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
@@ -125,19 +133,17 @@ mod tests {
             _timeframe: Timeframe,
             _end_time: DateTime<Utc>,
             _duration: Duration,
-        ) -> Result<Vec<Option<BasicTickProperties>>> {
+        ) -> Result<Vec<Option<Self::HistoricalTickProperties>>> {
             Ok(vec![
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("19-05-2022 18:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
             ])
         }
@@ -152,7 +158,10 @@ mod tests {
     impl HistoricalDataSerialization for HistoricalDataTestSerializationDataExists {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+            _historical_data: &HistoricalData<
+                BasicCandleProperties,
+                BasicTickProperties<HistoricalTickPrice>,
+            >,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
@@ -164,7 +173,9 @@ mod tests {
             &self,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
-        ) -> Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
+        ) -> Result<
+            Option<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>>,
+        > {
             *self.deserialization_is_called.borrow_mut() = true;
 
             Ok(Some(HistoricalData {
@@ -185,14 +196,12 @@ mod tests {
                     Some(BasicTickProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                             .unwrap(),
-                        ask: dec!(0.0),
-                        bid: dec!(0.0),
+                        ..Default::default()
                     }),
                     Some(BasicTickProperties {
                         time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                             .unwrap(),
-                        ask: dec!(0.0),
-                        bid: dec!(0.0),
+                        ..Default::default()
                     }),
                 ],
             }))
@@ -208,7 +217,10 @@ mod tests {
     impl HistoricalDataSerialization for HistoricalDataTestSerializationDataDoesNotExist {
         fn serialize_historical_data<P: Into<PathBuf>>(
             &self,
-            _historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+            _historical_data: &HistoricalData<
+                BasicCandleProperties,
+                BasicTickProperties<HistoricalTickPrice>,
+            >,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
         ) -> Result<()> {
@@ -221,7 +233,9 @@ mod tests {
             &self,
             _strategy_properties: &StrategyInitConfig,
             _directory: P,
-        ) -> Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
+        ) -> Result<
+            Option<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>>,
+        > {
             *self.deserialization_is_called.borrow_mut() = true;
             Ok(None)
         }
@@ -264,24 +278,24 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
             ],
         };
 
         let sync_candles_and_ticks_is_called = RefCell::new(false);
-        let sync_candles_and_ticks =
-            |historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>| {
-                *sync_candles_and_ticks_is_called.borrow_mut() = true;
-                Ok(historical_data)
-            };
+        let sync_candles_and_ticks = |historical_data: HistoricalData<
+            BasicCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >| {
+            *sync_candles_and_ticks_is_called.borrow_mut() = true;
+            Ok(historical_data)
+        };
 
         let historical_data = get_historical_data(
             "test",
@@ -340,24 +354,24 @@ mod tests {
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("19-05-2022 18:00", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
                 Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str("19-05-2022 18:30", "%d-%m-%Y %H:%M")
                         .unwrap(),
-                    ask: dec!(0.0),
-                    bid: dec!(0.0),
+                    ..Default::default()
                 }),
             ],
         };
 
         let sync_candles_and_ticks_is_called = RefCell::new(false);
-        let sync_candles_and_ticks =
-            |historical_data: HistoricalData<BasicCandleProperties, BasicTickProperties>| {
-                *sync_candles_and_ticks_is_called.borrow_mut() = true;
-                Ok(historical_data)
-            };
+        let sync_candles_and_ticks = |historical_data: HistoricalData<
+            BasicCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >| {
+            *sync_candles_and_ticks_is_called.borrow_mut() = true;
+            Ok(historical_data)
+        };
 
         let historical_data = get_historical_data(
             "test",

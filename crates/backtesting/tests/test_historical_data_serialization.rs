@@ -25,35 +25,29 @@ fn serialize_deserialize_historical_data_proper_params_successfully() {
         ticks: vec![
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 13:00", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 13:30", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 14:00", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 14:30", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 15:00", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
             None,
             None,
             Some(BasicTickProperties {
                 time: NaiveDateTime::parse_from_str("17-05-2022 16:30", "%d-%m-%Y %H:%M").unwrap(),
-                ask: dec!(0.0),
-                bid: dec!(0.0),
+                ..Default::default()
             }),
         ],
     };

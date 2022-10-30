@@ -1,6 +1,6 @@
 use crate::{get_path_name_for_data_config, HistoricalData, StrategyInitConfig};
 use base::entities::candle::{BasicCandleProperties, CandlePrice, CandleSize, CandleVolatility};
-use base::entities::tick::TickPrice;
+use base::entities::tick::{HistoricalTickPrice, TickPrice};
 use base::entities::{BasicTickProperties, CandlePrices, CandleType, StrategyTimeframes};
 use chrono::NaiveDateTime;
 use csv::{Reader, Writer};
@@ -35,8 +35,8 @@ struct Candle {
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Tick {
     time: Option<String>,
-    ask: Option<TickPrice>,
-    bid: Option<TickPrice>,
+    ask: Option<String>,
+    bid: Option<String>,
 }
 
 fn get_paths_for_historical_data<P: Into<PathBuf>>(
@@ -68,7 +68,10 @@ fn historical_data_files_exist(historical_data_paths: &HistoricalDataPaths) -> b
 pub trait HistoricalDataSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
-        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+        historical_data: &HistoricalData<
+            BasicCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >,
         strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()>;
@@ -77,7 +80,9 @@ pub trait HistoricalDataSerialization {
         &self,
         strategy_config: &StrategyInitConfig,
         directory: P,
-    ) -> anyhow::Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>>;
+    ) -> anyhow::Result<
+        Option<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>>,
+    >;
 }
 
 #[derive(Default)]
@@ -114,7 +119,10 @@ impl HistoricalDataCsvSerialization {
     }
 
     fn serialize(
-        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+        historical_data: &HistoricalData<
+            BasicCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >,
         historical_data_paths: &HistoricalDataPaths,
     ) -> anyhow::Result<()> {
         let HistoricalDataPaths {
@@ -155,8 +163,8 @@ impl HistoricalDataCsvSerialization {
             let serializable_tick = match tick.as_ref() {
                 Some(tick) => Tick {
                     time: Some(tick.time.format(TIME_PATTERN_FOR_SERIALIZATION).to_string()),
-                    ask: Some(tick.ask),
-                    bid: Some(tick.bid),
+                    ask: Some(serde_json::to_string(&tick.ask)?),
+                    bid: Some(serde_json::to_string(&tick.bid)?),
                 },
                 None => Default::default(),
             };
@@ -169,7 +177,9 @@ impl HistoricalDataCsvSerialization {
 
     fn deserialize(
         historical_data_paths: &HistoricalDataPaths,
-    ) -> anyhow::Result<HistoricalData<BasicCandleProperties, BasicTickProperties>> {
+    ) -> anyhow::Result<
+        HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>,
+    > {
         let HistoricalDataPaths {
             candles_file_path,
             ticks_file_path,
@@ -206,7 +216,7 @@ impl HistoricalDataCsvSerialization {
             }
         }
 
-        let mut ticks: Vec<Option<BasicTickProperties>> = Vec::new();
+        let mut ticks: Vec<Option<BasicTickProperties<HistoricalTickPrice>>> = Vec::new();
         let mut ticks_reader = Reader::from_path(ticks_file_path)?;
 
         for tick in ticks_reader.deserialize() {
@@ -219,8 +229,8 @@ impl HistoricalDataCsvSerialization {
                     bid: Some(bid),
                 } => ticks.push(Some(BasicTickProperties {
                     time: NaiveDateTime::parse_from_str(&time, TIME_PATTERN_FOR_SERIALIZATION)?,
-                    ask,
-                    bid,
+                    ask: serde_json::from_str(&ask)?,
+                    bid: serde_json::from_str(&bid)?,
                 })),
                 _ => ticks.push(None),
             }
@@ -233,7 +243,10 @@ impl HistoricalDataCsvSerialization {
 impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
     fn serialize_historical_data<P: Into<PathBuf>>(
         &self,
-        historical_data: &HistoricalData<BasicCandleProperties, BasicTickProperties>,
+        historical_data: &HistoricalData<
+            BasicCandleProperties,
+            BasicTickProperties<HistoricalTickPrice>,
+        >,
         strategy_config: &StrategyInitConfig,
         directory: P,
     ) -> anyhow::Result<()> {
@@ -245,7 +258,9 @@ impl HistoricalDataSerialization for HistoricalDataCsvSerialization {
         &self,
         strategy_config: &StrategyInitConfig,
         directory: P,
-    ) -> anyhow::Result<Option<HistoricalData<BasicCandleProperties, BasicTickProperties>>> {
+    ) -> anyhow::Result<
+        Option<HistoricalData<BasicCandleProperties, BasicTickProperties<HistoricalTickPrice>>>,
+    > {
         let historical_data_paths = get_paths_for_historical_data(directory, strategy_config);
 
         if historical_data_files_exist(&historical_data_paths) {

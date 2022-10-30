@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use rust_decimal_macros::dec;
 
 use base::entities::order::{OrderId, OrderStatus, OrderType};
+use base::entities::tick::HistoricalTickPrice;
 use base::entities::{
     candle::CandleId, tick::TickId, BasicTickProperties, CANDLE_PRICE_DECIMAL_PLACES,
     SIGNIFICANT_DECIMAL_PLACES,
@@ -52,7 +53,7 @@ struct CandleProperties {
 
 #[derive(Clone)]
 struct TickProperties {
-    main_props: BasicTickProperties,
+    main_props: BasicTickProperties<HistoricalTickPrice>,
     ref_count: RefCount,
 }
 
@@ -90,7 +91,7 @@ pub struct InMemoryStepBacktestingStore {
 impl StepBacktestingMainStore for InMemoryStepBacktestingStore {}
 
 impl BasicTickStore for InMemoryStepBacktestingStore {
-    type TickProperties = BasicTickProperties;
+    type TickProperties = BasicTickProperties<HistoricalTickPrice>;
 
     fn create_tick(
         &mut self,
